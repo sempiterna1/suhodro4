@@ -63,6 +63,9 @@ export const hpForWave = (n: number) =>
 // Плейтест v2.1: волны проходятся слишком тяжело — глобальный −30% HP
 export const HP_PLAYTEST_MULT = 0.7
 
+// Кооп-скейлинг из GDD: HP волн при 2 игроках ×1.85 (3 игрока ×2.7, 4 ×3.55)
+export const COOP_HP_MULT = 1.85
+
 export const goldForKill = (n: number) => Math.floor(2 + n / 3)
 export const waveBonus = (n: number) => 25 + 6 * n
 

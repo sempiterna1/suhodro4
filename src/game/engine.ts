@@ -13,6 +13,7 @@ import {
   BOSS_LIVES_COST,
   BOSS_SPEED,
   BUILD_PATH_CLEAR,
+  COOP_HP_MULT,
   DAMAGE_MATRIX,
   FIRST_PREVIEW_TIME,
   HP_PLAYTEST_MULT,
@@ -39,6 +40,7 @@ import {
   markBonusForLevel,
   waveBonus,
 } from './config'
+import type { GuestCmd, Snap } from './mp-protocol'
 import type {
   ArmorType,
   AttackType,
@@ -425,13 +427,13 @@ export class Game {
       let gold: number
       let livesCost: number
       if (o.isBoss) {
-        hp = hpForWave(def.n) * BOSS_HP_MULT * HP_PLAYTEST_MULT
+        hp = hpForWave(def.n) * BOSS_HP_MULT * HP_PLAYTEST_MULT * this.coopMult()
         speed = BOSS_SPEED
         size = 26
         gold = goldForKill(def.n) * BOSS_GOLD_MULT
         livesCost = BOSS_LIVES_COST
       } else {
-        hp = hpForWave(def.n) * ARMOR_HP_MULT[o.armor] * def.hpMult * HP_PLAYTEST_MULT
+        hp = hpForWave(def.n) * ARMOR_HP_MULT[o.armor] * def.hpMult * HP_PLAYTEST_MULT * this.coopMult()
         speed = ARMOR_SPEED[o.armor]
         size = o.armor === 'light' ? 11 : o.armor === 'medium' ? 13 : 15
         gold = goldForKill(def.n) * def.goldMult
@@ -771,6 +773,7 @@ export class Game {
       lives: this.lives,
       wave: this.wave,
       totalWaves: TOTAL_WAVES,
+      coop: this.coop,
       previewRemaining: Math.max(0, this.previewRemaining),
       waveSpawned: this.waveSpawned,
       waveTotal: this.waveTotal,
@@ -793,5 +796,170 @@ export class Game {
 
   currentLevelMult(level: number) {
     return LEVEL_MULT[level - 1]
+  }
+
+  // ─── Мультиплеер (host-авторитарная модель) ──────────────────────────
+
+  /** Подключён ли второй игрок (влияет на HP волн ×1.85) */
+  coop = false
+
+  private coopMult(): number {
+    return this.coop ? COOP_HP_MULT : 1
+  }
+
+  setCoop(on: boolean) {
+    this.coop = on
+  }
+
+  /** Полный снимок мира для гостя (JSON-совместимый) */
+  serialize(): Snap {
+    const def = WAVES[Math.min(this.wave, TOTAL_WAVES) - 1]
+    return {
+      seq: this.snapSeq++,
+      phase: this.phase,
+      wave: this.wave,
+      gold: Math.floor(this.gold),
+      lives: this.lives,
+      speed: this.speed,
+      time: this.time,
+      previewRemaining: Math.max(0, this.previewRemaining),
+      waveSpawned: this.waveSpawned,
+      waveTotal: this.waveTotal,
+      coop: this.coop,
+      stats: { ...this.stats },
+      avatar: {
+        x: this.avatar.x, y: this.avatar.y, target: this.avatar.target,
+        level: this.avatar.level, xp: this.avatar.xp,
+        cooldown: this.avatar.cooldown, attackCd: this.avatar.attackCd,
+      },
+      towers: this.towers.map((t) => ({
+        id: t.id, x: t.x, y: t.y, defId: t.defId, level: t.level,
+        invested: t.invested, cooldown: t.cooldown,
+        shotCount: t.shotCount, hammerCd: t.hammerCd,
+      })),
+      creeps: this.creeps.map((c) => ({
+        uid: c.uid, armor: c.armor, hp: c.hp, maxHp: c.maxHp, speed: c.speed,
+        dist: c.dist, size: c.size, isBoss: c.isBoss,
+        burnDps: c.burnDps, burnUntil: c.burnUntil,
+        stunnedUntil: c.stunnedUntil, markedUntil: c.markedUntil, markedBonus: c.markedBonus,
+      })),
+      projectiles: this.projectiles.map((p) => ({ ...p })),
+      effects: this.effects.map((e) => ({ ...e })),
+      floats: this.floats.map((f) => ({ ...f })),
+      nextWaveArmor: def.armor,
+      lastReject: this.lastReject,
+    }
+  }
+
+  private snapSeq = 0
+  private lastReject: string | undefined
+
+  /**
+   * Загрузка снапшота на стороне гостя. Полностью перезаписывает
+   * публичное состояние — гость не симулирует, только рендерит.
+   */
+  applySnap(s: Snap) {
+    this.phase = s.phase
+    this.wave = s.wave
+    this.gold = s.gold
+    this.lives = s.lives
+    this.speed = s.speed
+    this.time = s.time
+    this.previewRemaining = s.previewRemaining
+    this.waveSpawned = s.waveSpawned
+    this.waveTotal = s.waveTotal
+    this.coop = s.coop
+    this.stats = { ...s.stats }
+    this.avatar = { ...s.avatar }
+    this.towers = s.towers.map((t) => ({ ...t }))
+    this.creeps = s.creeps.map((c) => ({
+      uid: c.uid, armor: c.armor, hp: c.hp, maxHp: c.maxHp, speed: c.speed,
+      dist: c.dist, size: c.size, isBoss: c.isBoss,
+      gold: 0, livesCost: 1, burnSource: '',
+      burnDps: c.burnDps, burnUntil: c.burnUntil,
+      stunnedUntil: c.stunnedUntil, markedUntil: c.markedUntil, markedBonus: c.markedBonus,
+      goldMult: 1,
+    }))
+    this.projectiles = s.projectiles.map((p) => ({ ...p }))
+    this.effects = s.effects.map((e) => ({ ...e }))
+    this.floats = s.floats.map((f) => ({ ...f }))
+    if (s.lastReject) {
+      this.addFloat(pointAtLength(pathLength - 120).x, 60, s.lastReject, '#e05252')
+      this.lastReject = undefined
+    }
+  }
+
+  /**
+   * Лёгкий тик гостя между снапшотами: только визуальная интерполяция
+   * (движение крипов/снарядов/аватара), без урона, спавна и смертей —
+   * следующая порция applySnap() всё исправит.
+   */
+  guestTick(dtRaw: number) {
+    const dt = Math.min(dtRaw, 0.05) * this.speed
+    if (this.phase === 'intro' || this.phase === 'over' || this.phase === 'won') return
+    this.time += dt
+    if (this.phase === 'preview') this.previewRemaining = Math.max(0, this.previewRemaining - dt)
+    for (const c of this.creeps) {
+      if (this.time >= c.stunnedUntil) c.dist += c.speed * dt
+    }
+    for (const pr of this.projectiles) {
+      const tp = pr.targetPos
+      if (!tp) continue
+      const dx = tp.x - pr.x
+      const dy = tp.y - pr.y
+      const d = Math.hypot(dx, dy)
+      if (d <= pr.speed * dt) {
+        pr.x = tp.x
+        pr.y = tp.y
+      } else {
+        pr.x += (dx / d) * pr.speed * dt
+        pr.y += (dy / d) * pr.speed * dt
+      }
+    }
+    const av = this.avatar
+    if (av.target) {
+      const dx = av.target.x - av.x
+      const dy = av.target.y - av.y
+      const d = Math.hypot(dx, dy)
+      if (d <= AVATAR.speed * dt) {
+        av.x = av.target.x
+        av.y = av.target.y
+      } else {
+        av.x += (dx / d) * AVATAR.speed * dt
+        av.y += (dy / d) * AVATAR.speed * dt
+      }
+    }
+  }
+
+  /** Применение команды гостя на хосте. Возвращает ошибку для релея */
+  applyGuestCmd(cmd: GuestCmd): string | null {
+    let res: ActionResult
+    switch (cmd.t) {
+      case 'build':
+        res = this.build(cmd.x, cmd.y, cmd.defId)
+        break
+      case 'upgrade':
+        res = this.upgrade(cmd.id)
+        break
+      case 'sell':
+        res = this.sell(cmd.id)
+        break
+      case 'merge':
+        res = this.merge(cmd.a, cmd.b)
+        break
+      case 'startWave':
+        if (this.phase === 'preview') this.startWave()
+        return null
+      case 'setSpeed':
+        this.speed = cmd.speed
+        return null
+      default:
+        return 'Неизвестная команда'
+    }
+    if (!res.ok && res.error) {
+      this.lastReject = res.error
+      return res.error
+    }
+    return null
   }
 }

@@ -2,6 +2,7 @@
 
 // UI-панели прототипа «Железный Разлом»
 
+import { useState } from 'react'
 import { ARMOR_COLORS, ARMOR_NAMES, ATTACK_NAMES, AVATAR, MERGED_TOWERS, TOWERS, DAMAGE_MATRIX, LEVEL_MULT, SELL_RATIO, ALL_DEFS } from '@/game/config'
 import { upgradeCost } from '@/game/engine'
 import type { Game } from '@/game/engine'
@@ -14,7 +15,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { X, Heart, Coins, Swords, Zap, Repeat2, Trash2, ChevronUp } from 'lucide-react'
+import { X, Heart, Coins, Swords, Zap, Repeat2, Trash2, ChevronUp, Users, Copy, Check, Clock, Wifi, WifiOff } from 'lucide-react'
+
+export type MpRole = 'single' | 'host' | 'guest'
+export type MpStatus = 'off' | 'waiting' | 'linked'
 
 const ATTACK_COLORS: Record<AttackType, string> = {
   pierce: '#8fae6b',
@@ -47,11 +51,17 @@ export function TopBar({
   onSpeed,
   onHelp,
   onRestart,
+  role = 'single',
+  mpStatus = 'off',
+  onInvite,
 }: {
   ui: UiState
   onSpeed: () => void
   onHelp: () => void
   onRestart: () => void
+  role?: MpRole
+  mpStatus?: MpStatus
+  onInvite?: () => void
 }) {
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2">
@@ -63,8 +73,40 @@ export function TopBar({
         <span className="hidden text-[10px] uppercase tracking-widest text-[#8a6d3b] md:inline">
           прототип · Пограничный тракт
         </span>
+        {ui.coop && (
+          <span
+            className="rounded border border-[#e05252aa] bg-[#3a1c14] px-1.5 py-0.5 font-mono text-[10px] font-bold text-[#ff9a7a]"
+            title="Кооп: HP волн ×1.85 (GDD)"
+          >
+            КООП ×1.85
+          </span>
+        )}
       </div>
       <div className="ml-auto flex flex-wrap items-center gap-2 sm:gap-3">
+        {role !== 'single' && (
+          <span
+            className={`flex items-center gap-1 rounded border px-2 py-1 font-mono text-[10px] ${
+              mpStatus === 'linked'
+                ? 'border-[#7fd0a088] bg-[#1f2d24] text-[#7fd0a0]'
+                : 'border-[#8a6d3b66] bg-[#241b12] text-[#b08d57]'
+            }`}
+            title={mpStatus === 'linked' ? 'Оба игрока на связи' : 'Второй игрок не подключился'}
+          >
+            <Users className="h-3 w-3" />
+            {mpStatus === 'linked' ? '2/2' : '1/2'}
+          </span>
+        )}
+        {role === 'host' && onInvite && (
+          <Button
+            onClick={onInvite}
+            variant="outline"
+            size="sm"
+            className="h-8 border-[#b08d57] bg-[#2b2115] px-2 text-xs text-[#e8c170] hover:bg-[#3a2e1c]"
+            title="Показать пригласительную ссылку"
+          >
+            Пригласить
+          </Button>
+        )}
         <span className="flex items-center gap-1 rounded border border-[#8a6d3b55] bg-[#1a140e] px-2 py-1 font-mono text-sm text-[#e05252]" title="Жизни">
           <Heart className="h-3.5 w-3.5 fill-[#e05252]" /> {ui.lives}
         </span>
@@ -409,7 +451,15 @@ export function MergePanel({
 }
 
 // ─── Панель аватара ──────────────────────────────────────────────────────
-export function AvatarPanel({ ui, onAbility }: { ui: UiState; onAbility: () => void }) {
+export function AvatarPanel({
+  ui,
+  onAbility,
+  role = 'single',
+}: {
+  ui: UiState
+  onAbility: () => void
+  role?: MpRole
+}) {
   const cd = Math.ceil(ui.avatar.cooldown)
   const xpNext = ui.avatar.xpNext
   const xpPrev = xpNext ? [0, 3, 7, 12, 18, 25, 33, 42, 52][ui.avatar.level - 1] ?? 0 : 0
@@ -437,15 +487,21 @@ export function AvatarPanel({ ui, onAbility }: { ui: UiState; onAbility: () => v
       </p>
       <Button
         onClick={onAbility}
-        disabled={cd > 0}
+        disabled={cd > 0 || role === 'guest'}
         className="h-10 w-full border-2 border-[#b08d57] bg-[#3a2e1c] font-serif text-sm font-bold text-[#ffd700] hover:bg-[#4a3a24] disabled:opacity-50"
       >
         <Zap className="mr-1.5 h-4 w-4 text-[#ffd700]" />
         {AVATAR.abilityName}
-        {cd > 0 ? ` · ${cd} с` : ' · готова'}
+        {role === 'guest'
+          ? ' · у хоста'
+          : cd > 0
+            ? ` · ${cd} с`
+            : ' · готова'}
       </Button>
       <p className="mt-1 text-center text-[10px] text-[#8a6d3b]">
-        {AVATAR.abilityDesc} · КД {AVATAR.abilityCd} с
+        {role === 'guest'
+          ? 'Охотницей управляет хост — способность активирует он'
+          : `${AVATAR.abilityDesc} · КД ${AVATAR.abilityCd} с`}
       </p>
     </div>
   )
@@ -589,5 +645,160 @@ export function HelpDialog({ open, onOpenChange }: { open: boolean; onOpenChange
         </section>
       </DialogContent>
     </Dialog>
+  )
+}
+
+// ─── Мультиплеер: лобби хоста (приглашение) ──────────────────────────────
+export function MpLobbyPanel({
+  code,
+  inviteUrl,
+  status,
+  onStart,
+  onClose,
+  onHelp,
+  inGame = false,
+}: {
+  code: string
+  inviteUrl: string
+  status: MpStatus
+  onStart: () => void
+  onClose: () => void
+  onHelp: () => void
+  inGame?: boolean
+}) {
+  const [copied, setCopied] = useState(false)
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(inviteUrl)
+    } catch {
+      const ta = document.createElement('textarea')
+      ta.value = inviteUrl
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      ta.remove()
+    }
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+  return (
+    <div className="absolute inset-0 z-10 flex items-center justify-center overflow-y-auto bg-[#120d08]/90 p-4 backdrop-blur-[2px]">
+      <div className="w-full max-w-md rounded-lg border-2 border-[#7fd0a0] bg-[#1d2a20] p-4 text-center shadow-[0_0_30px_rgba(0,0,0,0.7)]">
+        <p className="mb-1 font-mono text-[10px] uppercase tracking-[0.3em] text-[#7fd0a0]">
+          кооп · два игрока · один тракт
+        </p>
+        <h2 className="mb-3 font-serif text-2xl font-black text-[#7fd0a0]">КООП-ЛОББИ</h2>
+
+        <div className="mb-3 rounded border border-[#7fd0a044] bg-[#241b12] p-3">
+          <p className="mb-1 text-xs text-[#c8d8c0]">Пригласительная ссылка — отправьте её другу:</p>
+          <div className="mb-2 break-all rounded bg-[#120d08] px-2 py-1.5 font-mono text-[11px] text-[#7fd0a0]">
+            {inviteUrl}
+          </div>
+          <div className="flex items-center justify-center gap-2">
+            <Button
+              onClick={copy}
+              size="sm"
+              className="h-9 border-2 border-[#7fd0a0] bg-[#243a2c] px-4 font-bold text-[#a8e8c0] hover:bg-[#2d4a38]"
+            >
+              {copied ? <Check className="mr-1 h-4 w-4" /> : <Copy className="mr-1 h-4 w-4" />}
+              {copied ? 'Скопировано!' : 'Копировать ссылку'}
+            </Button>
+            <span className="rounded border border-[#b08d5788] bg-[#241b12] px-3 py-1.5 font-mono text-lg font-bold tracking-widest text-[#e8c170]">
+              {code}
+            </span>
+          </div>
+        </div>
+
+        <p className="mb-1 flex items-center justify-center gap-1.5 text-xs">
+          {status === 'linked' ? (
+            <span className="font-bold text-[#7fd0a0]">● Друг в лобби! Можно начинать</span>
+          ) : (
+            <span className="flex items-center gap-1 text-[#b08d57]">
+              <Clock className="h-3.5 w-3.5 animate-pulse" /> Ожидание друга...
+            </span>
+          )}
+        </p>
+        <p className="mb-3 text-[10px] leading-snug text-[#8a6d3b]">
+          Друг открывает ссылку с телефона или ПК и сразу попадает сюда. Общий строй: строить могут оба,
+          Охотница — у хоста, HP волн ×1.85 (GDD кооп).
+        </p>
+
+        <div className="flex flex-wrap justify-center gap-2">
+          {!inGame && (
+            <Button
+              onClick={onStart}
+              className="h-11 border-2 border-[#b08d57] bg-[#3a2e1c] px-6 font-serif text-base font-bold text-[#ffd700] hover:bg-[#4a3a24]"
+            >
+              ⚙ Начать игру
+            </Button>
+          )}
+          {!inGame && (
+            <Button
+              onClick={onHelp}
+              variant="outline"
+              className="h-11 border-[#8a6d3b] bg-transparent px-4 text-sm text-[#d8cbb0] hover:bg-[#3a2e1c]"
+            >
+              Как играть
+            </Button>
+          )}
+          <Button
+            onClick={onClose}
+            variant="outline"
+            className="h-11 border-[#8a6d3b55] bg-transparent px-4 text-sm text-[#8a6d3b] hover:bg-[#3a2e1c] hover:text-[#e05252]"
+          >
+            {inGame ? 'Закрыть' : 'Один игрок'}
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Мультиплеер: экран ожидания гостя ───────────────────────────────────
+export function MpGuestWait({
+  code,
+  status,
+  hostLeft,
+}: {
+  code: string
+  status: MpStatus
+  hostLeft: boolean
+}) {
+  return (
+    <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#120d08]/90 p-4 backdrop-blur-[2px]">
+      <div className="max-w-sm text-center">
+        {hostLeft ? (
+          <>
+            <h2 className="mb-2 font-serif text-2xl font-black text-[#e05252]">ХОСТ ОТКЛЮЧИЛСЯ</h2>
+            <p className="mb-4 text-sm text-[#c8b896]">
+              Лобби {code} закрыто. Попросите хоста создать новое и прислать ссылку.
+            </p>
+            <Button
+              onClick={() => window.location.replace('/')}
+              className="h-10 border-2 border-[#b08d57] bg-[#3a2e1c] px-6 font-serif font-bold text-[#ffd700] hover:bg-[#4a3a24]"
+            >
+              На главный экран
+            </Button>
+          </>
+        ) : (
+          <>
+            <p className="mb-1 font-mono text-[10px] uppercase tracking-[0.3em] text-[#7fd0a0]">
+              кооп-лобби
+            </p>
+            <h2 className="mb-3 font-serif text-3xl font-black tracking-widest text-[#e8c170]">{code}</h2>
+            <p className="mb-4 flex items-center justify-center gap-2 text-sm text-[#c8b896]">
+              <Clock className="h-4 w-4 animate-pulse text-[#7fd0a0]" />
+              {status === 'linked' || status === 'waiting'
+                ? 'Подключено! Ждём, пока хост начнёт игру...'
+                : 'Подключение...'}
+            </p>
+            <p className="text-[10px] leading-snug text-[#8a6d3b]">
+              Вы гость: строите башни вместе с хостом, запускаете волны, сливаете башни.
+              Охотница и перезапуск — у хоста.
+            </p>
+          </>
+        )}
+      </div>
+    </div>
   )
 }

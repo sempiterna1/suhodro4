@@ -1,21 +1,29 @@
 'use client'
 
-// Оболочка прототипа: canvas + игровой цикл + ввод + панели
+// Оболочка прототипа: canvas + игровой цикл + ввод + панели + кооп-мультиплеер
+// Мультиплеер: host-авторитарная модель. Хост симулирует мир и раздаёт
+// снапшоты (10 Гц) через лобби-сервис (socket.io :3003), гость шлёт команды.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Game } from '@/game/engine'
 import { render, type ViewState } from '@/game/render'
 import { MAP_H, MAP_W } from '@/game/config'
+import type { GuestCmd } from '@/game/mp-protocol'
 import type { UiState, Vec } from '@/game/types'
+import { closeLobby, createLobby, getMpSocket, joinLobby, sendCmd, sendSnap } from '@/lib/mp-client'
 import {
   AvatarPanel,
   BuildMenu,
   HelpDialog,
   MergePanel,
+  MpGuestWait,
+  MpLobbyPanel,
   ShopList,
   TopBar,
   TowerPanel,
   WavePanel,
+  type MpRole,
+  type MpStatus,
 } from './Panels'
 import { useToast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
@@ -32,6 +40,25 @@ export default function GameShell() {
   const [mergeFrom, setMergeFrom] = useState<number | null>(null)
   const [helpOpen, setHelpOpen] = useState(false)
   const { toast } = useToast()
+
+  // ─── Мультиплеер ────────────────────────────────────────────────────────
+  const [mpRole, setMpRole] = useState<MpRole>('single')
+  const [mpCode, setMpCode] = useState<string | null>(null)
+  const [mpStatus, setMpStatus] = useState<MpStatus>('off')
+  const [mpHostLeft, setMpHostLeft] = useState(false)
+  const [showInvite, setShowInvite] = useState(false)
+  const [inviteUrl, setInviteUrl] = useState('')
+  const roleRef = useRef<MpRole>('single')
+  const codeRef = useRef<string | null>(null)
+  const mpHostLeftRef = useRef(false)
+  const movedHintShown = useRef(false)
+
+  useEffect(() => {
+    roleRef.current = mpRole
+  }, [mpRole])
+  useEffect(() => {
+    codeRef.current = mpCode
+  }, [mpCode])
 
   const viewRef = useRef<ViewState>({
     hoverTower: null,
@@ -67,6 +94,98 @@ export default function GameShell() {
     if (ctx) ctx.scale(dpr, dpr)
   }, [])
 
+  // ─── Гость: авто-подключение по ссылке /?lobby=КОД ─────────────────────
+  useEffect(() => {
+    const param = new URLSearchParams(window.location.search).get('lobby')
+    if (!param) return
+    const code = param.trim().toUpperCase()
+    let cancelled = false
+    mpHostLeftRef.current = false
+    setMpRole('guest')
+    setMpCode(code)
+    setMpStatus('waiting')
+    joinLobby(code).then((res) => {
+      if (cancelled) return
+      if (res.ok) {
+        if (res.snap) game.applySnap(res.snap)
+        toast({ title: `Лобби ${code}`, description: 'Вы подключились как второй игрок' })
+      } else {
+        toast({ title: 'Не удалось подключиться', description: res.error, variant: 'destructive' })
+        setMpRole('single')
+        setMpCode(null)
+        setMpStatus('off')
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+     
+  }, [])
+
+  // ─── Сокет-события мультиплеера ─────────────────────────────────────────
+  useEffect(() => {
+    const s = getMpSocket()
+    const onSnap = (snap: Parameters<Game['applySnap']>[0]) => {
+      if (roleRef.current !== 'guest') return
+      game.applySnap(snap)
+      if (!mpHostLeftRef.current) setMpStatus('linked')
+    }
+    const onCmd = (cmd: GuestCmd) => {
+      if (roleRef.current !== 'host') return
+      game.applyGuestCmd(cmd)
+    }
+    const onGuestJoined = () => {
+      if (roleRef.current !== 'host') return
+      game.setCoop(true)
+      setMpStatus('linked')
+      toast({ title: 'Друг подключился!', description: 'HP волн ×1.85 (кооп GDD)' })
+    }
+    const onGuestLeft = () => {
+      if (roleRef.current !== 'host') return
+      game.setCoop(false)
+      setMpStatus('waiting')
+      toast({ title: 'Гость отключился', description: 'HP волн вернулись к одиночным' })
+    }
+    const onHostLeft = () => {
+      if (roleRef.current !== 'guest') return
+      mpHostLeftRef.current = true
+      setMpHostLeft(true)
+    }
+    s.on('snap', onSnap)
+    s.on('cmd', onCmd)
+    s.on('guest:joined', onGuestJoined)
+    s.on('guest:left', onGuestLeft)
+    s.on('host:left', onHostLeft)
+    return () => {
+      s.off('snap', onSnap)
+      s.off('cmd', onCmd)
+      s.off('guest:joined', onGuestJoined)
+      s.off('guest:left', onGuestLeft)
+      s.off('host:left', onHostLeft)
+    }
+     
+  }, [game])
+
+  // гость уходит со страницы — освобождаем слот
+  useEffect(() => {
+    const leave = () => {
+      if (roleRef.current === 'guest' && codeRef.current) {
+        getMpSocket().emit('guest:leave')
+      }
+    }
+    window.addEventListener('beforeunload', leave)
+    return () => window.removeEventListener('beforeunload', leave)
+  }, [])
+
+  // ─── Хост: рассылка снапшотов 10 Гц ─────────────────────────────────────
+  useEffect(() => {
+    if (mpRole !== 'host' || !mpCode) return
+    const iv = setInterval(() => {
+      sendSnap(mpCode, game.serialize())
+    }, 100)
+    return () => clearInterval(iv)
+  }, [mpRole, mpCode, game])
+
   // ─── Игровой цикл (единственный, устойчивый к HMR) ────────────────────
   useEffect(() => {
     const canvas = canvasRef.current
@@ -84,7 +203,8 @@ export default function GameShell() {
       viewRef.current.selectedTower = selRef.current
       viewRef.current.mergeFrom = mergeRef.current
       viewRef.current.buildMode = buildModeRef.current
-      game.update(dt)
+      if (roleRef.current === 'guest') game.guestTick(dt)
+      else game.update(dt)
       render(ctx, game, viewRef.current)
       uiAcc += dt
       if (uiAcc >= 0.12) {
@@ -157,14 +277,15 @@ export default function GameShell() {
         }
         const recipe = game.canMerge(from, tid)
         if (recipe) {
-          const res = game.merge(from, tid)
-          if (res.ok) {
+          if (roleRef.current === 'guest') {
+            sendCmd(codeRef.current!, { t: 'merge', a: from, b: tid })
+            toast({ title: `${recipe.glyph} ${recipe.name}`, description: 'Команда слияния отправлена хосту' })
+          } else {
+            game.merge(from, tid)
             toast({ title: `${recipe.glyph} ${recipe.name}`, description: 'Башни слиты в уникальную!' })
-            setMergeFrom(null)
-            setSelectedTower(tid)
-          } else if (res.error) {
-            toast({ title: 'Ошибка', description: res.error, variant: 'destructive' })
           }
+          setMergeFrom(null)
+          setSelectedTower(null)
         } else {
           const other = game.towerById(tid)
           const near = other && game.towerById(from)
@@ -200,6 +321,14 @@ export default function GameShell() {
       setSelectedTower(null)
       setPendingPos({ x: p.x, y: p.y })
     } else {
+      // режим движения — только хост (аватар один)
+      if (roleRef.current === 'guest') {
+        if (!movedHintShown.current) {
+          movedHintShown.current = true
+          toast({ title: 'Охотницей управляет хост', description: 'Стройте башни — это тоже важно!' })
+        }
+        return
+      }
       setPendingPos(null)
       game.moveAvatar(p)
     }
@@ -209,8 +338,15 @@ export default function GameShell() {
   const errToast = (title: string, error?: string) =>
     toast({ title, description: error, variant: 'destructive' })
 
+  const asGuest = roleRef.current === 'guest'
+
   const doBuild = (defId: string) => {
     if (pendingPos === null) return
+    if (asGuest && codeRef.current) {
+      sendCmd(codeRef.current, { t: 'build', x: pendingPos.x, y: pendingPos.y, defId })
+      setPendingPos(null)
+      return
+    }
     const res = game.build(pendingPos.x, pendingPos.y, defId)
     if (res.ok && res.towerId !== undefined) {
       setPendingPos(null)
@@ -220,12 +356,21 @@ export default function GameShell() {
 
   const doUpgrade = () => {
     if (selectedTower === null) return
+    if (asGuest && codeRef.current) {
+      sendCmd(codeRef.current, { t: 'upgrade', id: selectedTower })
+      return
+    }
     const res = game.upgrade(selectedTower)
     if (!res.ok && res.error) errToast('Улучшение недоступно', res.error)
   }
 
   const doSell = () => {
     if (selectedTower === null) return
+    if (asGuest && codeRef.current) {
+      sendCmd(codeRef.current, { t: 'sell', id: selectedTower })
+      setSelectedTower(null)
+      return
+    }
     const res = game.sell(selectedTower)
     if (res.ok) setSelectedTower(null)
     else if (res.error) errToast('Продажа не удалась', res.error)
@@ -236,6 +381,23 @@ export default function GameShell() {
     if (!res.ok && res.error) errToast('Метка добычи', res.error)
   }
 
+  const doStartWave = () => {
+    if (asGuest && codeRef.current) {
+      sendCmd(codeRef.current, { t: 'startWave' })
+      return
+    }
+    game.startWave()
+  }
+
+  const doSpeed = () => {
+    const next = ui.speed === 1 ? 2 : 1
+    if (asGuest && codeRef.current) {
+      sendCmd(codeRef.current, { t: 'setSpeed', speed: next })
+      return
+    }
+    game.setSpeed(next)
+  }
+
   const doRestart = () => {
     game.reset()
     setSelectedTower(null)
@@ -244,16 +406,44 @@ export default function GameShell() {
     toast({ title: 'Новая попытка', description: 'Пограничный тракт снова под атакой.' })
   }
 
+  // ─── Создание лобби (хост) ─────────────────────────────────────────────
+  const doCreateLobby = async () => {
+    const res = await createLobby()
+    if (res.code) {
+      setMpRole('host')
+      setMpCode(res.code)
+      setMpStatus('waiting')
+      setInviteUrl(`${window.location.origin}/?lobby=${res.code}`)
+      setShowInvite(true)
+    } else {
+      errToast('Лобби не создано', res.error)
+    }
+  }
+
+  const doCloseLobby = () => {
+    if (codeRef.current) closeLobby(codeRef.current)
+    game.setCoop(false)
+    setMpRole('single')
+    setMpCode(null)
+    setMpStatus('off')
+    setShowInvite(false)
+  }
+
   const selectedTowerObj = selectedTower !== null ? game.towerById(selectedTower) : undefined
+  const guestWaiting = mpRole === 'guest' && !mpHostLeft
+  const hostLobbyIntro = mpRole === 'host' && ui.phase === 'intro'
 
   return (
     <div className="flex min-h-screen flex-col bg-[#1a140e]">
       <header className="sticky top-0 z-20 border-b-2 border-[#8a6d3b] bg-[#241b12]/95 backdrop-blur">
         <TopBar
           ui={ui}
-          onSpeed={() => game.setSpeed(ui.speed === 1 ? 2 : 1)}
+          onSpeed={doSpeed}
           onHelp={() => setHelpOpen(true)}
           onRestart={doRestart}
+          role={mpRole}
+          mpStatus={mpStatus}
+          onInvite={mpRole === 'host' ? () => setShowInvite(true) : undefined}
         />
       </header>
 
@@ -288,7 +478,7 @@ export default function GameShell() {
               </button>
             )}
 
-            {ui.phase !== 'intro' && (
+            {ui.phase !== 'intro' && mpRole !== 'guest' && (
               <button
                 onClick={doAbility}
                 disabled={Math.ceil(ui.avatar.cooldown) > 0}
@@ -306,8 +496,8 @@ export default function GameShell() {
               </button>
             )}
 
-            {/* Интро */}
-            {ui.phase === 'intro' && (
+            {/* Интро (одиночка / хост без лобби) */}
+            {mpRole !== 'guest' && ui.phase === 'intro' && !showInvite && (
               <div className="absolute inset-0 flex items-center justify-center bg-[#120d08]/88 p-4 backdrop-blur-[2px]">
                 <div className="max-w-md text-center">
                   <p className="mb-1 font-mono text-[10px] uppercase tracking-[0.3em] text-[#8a6d3b]">
@@ -325,14 +515,21 @@ export default function GameShell() {
                     <span className="rounded border border-[#8a6d3b55] px-2 py-1">6 башен</span>
                     <span className="rounded border border-[#8a6d3b55] px-2 py-1">слияние</span>
                     <span className="rounded border border-[#8a6d3b55] px-2 py-1">4 типа брони</span>
-                    <span className="rounded border border-[#8a6d3b55] px-2 py-1">аватар «Охотница»</span>
+                    <span className="rounded border border-[#8a6d3b55] px-2 py-1">кооп по ссылке</span>
                   </div>
-                  <div className="flex justify-center gap-2">
+                  <div className="flex flex-wrap justify-center gap-2">
                     <Button
                       onClick={() => game.beginPreview()}
                       className="h-11 border-2 border-[#b08d57] bg-[#3a2e1c] px-6 font-serif text-base font-bold text-[#ffd700] hover:bg-[#4a3a24]"
                     >
                       ⚙ Начать игру
+                    </Button>
+                    <Button
+                      onClick={doCreateLobby}
+                      variant="outline"
+                      className="h-11 border-2 border-[#7fd0a0] bg-[#1f2d24] px-5 text-sm font-bold text-[#7fd0a0] hover:bg-[#243a2c]"
+                    >
+                      ⚔ Играть вдвоём (кооп)
                     </Button>
                     <Button
                       onClick={() => setHelpOpen(true)}
@@ -346,6 +543,30 @@ export default function GameShell() {
               </div>
             )}
 
+            {/* Лобби хоста (ожидание друга; onStart доступен и без друга) */}
+            {mpRole === 'host' && mpCode && (hostLobbyIntro || showInvite) && (
+              <MpLobbyPanel
+                code={mpCode}
+                inviteUrl={inviteUrl}
+                status={mpStatus}
+                inGame={!hostLobbyIntro}
+                onStart={() => {
+                  setShowInvite(false)
+                  game.beginPreview()
+                }}
+                onClose={hostLobbyIntro ? doCloseLobby : () => setShowInvite(false)}
+                onHelp={() => setHelpOpen(true)}
+              />
+            )}
+
+            {/* Экран ожидания гостя */}
+            {guestWaiting && ui.phase === 'intro' && (
+              <MpGuestWait code={mpCode ?? ''} status={mpStatus} hostLeft={false} />
+            )}
+            {mpRole === 'guest' && mpHostLeft && (
+              <MpGuestWait code={mpCode ?? ''} status={mpStatus} hostLeft />
+            )}
+
             {/* Поражение */}
             {ui.phase === 'over' && (
               <div className="absolute inset-0 flex items-center justify-center bg-[#120d08]/90 p-4">
@@ -355,12 +576,14 @@ export default function GameShell() {
                     Машины ИИ прорвались на волне {ui.wave}. Разлом поглощает тракт...
                   </p>
                   <Stats ui={ui} />
-                  <Button
-                    onClick={doRestart}
-                    className="mt-4 h-10 border-2 border-[#b08d57] bg-[#3a2e1c] px-6 font-serif font-bold text-[#ffd700] hover:bg-[#4a3a24]"
-                  >
-                    Играть снова
-                  </Button>
+                  {mpRole !== 'guest' && (
+                    <Button
+                      onClick={doRestart}
+                      className="mt-4 h-10 border-2 border-[#b08d57] bg-[#3a2e1c] px-6 font-serif font-bold text-[#ffd700] hover:bg-[#4a3a24]"
+                    >
+                      Играть снова
+                    </Button>
+                  )}
                 </div>
               </div>
             )}
@@ -374,12 +597,14 @@ export default function GameShell() {
                     Титан-ИИ уничтожен. В полной версии вас ждут ещё 9 карт и 3 сложности.
                   </p>
                   <Stats ui={ui} />
-                  <Button
-                    onClick={doRestart}
-                    className="mt-4 h-10 border-2 border-[#b08d57] bg-[#3a2e1c] px-6 font-serif font-bold text-[#ffd700] hover:bg-[#4a3a24]"
-                  >
-                    Играть снова
-                  </Button>
+                  {mpRole !== 'guest' && (
+                    <Button
+                      onClick={doRestart}
+                      className="mt-4 h-10 border-2 border-[#b08d57] bg-[#3a2e1c] px-6 font-serif font-bold text-[#ffd700] hover:bg-[#4a3a24]"
+                    >
+                      Играть снова
+                    </Button>
+                  )}
                 </div>
               </div>
             )}
@@ -391,7 +616,7 @@ export default function GameShell() {
 
         {/* Боковая панель */}
         <aside className="flex w-full flex-col gap-3 lg:w-[350px] lg:shrink-0">
-          <WavePanel ui={ui} onStart={() => game.startWave()} />
+          <WavePanel ui={ui} onStart={doStartWave} />
           <div ref={panelRef} className="flex flex-col gap-3">
             {mergeFrom !== null ? (
               <MergePanel game={game} from={mergeFrom} onCancel={() => setMergeFrom(null)} />
@@ -415,7 +640,7 @@ export default function GameShell() {
               <ShopList gold={ui.gold} buildMode={buildMode} />
             )}
           </div>
-          <AvatarPanel ui={ui} onAbility={doAbility} />
+          <AvatarPanel ui={ui} onAbility={doAbility} role={mpRole} />
         </aside>
       </main>
 

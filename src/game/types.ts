@@ -152,6 +152,7 @@ export interface UiState {
   lives: number
   wave: number // номер текущей/следующей волны (1-базный)
   totalWaves: number
+  coop: boolean // подключён второй игрок (HP ×1.85)
   previewRemaining: number
   waveSpawned: number
   waveTotal: number
