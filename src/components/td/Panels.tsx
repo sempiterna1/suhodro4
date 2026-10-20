@@ -377,7 +377,10 @@ export function MergePanel({
           </p>
           <ul className="space-y-1">
             {targets.map((t) => {
-              const other = game.towers[t]!
+              // ВАЖНО: towers — массив, id не равен индексу после слияния/продажи.
+              // Ищем по id, а не game.towers[t] (иначе undefined после сдвига массива).
+              const other = game.towerById(t)
+              if (!other) return null
               const odef = ALL_DEFS[other.defId]
               const recipe = MERGED_TOWERS.find(
                 (m) =>
