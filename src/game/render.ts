@@ -7,7 +7,6 @@ import {
   MAP_W,
   PATH,
   PATH_WIDTH,
-  SPOTS,
   SPOT_RADIUS,
 } from './config'
 import type { Game } from './engine'
@@ -15,10 +14,12 @@ import { pointAtLength } from './engine'
 import type { Vec } from './types'
 
 export interface ViewState {
-  hoverSpot: number | null
-  selectedSpot: number | null
+  hoverTower: number | null
+  selectedTower: number | null
   mergeFrom: number | null
   mouse: Vec | null
+  buildMode: boolean
+  buildGhost: { x: number; y: number; valid: boolean } | null
 }
 
 // ─── Кэш статичного фона ─────────────────────────────────────────────────
@@ -186,7 +187,7 @@ export function render(ctx: CanvasRenderingContext2D, game: Game, view: ViewStat
   ctx.drawImage(bgCache, 0, 0)
 
   drawMergeLinks(ctx, game, view)
-  drawSpots(ctx, game, view)
+  drawBuildGhost(ctx, view)
   drawTowers(ctx, game, view)
   drawCreeps(ctx, game)
   drawEffects(ctx, game)
@@ -195,80 +196,74 @@ export function render(ctx: CanvasRenderingContext2D, game: Game, view: ViewStat
   drawFloats(ctx, game)
 }
 
-function drawSpots(ctx: CanvasRenderingContext2D, game: Game, view: ViewState) {
-  SPOTS.forEach((s, i) => {
-    const built = !!game.towers[i]
-    const hovered = view.hoverSpot === i
-    const selected = view.selectedSpot === i
-    const mergeTarget = view.mergeFrom !== null && game.mergeTargetsFor(view.mergeFrom).includes(i)
-    const mergeSource = view.mergeFrom === i
+function drawBuildGhost(ctx: CanvasRenderingContext2D, view: ViewState) {
+  if (!view.buildMode || !view.buildGhost) return
+  const { x, y, valid } = view.buildGhost
+  const color = valid ? '#e8c170' : '#e05252'
 
-    ctx.save()
-    ctx.translate(s.x, s.y)
+  // подсказка радиуса атаки (средний радиус арсенала)
+  ctx.beginPath()
+  ctx.arc(x, y, 125, 0, Math.PI * 2)
+  ctx.fillStyle = valid ? 'rgba(232,193,112,0.05)' : 'rgba(224,82,82,0.05)'
+  ctx.fill()
+  ctx.strokeStyle = valid ? 'rgba(232,193,112,0.3)' : 'rgba(224,82,82,0.35)'
+  ctx.lineWidth = 1.2
+  ctx.setLineDash([4, 6])
+  ctx.stroke()
+  ctx.setLineDash([])
 
-    if (mergeTarget) {
-      const pulse = 1 + 0.12 * Math.sin(game.time * 6)
-      ctx.beginPath()
-      ctx.arc(0, 0, SPOT_RADIUS + 7 * pulse, 0, Math.PI * 2)
-      ctx.strokeStyle = '#7fd0a0'
-      ctx.lineWidth = 3
-      ctx.stroke()
-      ctx.fillStyle = 'rgba(127,208,160,0.12)'
-      ctx.fill()
-    }
-    if (mergeSource) {
-      ctx.beginPath()
-      ctx.arc(0, 0, SPOT_RADIUS + 8, 0, Math.PI * 2)
-      ctx.strokeStyle = '#e8c170'
-      ctx.lineWidth = 3
-      ctx.setLineDash([6, 4])
-      ctx.stroke()
-      ctx.setLineDash([])
-    }
-
-    if (!built) {
-      ctx.beginPath()
-      ctx.arc(0, 0, SPOT_RADIUS, 0, Math.PI * 2)
-      ctx.fillStyle = '#2e2416'
-      ctx.fill()
-      ctx.lineWidth = 2
-      ctx.strokeStyle = hovered ? '#e8c170' : 'rgba(138,109,59,0.75)'
-      ctx.stroke()
-      // 4 заклёпки
-      ctx.fillStyle = 'rgba(176,141,87,0.55)'
-      for (let k = 0; k < 4; k++) {
-        const a = Math.PI / 4 + (k * Math.PI) / 2
-        ctx.beginPath()
-        ctx.arc(Math.cos(a) * (SPOT_RADIUS - 5), Math.sin(a) * (SPOT_RADIUS - 5), 1.8, 0, Math.PI * 2)
-        ctx.fill()
-      }
-      ctx.beginPath()
-      ctx.arc(0, 0, 4, 0, Math.PI * 2)
-      ctx.fillStyle = hovered ? '#e8c170' : 'rgba(176,141,87,0.4)'
-      ctx.fill()
-      if (hovered) {
-        ctx.font = 'bold 10px Georgia, serif'
-        ctx.fillStyle = '#e8c170'
-        ctx.textAlign = 'center'
-        ctx.fillText('+', 0, -SPOT_RADIUS - 5)
-      }
-    }
-    ctx.restore()
-  })
+  // платформа-призрак
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.beginPath()
+  for (let k = 0; k < 6; k++) {
+    const a = (k / 6) * Math.PI * 2 + Math.PI / 6
+    const px = Math.cos(a) * (SPOT_RADIUS + 1)
+    const py = Math.sin(a) * (SPOT_RADIUS + 1)
+    if (k === 0) ctx.moveTo(px, py)
+    else ctx.lineTo(px, py)
+  }
+  ctx.closePath()
+  ctx.fillStyle = 'rgba(46,36,22,0.75)'
+  ctx.fill()
+  ctx.strokeStyle = color
+  ctx.lineWidth = 2
+  if (!valid) ctx.setLineDash([5, 4])
+  ctx.stroke()
+  ctx.setLineDash([])
+  // плюс/крест
+  ctx.strokeStyle = color
+  ctx.lineWidth = 2
+  ctx.beginPath()
+  ctx.moveTo(-7, 0)
+  ctx.lineTo(7, 0)
+  ctx.moveTo(0, -7)
+  ctx.lineTo(0, 7)
+  ctx.stroke()
+  if (!valid) {
+    // перечёркивание — нельзя
+    ctx.beginPath()
+    ctx.moveTo(-SPOT_RADIUS + 4, -SPOT_RADIUS + 4)
+    ctx.lineTo(SPOT_RADIUS - 4, SPOT_RADIUS - 4)
+    ctx.strokeStyle = '#e05252'
+    ctx.lineWidth = 2.5
+    ctx.stroke()
+  }
+  ctx.restore()
 }
 
 function drawTowers(ctx: CanvasRenderingContext2D, game: Game, view: ViewState) {
   for (const tw of game.towers) {
-    if (!tw) continue
     const def = ALL_DEFS[tw.defId]
-    const s = SPOTS[tw.spot]
-    const hovered = view.hoverSpot === tw.spot || view.selectedSpot === tw.spot
+    const hovered = view.hoverTower === tw.id || view.selectedTower === tw.id
+    const isMergeTarget = view.mergeFrom !== null && game.mergeTargetsFor(view.mergeFrom).includes(tw.id)
+    const isMergeSource = view.mergeFrom === tw.id
 
     // радиус атаки при наведении
     if (hovered) {
       const range = def.range * (tw.level >= 4 ? 1.1 : tw.level >= 2 ? 1.05 : 1)
       ctx.beginPath()
-      ctx.arc(s.x, s.y, range, 0, Math.PI * 2)
+      ctx.arc(tw.x, tw.y, range, 0, Math.PI * 2)
       ctx.fillStyle = 'rgba(232,193,112,0.05)'
       ctx.fill()
       ctx.strokeStyle = 'rgba(232,193,112,0.45)'
@@ -278,9 +273,30 @@ function drawTowers(ctx: CanvasRenderingContext2D, game: Game, view: ViewState) 
       ctx.setLineDash([])
     }
 
+    // пульс-подсветка целей слияния
+    if (isMergeTarget) {
+      const pulse = 1 + 0.12 * Math.sin(game.time * 6)
+      ctx.beginPath()
+      ctx.arc(tw.x, tw.y, SPOT_RADIUS + 7 * pulse, 0, Math.PI * 2)
+      ctx.strokeStyle = '#7fd0a0'
+      ctx.lineWidth = 3
+      ctx.stroke()
+      ctx.fillStyle = 'rgba(127,208,160,0.12)'
+      ctx.fill()
+    }
+    if (isMergeSource) {
+      ctx.beginPath()
+      ctx.arc(tw.x, tw.y, SPOT_RADIUS + 8, 0, Math.PI * 2)
+      ctx.strokeStyle = '#e8c170'
+      ctx.lineWidth = 3
+      ctx.setLineDash([6, 4])
+      ctx.stroke()
+      ctx.setLineDash([])
+    }
+
     // шестигранная бронзовая платформа
     ctx.save()
-    ctx.translate(s.x, s.y)
+    ctx.translate(tw.x, tw.y)
     ctx.beginPath()
     for (let k = 0; k < 6; k++) {
       const a = (k / 6) * Math.PI * 2 + Math.PI / 6
@@ -471,14 +487,15 @@ function drawEffects(ctx: CanvasRenderingContext2D, game: Game) {
 
 function drawAvatar(ctx: CanvasRenderingContext2D, game: Game, view: ViewState) {
   const av = game.avatar
+  const t = game.time
   const near = view.mouse && Math.hypot(view.mouse.x - av.x, view.mouse.y - av.y) < 26
 
   if (near) {
     ctx.beginPath()
     ctx.arc(av.x, av.y, 110, 0, Math.PI * 2)
-    ctx.fillStyle = 'rgba(232,193,112,0.05)'
+    ctx.fillStyle = 'rgba(127,208,160,0.05)'
     ctx.fill()
-    ctx.strokeStyle = 'rgba(232,193,112,0.4)'
+    ctx.strokeStyle = 'rgba(127,208,160,0.45)'
     ctx.lineWidth = 1.2
     ctx.setLineDash([4, 4])
     ctx.stroke()
@@ -487,7 +504,7 @@ function drawAvatar(ctx: CanvasRenderingContext2D, game: Game, view: ViewState) 
 
   // линия движения
   if (av.target) {
-    ctx.strokeStyle = 'rgba(232,193,112,0.5)'
+    ctx.strokeStyle = 'rgba(127,208,160,0.55)'
     ctx.setLineDash([4, 6])
     ctx.lineWidth = 1.5
     ctx.beginPath()
@@ -504,31 +521,72 @@ function drawAvatar(ctx: CanvasRenderingContext2D, game: Game, view: ViewState) 
     ctx.stroke()
   }
 
-  // фигура — латунный круг с луком
+  // тень под героем
   ctx.beginPath()
-  ctx.arc(av.x, av.y, 13, 0, Math.PI * 2)
-  ctx.fillStyle = '#d9a441'
+  ctx.ellipse(av.x, av.y + 13, 11, 4, 0, 0, Math.PI * 2)
+  ctx.fillStyle = 'rgba(0,0,0,0.45)'
   ctx.fill()
-  ctx.lineWidth = 2.5
-  ctx.strokeStyle = '#5a3d1e'
+
+  // герой отличается от башен: бирюзовое живое кольцо + тёмный силуэт
+  // (башни — латунные шестигранники, герой — круглый тёмный с зелёным)
+
+  // мягкая пульсация, когда способность готова
+  if (av.cooldown <= 0) {
+    const glow = 20 + Math.sin(t * 4) * 2.5
+    ctx.beginPath()
+    ctx.arc(av.x, av.y, glow, 0, Math.PI * 2)
+    ctx.strokeStyle = 'rgba(127,208,160,0.35)'
+    ctx.lineWidth = 2
+    ctx.stroke()
+  }
+
+  // вращающееся пунктирное кольцо — «карточка» героя
+  ctx.save()
+  ctx.translate(av.x, av.y)
+  ctx.rotate(-t * 1.4)
+  ctx.beginPath()
+  ctx.arc(0, 0, 17, 0, Math.PI * 2)
+  ctx.setLineDash([9, 7])
+  ctx.strokeStyle = '#7fd0a0'
+  ctx.lineWidth = 2
   ctx.stroke()
-  ctx.font = '14px "Segoe UI Emoji","Noto Color Emoji",sans-serif'
+  ctx.setLineDash([])
+  ctx.restore()
+
+  // тело — тёмный диск с бирюзовой каймой
+  ctx.beginPath()
+  ctx.arc(av.x, av.y, 12, 0, Math.PI * 2)
+  ctx.fillStyle = '#1f2d24'
+  ctx.fill()
+  ctx.lineWidth = 2.2
+  ctx.strokeStyle = '#7fd0a0'
+  ctx.stroke()
+
+  // силуэт охотницы — эмодзи лука на тёмном диске
+  ctx.font = '15px "Segoe UI Emoji","Noto Color Emoji",sans-serif'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   ctx.fillText('🏹', av.x, av.y + 1)
   ctx.textBaseline = 'alphabetic'
 
-  // бейдж уровня
+  // бейдж уровня (бирюзовый, в отличие от латунных пипсов башен)
   ctx.beginPath()
-  ctx.arc(av.x + 10, av.y - 10, 7, 0, Math.PI * 2)
-  ctx.fillStyle = '#3a2e1c'
+  ctx.arc(av.x + 11, av.y - 11, 7.5, 0, Math.PI * 2)
+  ctx.fillStyle = '#1f2d24'
   ctx.fill()
-  ctx.strokeStyle = '#e8c170'
-  ctx.lineWidth = 1
+  ctx.strokeStyle = '#7fd0a0'
+  ctx.lineWidth = 1.2
   ctx.stroke()
+  ctx.font = 'bold 9px Georgia, serif'
+  ctx.fillStyle = '#7fd0a0'
+  ctx.textAlign = 'center'
+  ctx.fillText(String(av.level), av.x + 11, av.y - 7.5)
+
+  // подпись героя
   ctx.font = 'bold 8px Georgia, serif'
-  ctx.fillStyle = '#e8c170'
-  ctx.fillText(String(av.level), av.x + 10, av.y - 7)
+  ctx.fillStyle = 'rgba(127,208,160,0.85)'
+  ctx.textAlign = 'center'
+  ctx.fillText('ОХОТНИЦА', av.x, av.y + 30)
 }
 
 function drawFloats(ctx: CanvasRenderingContext2D, game: Game) {
@@ -550,9 +608,11 @@ function drawFloats(ctx: CanvasRenderingContext2D, game: Game) {
 
 function drawMergeLinks(ctx: CanvasRenderingContext2D, game: Game, view: ViewState) {
   if (view.mergeFrom === null) return
-  const from = SPOTS[view.mergeFrom]
+  const from = game.towerById(view.mergeFrom)
+  if (!from) return
   for (const t of game.mergeTargetsFor(view.mergeFrom)) {
-    const to = SPOTS[t]
+    const to = game.towerById(t)
+    if (!to) continue
     ctx.strokeStyle = 'rgba(127,208,160,0.7)'
     ctx.lineWidth = 2.5
     ctx.setLineDash([8, 6])

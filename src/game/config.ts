@@ -4,7 +4,6 @@
 import type {
   ArmorType,
   AttackType,
-  BuildSpot,
   MergeDef,
   TowerDef,
   Vec,
@@ -60,6 +59,9 @@ export const ATTACK_NAMES: Record<AttackType, string> = {
 export const HP_BASE = 60
 export const hpForWave = (n: number) =>
   HP_BASE * (1 + 0.15 * n) * Math.pow(1.1, n)
+
+// Плейтест v2.1: волны проходятся слишком тяжело — глобальный −30% HP
+export const HP_PLAYTEST_MULT = 0.7
 
 export const goldForKill = (n: number) => Math.floor(2 + n / 3)
 export const waveBonus = (n: number) => 25 + 6 * n
@@ -243,36 +245,16 @@ export const PATH: Vec[] = [
 
 export const PATH_WIDTH = 44
 
-// 24 площадки для стройки (GDD: «24–40 мест на карту»)
-export const SPOTS: BuildSpot[] = [
-  { x: 110, y: 82 },
-  { x: 120, y: 218 },
-  { x: 250, y: 60 },
-  { x: 310, y: 130 },
-  { x: 168, y: 240 },
-  { x: 168, y: 380 },
-  { x: 200, y: 470 },
-  { x: 312, y: 300 },
-  { x: 408, y: 250 },
-  { x: 400, y: 382 },
-  { x: 320, y: 518 },
-  { x: 440, y: 518 },
-  { x: 552, y: 240 },
-  { x: 552, y: 390 },
-  { x: 600, y: 82 },
-  { x: 500, y: 60 },
-  { x: 690, y: 60 },
-  { x: 648, y: 300 },
-  { x: 792, y: 240 },
-  { x: 792, y: 380 },
-  { x: 860, y: 382 },
-  { x: 800, y: 518 },
-  { x: 920, y: 518 },
-  { x: 930, y: 380 },
-]
-
-// Радиус соседства площадок для слияния
-export const NEIGHBOR_DIST = 140
+// ─── Свободная постройка (плейтест v2.1: башни можно ставить где угодно) ──
+export const SPOT_RADIUS = 20
+// Минимальная дистанция от центра тропы (тропа 44px + запас под платформу)
+export const BUILD_PATH_CLEAR = 42
+// Минимальная дистанция между башнями (платформы не перекрываются)
+export const TOWER_GAP = 44
+// Минимальная дистанция от Охотницы при постройке
+export const AVATAR_BUILD_CLEAR = 28
+// Максимальная дистанция между башнями для слияния (аналог «соседних площадок»)
+export const MERGE_DIST = 140
 
 // ─── Волны прототипа: 10 волн до первого босса ──────────────────────────
 // GDD: волны 1–10 — один тип брони за волну, по кругу;
@@ -357,6 +339,3 @@ export const markBonusForLevel = (level: number) => 0.5 + 0.05 * (level - 1)
 // Пауза между волнами (GDD: «Пауза 20 секунд»)
 export const PREVIEW_TIME = 20
 export const FIRST_PREVIEW_TIME = 12
-
-// Достижения прототипа
-export const SPOT_RADIUS = 20

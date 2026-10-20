@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Game } from '@/game/engine'
 import { render, type ViewState } from '@/game/render'
-import { MAP_H, MAP_W, SPOTS } from '@/game/config'
+import { MAP_H, MAP_W } from '@/game/config'
 import type { UiState, Vec } from '@/game/types'
 import {
   AvatarPanel,
@@ -19,29 +19,42 @@ import {
 } from './Panels'
 import { useToast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
-import { Zap } from 'lucide-react'
+import { Zap, Hammer, Footprints } from 'lucide-react'
 
 export default function GameShell() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [game] = useState(() => new Game())
 
   const [ui, setUi] = useState<UiState>(() => game.getUiState())
-  const [selectedSpot, setSelectedSpot] = useState<number | null>(null)
+  const [selectedTower, setSelectedTower] = useState<number | null>(null)
+  const [pendingPos, setPendingPos] = useState<Vec | null>(null)
+  const [buildMode, setBuildMode] = useState(true) // клик по земле — постройка
   const [mergeFrom, setMergeFrom] = useState<number | null>(null)
   const [helpOpen, setHelpOpen] = useState(false)
   const { toast } = useToast()
 
-  const viewRef = useRef<ViewState>({ hoverSpot: null, selectedSpot: null, mergeFrom: null, mouse: null })
+  const viewRef = useRef<ViewState>({
+    hoverTower: null,
+    selectedTower: null,
+    mergeFrom: null,
+    mouse: null,
+    buildMode: true,
+    buildGhost: null,
+  })
   const panelRef = useRef<HTMLDivElement>(null)
-  const selRef = useRef(selectedSpot)
+  const selRef = useRef(selectedTower)
   const mergeRef = useRef(mergeFrom)
+  const buildModeRef = useRef(buildMode)
 
   useEffect(() => {
-    selRef.current = selectedSpot
-  }, [selectedSpot])
+    selRef.current = selectedTower
+  }, [selectedTower])
   useEffect(() => {
     mergeRef.current = mergeFrom
   }, [mergeFrom])
+  useEffect(() => {
+    buildModeRef.current = buildMode
+  }, [buildMode])
 
   // ─── Настройка canvas ( retina ) ───────────────────────────────────────
   useEffect(() => {
@@ -68,8 +81,9 @@ export default function GameShell() {
     const loop = (now: number) => {
       const dt = (now - last) / 1000
       last = now
-      viewRef.current.selectedSpot = selRef.current
+      viewRef.current.selectedTower = selRef.current
       viewRef.current.mergeFrom = mergeRef.current
+      viewRef.current.buildMode = buildModeRef.current
       game.update(dt)
       render(ctx, game, viewRef.current)
       uiAcc += dt
@@ -90,10 +104,10 @@ export default function GameShell() {
 
   // ─── Скролл к панели на мобильных ──────────────────────────────────────
   useEffect(() => {
-    if (window.innerWidth < 1024 && (selectedSpot !== null || mergeFrom !== null)) {
+    if (window.innerWidth < 1024 && (selectedTower !== null || mergeFrom !== null || pendingPos !== null)) {
       panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
     }
-  }, [selectedSpot, mergeFrom])
+  }, [selectedTower, mergeFrom, pendingPos])
 
   // ─── Ввод ──────────────────────────────────────────────────────────────
   const toMap = useCallback((e: React.PointerEvent<HTMLCanvasElement>): Vec => {
@@ -104,56 +118,91 @@ export default function GameShell() {
     }
   }, [])
 
-  const spotAt = (p: Vec) =>
-    SPOTS.findIndex((s) => Math.hypot(s.x - p.x, s.y - p.y) <= 24)
+  const towerAt = (p: Vec): number | null => {
+    for (const tw of game.towers) {
+      if (Math.hypot(tw.x - p.x, tw.y - p.y) <= 24) return tw.id
+    }
+    return null
+  }
 
   const handleMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const p = toMap(e)
     viewRef.current.mouse = p
-    viewRef.current.hoverSpot = spotAt(p) >= 0 ? spotAt(p) : null
+    const tid = towerAt(p)
+    viewRef.current.hoverTower = tid
+    // призрак постройки в режиме стройки (когда не наведены на башню)
+    if (buildModeRef.current && tid === null && ui.phase !== 'intro') {
+      viewRef.current.buildGhost = { x: p.x, y: p.y, valid: game.canPlace(p.x, p.y) === null }
+    } else {
+      viewRef.current.buildGhost = null
+    }
   }
 
   const handleLeave = () => {
     viewRef.current.mouse = null
-    viewRef.current.hoverSpot = null
+    viewRef.current.hoverTower = null
+    viewRef.current.buildGhost = null
   }
 
   const handleTap = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const p = toMap(e)
-    const idx = spotAt(p)
+    const tid = towerAt(p)
 
-    if (idx >= 0) {
+    if (tid !== null) {
       if (mergeFrom !== null) {
         const from = mergeFrom
-        if (from === idx) {
+        if (from === tid) {
           setMergeFrom(null)
           return
         }
-        const recipe = game.canMerge(from, idx)
+        const recipe = game.canMerge(from, tid)
         if (recipe) {
-          const res = game.merge(from, idx)
+          const res = game.merge(from, tid)
           if (res.ok) {
             toast({ title: `${recipe.glyph} ${recipe.name}`, description: 'Башни слиты в уникальную!' })
             setMergeFrom(null)
-            setSelectedSpot(idx)
+            setSelectedTower(tid)
           } else if (res.error) {
             toast({ title: 'Ошибка', description: res.error, variant: 'destructive' })
           }
         } else {
-          toast({ title: 'Слияние невозможно', description: 'Нужны разные башни 3+ ур. на соседних площадках.', variant: 'destructive' })
+          const other = game.towerById(tid)
+          const near = other && game.towerById(from)
+            ? Math.hypot(other.x - game.towerById(from)!.x, other.y - game.towerById(from)!.y) <= 140
+            : false
+          toast({
+            title: 'Слияние невозможно',
+            description: near
+              ? 'Нужны разные башни 3+ ур. в пределах 140 px.'
+              : 'Башня слишком далеко — постройте вторую в пределах 140 px от первой.',
+            variant: 'destructive',
+          })
         }
         return
       }
-      setSelectedSpot((prev) => (prev === idx ? null : idx))
+      setPendingPos(null)
+      setSelectedTower((prev) => (prev === tid ? null : tid))
       return
     }
 
-    // пустое место: в режиме слияния — отмена, иначе двигаем аватар
+    // пустая земля
     if (mergeFrom !== null) {
       setMergeFrom(null)
       return
     }
-    if (ui.phase !== 'intro') game.moveAvatar(p)
+    if (ui.phase === 'intro') return
+    if (buildMode) {
+      const err = game.canPlace(p.x, p.y)
+      if (err) {
+        toast({ title: 'Здесь нельзя строить', description: err, variant: 'destructive' })
+        return
+      }
+      setSelectedTower(null)
+      setPendingPos({ x: p.x, y: p.y })
+    } else {
+      setPendingPos(null)
+      game.moveAvatar(p)
+    }
   }
 
   // ─── Действия панелей ──────────────────────────────────────────────────
@@ -161,23 +210,24 @@ export default function GameShell() {
     toast({ title, description: error, variant: 'destructive' })
 
   const doBuild = (defId: string) => {
-    if (selectedSpot === null) return
-    const res = game.build(selectedSpot, defId)
-    if (res.ok) {
-      // остаёмся на выбранной площадке — откроется панель башни
+    if (pendingPos === null) return
+    const res = game.build(pendingPos.x, pendingPos.y, defId)
+    if (res.ok && res.towerId !== undefined) {
+      setPendingPos(null)
+      setSelectedTower(res.towerId) // откроется панель новой башни
     } else if (res.error) errToast('Не построено', res.error)
   }
 
   const doUpgrade = () => {
-    if (selectedSpot === null) return
-    const res = game.upgrade(selectedSpot)
+    if (selectedTower === null) return
+    const res = game.upgrade(selectedTower)
     if (!res.ok && res.error) errToast('Улучшение недоступно', res.error)
   }
 
   const doSell = () => {
-    if (selectedSpot === null) return
-    const res = game.sell(selectedSpot)
-    if (res.ok) setSelectedSpot(null)
+    if (selectedTower === null) return
+    const res = game.sell(selectedTower)
+    if (res.ok) setSelectedTower(null)
     else if (res.error) errToast('Продажа не удалась', res.error)
   }
 
@@ -188,12 +238,13 @@ export default function GameShell() {
 
   const doRestart = () => {
     game.reset()
-    setSelectedSpot(null)
+    setSelectedTower(null)
+    setPendingPos(null)
     setMergeFrom(null)
     toast({ title: 'Новая попытка', description: 'Пограничный тракт снова под атакой.' })
   }
 
-  const selectedTower = selectedSpot !== null ? game.towers[selectedSpot] : undefined
+  const selectedTowerObj = selectedTower !== null ? game.towerById(selectedTower) : undefined
 
   return (
     <div className="flex min-h-screen flex-col bg-[#1a140e]">
@@ -221,7 +272,22 @@ export default function GameShell() {
               aria-label="Карта игры Пограничный тракт"
             />
 
-            {/* Плавающая кнопка способности */}
+            {/* Плавающие кнопки: режим стройки/движения + способность */}
+            {ui.phase !== 'intro' && (
+              <button
+                onClick={() => setBuildMode((v) => !v)}
+                className={`absolute bottom-3 left-3 flex h-14 w-14 flex-col items-center justify-center rounded-full border-2 shadow-lg transition-transform active:scale-95 ${
+                  buildMode
+                    ? 'border-[#ffd700] bg-[#3a2e1c]/95 text-[#ffd700]'
+                    : 'border-[#7fd0a0] bg-[#1f2d24]/95 text-[#7fd0a0]'
+                }`}
+                title={buildMode ? 'Режим: ПОСТРОЙКА — клик по земле откроет меню башен' : 'Режим: ДВИЖЕНИЕ — клик по земле двигает Охотницу'}
+              >
+                {buildMode ? <Hammer className="h-5 w-5" /> : <Footprints className="h-5 w-5" />}
+                <span className="text-[8px] font-bold uppercase">{buildMode ? 'строить' : 'идти'}</span>
+              </button>
+            )}
+
             {ui.phase !== 'intro' && (
               <button
                 onClick={doAbility}
@@ -319,7 +385,7 @@ export default function GameShell() {
             )}
           </div>
           <p className="mt-2 text-center text-[10px] text-[#8a6d3b]">
-            Клик по площадке — стройка · клик по башне — улучшение/слияние/продажа · клик по земле — движение Охотницы
+            🏗 Клик по земле — постройка (нельзя на тракте и вплотную к башням) · клик по башне — улучшение/слияние/продажа · кнопка «идти» — движение Охотницы
           </p>
         </section>
 
@@ -329,24 +395,24 @@ export default function GameShell() {
           <div ref={panelRef} className="flex flex-col gap-3">
             {mergeFrom !== null ? (
               <MergePanel game={game} from={mergeFrom} onCancel={() => setMergeFrom(null)} />
-            ) : selectedSpot !== null && selectedTower ? (
+            ) : selectedTowerObj ? (
               <TowerPanel
                 game={game}
-                spot={selectedSpot}
+                towerId={selectedTower}
                 gold={ui.gold}
                 nextArmor={ui.nextWaveArmor}
                 onUpgrade={doUpgrade}
                 onSell={doSell}
                 onMergeStart={() => {
-                  setMergeFrom(selectedSpot)
-                  setSelectedSpot(null)
+                  setMergeFrom(selectedTower)
+                  setSelectedTower(null)
                 }}
-                onClose={() => setSelectedSpot(null)}
+                onClose={() => setSelectedTower(null)}
               />
-            ) : selectedSpot !== null ? (
-              <BuildMenu spot={selectedSpot} gold={ui.gold} onBuild={doBuild} onClose={() => setSelectedSpot(null)} />
+            ) : pendingPos ? (
+              <BuildMenu pos={pendingPos} gold={ui.gold} onBuild={doBuild} onClose={() => setPendingPos(null)} />
             ) : (
-              <ShopList gold={ui.gold} />
+              <ShopList gold={ui.gold} buildMode={buildMode} />
             )}
           </div>
           <AvatarPanel ui={ui} onAbility={doAbility} />

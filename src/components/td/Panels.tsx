@@ -5,7 +5,7 @@
 import { ARMOR_COLORS, ARMOR_NAMES, ATTACK_NAMES, AVATAR, MERGED_TOWERS, TOWERS, DAMAGE_MATRIX, LEVEL_MULT, SELL_RATIO, ALL_DEFS } from '@/game/config'
 import { upgradeCost } from '@/game/engine'
 import type { Game } from '@/game/engine'
-import type { ArmorType, AttackType, TowerDef, UiState } from '@/game/types'
+import type { ArmorType, AttackType, TowerDef, UiState, Vec } from '@/game/types'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -169,12 +169,12 @@ export function WavePanel({ ui, onStart }: { ui: UiState; onStart: () => void })
 
 // ─── Меню постройки ──────────────────────────────────────────────────────
 export function BuildMenu({
-  spot,
+  pos,
   gold,
   onBuild,
   onClose,
 }: {
-  spot: number
+  pos: Vec
   gold: number
   onBuild: (defId: string) => void
   onClose: () => void
@@ -183,7 +183,7 @@ export function BuildMenu({
     <div className="rounded-lg border-2 border-[#8a6d3b] bg-[#241b12] p-3">
       <div className="mb-2 flex items-center justify-between">
         <span className="font-serif text-sm font-bold text-[#e8c170]">
-          Постройка · площадка {spot + 1}
+          Постройка · {Math.round(pos.x)}:{Math.round(pos.y)}
         </span>
         <button onClick={onClose} className="text-[#8a6d3b] hover:text-[#e8c170]" aria-label="Закрыть">
           <X className="h-4 w-4" />
@@ -228,7 +228,7 @@ export function BuildMenu({
 // ─── Панель башни ────────────────────────────────────────────────────────
 export function TowerPanel({
   game,
-  spot,
+  towerId,
   gold,
   nextArmor,
   onUpgrade,
@@ -237,7 +237,7 @@ export function TowerPanel({
   onClose,
 }: {
   game: Game
-  spot: number
+  towerId: number | null
   gold: number
   nextArmor: ArmorType
   onUpgrade: () => void
@@ -245,7 +245,7 @@ export function TowerPanel({
   onMergeStart: () => void
   onClose: () => void
 }) {
-  const tw = game.towers[spot]
+  const tw = towerId !== null ? game.towerById(towerId) : undefined
   if (!tw) return null
   const def = ALL_DEFS[tw.defId]
   const dmg = Math.round(def.damage * LEVEL_MULT[tw.level - 1] * 10) / 10
@@ -334,11 +334,11 @@ export function TowerPanel({
       {!def.merged && (
         <p className="mt-1.5 text-[10px] leading-snug text-[#8a6d3b]">
           {canMerge
-            ? `Слияние: выберите соседнюю башню 3+ ур. Рецепты с «${def.name}»: ` +
+            ? `Слияние: выберите башню 3+ ур. в пределах 140 px. Рецепты с «${def.name}»: ` +
               MERGED_TOWERS.filter((m) => m.parents.includes(def.id))
                 .map((m) => m.name)
                 .join(', ')
-            : 'Слияние доступно с 3 уровня для двух разных башен на соседних площадках.'}
+            : 'Слияние доступно с 3 уровня для двух разных башен на расстоянии до 140 px.'}
         </p>
       )}
     </div>
@@ -355,7 +355,7 @@ export function MergePanel({
   from: number
   onCancel: () => void
 }) {
-  const tw = game.towers[from]
+  const tw = game.towerById(from)
   if (!tw) return null
   const def = ALL_DEFS[tw.defId]
   const targets = game.mergeTargetsFor(from)
@@ -373,7 +373,7 @@ export function MergePanel({
       {targets.length > 0 ? (
         <>
           <p className="mb-2 text-xs text-[#c8d8c0]">
-            Коснитесь подсвеченной соседней башни на карте:
+            Коснитесь подсвеченной башни рядом (до 140 px):
           </p>
           <ul className="space-y-1">
             {targets.map((t) => {
@@ -393,12 +393,12 @@ export function MergePanel({
             })}
           </ul>
           <p className="mt-2 text-[10px] text-[#7fd0a099]">
-            Уровень новой башни = меньший из двух. Вторая площадка освободится.
+            Уровень новой башни = меньший из двух. Вторая башня исчезнет, её вложенное золото перейдёт в новую.
           </p>
         </>
       ) : (
         <p className="text-xs text-[#c8d8c0]">
-          Рядом нет подходящих башен: нужны разные башни 3+ уровня на соседних площадках.
+          Рядом нет подходящих башен: нужны разные башни 3+ уровня в пределах 140 px.
         </p>
       )}
     </div>
@@ -449,7 +449,7 @@ export function AvatarPanel({ ui, onAbility }: { ui: UiState; onAbility: () => v
 }
 
 // ─── Список башен (когда ничего не выбрано) ──────────────────────────────
-export function ShopList({ gold }: { gold: number }) {
+export function ShopList({ gold, buildMode }: { gold: number; buildMode: boolean }) {
   return (
     <div className="rounded-lg border-2 border-[#8a6d3b] bg-[#241b12] p-3">
       <p className="mb-2 font-serif text-sm font-bold text-[#e8c170]">Арсенал</p>
@@ -470,7 +470,9 @@ export function ShopList({ gold }: { gold: number }) {
         ))}
       </div>
       <p className="mt-2 text-[10px] text-[#8a6d3b]">
-        Коснитесь площадки на карте, чтобы построить башню.
+        {buildMode
+          ? 'Коснитесь свободной земли на карте, чтобы построить башню. Строить можно почти везде, кроме тракта.'
+          : 'Включите режим «строить» (кнопка слева внизу карты), чтобы выбрать место для башни.'}
       </p>
     </div>
   )
@@ -495,15 +497,16 @@ export function HelpDialog({ open, onOpenChange }: { open: boolean; onOpenChange
             <b className="text-[#e8c170]">Жизни:</b> 20. Обычная машина при прорыве отнимает 1, босс — 10.
           </p>
           <p>
-            <b className="text-[#e8c170]">Управление:</b> клик по площадке — построить; клик по башне — улучшить,
-            слить, продать; клик по земле — двигнуть Охотницу.
+            <b className="text-[#e8c170]">Управление:</b> режим 🏗 «строить» — клик по земле выбирает место для
+            башни (нельзя на тракте, у краёв и вплотную к другим башням); клик по башне — улучшить, слить,
+            продать; кнопка «идти» — клик по земле двигает Охотницу.
           </p>
           <p>
             <b className="text-[#e8c170]">Уровни:</b> покупка копии башни повышает уровень (до 5): урон ×1.9,
             ×3.2, ×5.0, ×7.5. На 5 уровне — способность.
           </p>
           <p>
-            <b className="text-[#e8c170]">Слияние:</b> две РАЗНЫЕ башни 3+ ур. на соседних площадках →
+            <b className="text-[#e8c170]">Слияние:</b> две РАЗНЫЕ башни 3+ ур. на расстоянии до 140 px →
             уникальная башня с гибридной атакой (лучший множитель из двух типов против каждой цели).
           </p>
           <p>

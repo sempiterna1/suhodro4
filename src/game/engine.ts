@@ -6,26 +6,30 @@ import {
   ARMOR_HP_MULT,
   ARMOR_SPEED,
   AVATAR,
+  AVATAR_BUILD_CLEAR,
   BOSS_ESCORTS,
   BOSS_GOLD_MULT,
   BOSS_HP_MULT,
   BOSS_LIVES_COST,
   BOSS_SPEED,
+  BUILD_PATH_CLEAR,
   DAMAGE_MATRIX,
   FIRST_PREVIEW_TIME,
+  HP_PLAYTEST_MULT,
   LEVEL_MULT,
   MAP_H,
   MAP_W,
+  MERGE_DIST,
   MERGE_MIN_LEVEL,
   MERGED_TOWERS,
-  NEIGHBOR_DIST,
   PATH,
   PREVIEW_TIME,
   SELL_RATIO,
-  SPOTS,
+  SPOT_RADIUS,
   START_GOLD,
   START_LIVES,
   TOTAL_WAVES,
+  TOWER_GAP,
   WAVES,
   goldForKill,
   hpForWave,
@@ -86,12 +90,50 @@ export function pointAtLength(d: number): Vec {
   return { x: last.x, y: last.y }
 }
 
-// ─── Соседство площадок (для слияния) ───────────────────────────────────
-export const NEIGHBORS: number[][] = SPOTS.map((a, i) =>
-  SPOTS.map((b, j) => (i !== j && Math.hypot(a.x - b.x, a.y - b.y) <= NEIGHBOR_DIST ? j : -1)).filter(
-    (j) => j >= 0
-  )
-)
+// ─── Свободная постройка: геометрия и проверки места ────────────────────
+/** Расстояние от точки до ломаной тропы (по сегментам) */
+export function distToPath(x: number, y: number): number {
+  let best = Infinity
+  for (let i = 0; i < PATH.length - 1; i++) {
+    const ax = PATH[i].x
+    const ay = PATH[i].y
+    const bx = PATH[i + 1].x - ax
+    const by = PATH[i + 1].y - ay
+    const len2 = bx * bx + by * by || 1
+    const t = Math.max(0, Math.min(1, ((x - ax) * bx + (y - ay) * by) / len2))
+    const d = Math.hypot(x - (ax + bx * t), y - (ay + by * t))
+    if (d < best) best = d
+  }
+  return best
+}
+
+/**
+ * Проверка места для башни при свободной постройке.
+ * null — строить можно, иначе строка с причиной запрета.
+ */
+export function placementError(
+  x: number,
+  y: number,
+  towers: Tower[],
+  avatar: Vec
+): string | null {
+  if (
+    x < SPOT_RADIUS + 2 || x > MAP_W - SPOT_RADIUS - 2 ||
+    y < SPOT_RADIUS + 2 || y > MAP_H - SPOT_RADIUS - 2
+  ) {
+    return 'Слишком близко к краю карты'
+  }
+  if (distToPath(x, y) < BUILD_PATH_CLEAR) {
+    return 'Нельзя строить на тракте'
+  }
+  for (const tw of towers) {
+    if (Math.hypot(tw.x - x, tw.y - y) < TOWER_GAP) return 'Слишком близко к другой башне'
+  }
+  if (Math.hypot(avatar.x - x, avatar.y - y) < AVATAR_BUILD_CLEAR) {
+    return 'Охотница стоит на этом месте'
+  }
+  return null
+}
 
 export function findRecipe(a: string, b: string): MergeDef | null {
   return (
@@ -124,6 +166,7 @@ export function hybridMult(attacks: AttackType[], armor: ArmorType): { mult: num
 export interface ActionResult {
   ok: boolean
   error?: string
+  towerId?: number // id построенной башни (при build)
 }
 
 interface SpawnOrder {
@@ -143,7 +186,7 @@ export class Game {
   previewRemaining = 0
 
   creeps: Creep[] = []
-  towers: (Tower | undefined)[] = new Array(SPOTS.length).fill(undefined)
+  towers: Tower[] = []
   projectiles: Projectile[] = []
   effects: Effect[] = []
   floats: FloatText[] = []
@@ -178,7 +221,7 @@ export class Game {
     this.time = 0
     this.previewRemaining = 0
     this.creeps = []
-    this.towers = new Array(SPOTS.length).fill(undefined)
+    this.towers = []
     this.projectiles = []
     this.effects = []
     this.floats = []
@@ -221,19 +264,31 @@ export class Game {
   }
 
   // ─── Действия игрока ──────────────────────────────────────────────────
-  canBuild(spot: number, defId: string): boolean {
-    const def = ALL_DEFS[defId]
-    return !this.towers[spot] && !!def && this.gold >= def.price
+  towerById(id: number): Tower | undefined {
+    return this.towers.find((t) => t.id === id)
   }
 
-  build(spot: number, defId: string): ActionResult {
+  /** Проверка места для постройки (без цены). null — можно */
+  canPlace(x: number, y: number): string | null {
+    return placementError(x, y, this.towers, this.avatar)
+  }
+
+  canBuild(x: number, y: number, defId: string): boolean {
+    const def = ALL_DEFS[defId]
+    return !!def && this.gold >= def.price && this.canPlace(x, y) === null
+  }
+
+  build(x: number, y: number, defId: string): ActionResult {
     const def = ALL_DEFS[defId]
     if (!def) return { ok: false, error: 'Нет такой башни' }
-    if (this.towers[spot]) return { ok: false, error: 'Место занято' }
+    const placeErr = this.canPlace(x, y)
+    if (placeErr) return { ok: false, error: placeErr }
     if (this.gold < def.price) return { ok: false, error: 'Не хватает золота' }
     this.gold -= def.price
-    this.towers[spot] = {
-      spot,
+    const tower: Tower = {
+      id: this.uid++,
+      x,
+      y,
       defId,
       level: 1,
       invested: def.price,
@@ -241,11 +296,12 @@ export class Game {
       shotCount: 0,
       hammerCd: 0,
     }
-    return { ok: true }
+    this.towers.push(tower)
+    return { ok: true, towerId: tower.id }
   }
 
-  upgrade(spot: number): ActionResult {
-    const tw = this.towers[spot]
+  upgrade(id: number): ActionResult {
+    const tw = this.towerById(id)
     if (!tw) return { ok: false, error: 'Башни нет' }
     if (tw.level >= 5) return { ok: false, error: 'Максимальный уровень' }
     const cost = upgradeCost(ALL_DEFS[tw.defId])
@@ -256,47 +312,55 @@ export class Game {
     return { ok: true }
   }
 
-  sell(spot: number): ActionResult {
-    const tw = this.towers[spot]
+  sell(id: number): ActionResult {
+    const tw = this.towerById(id)
     if (!tw) return { ok: false, error: 'Башни нет' }
     const refund = Math.floor(tw.invested * SELL_RATIO)
     this.gold += refund
-    this.towers[spot] = undefined
-    this.addFloat(SPOTS[spot].x, SPOTS[spot].y - 24, `+${refund}`, '#e8c170')
+    this.towers = this.towers.filter((t) => t.id !== id)
+    this.addFloat(tw.x, tw.y - 24, `+${refund}`, '#e8c170')
     return { ok: true }
   }
 
   canMerge(a: number, b: number): MergeDef | null {
-    const ta = this.towers[a]
-    const tb = this.towers[b]
+    const ta = this.towerById(a)
+    const tb = this.towerById(b)
     if (!ta || !tb || a === b) return null
     if (ta.level < MERGE_MIN_LEVEL || tb.level < MERGE_MIN_LEVEL) return null
     const da = ALL_DEFS[ta.defId]
     const db = ALL_DEFS[tb.defId]
     if (da.merged || db.merged) return null
-    if (!NEIGHBORS[a].includes(b)) return null
+    if (Math.hypot(ta.x - tb.x, ta.y - tb.y) > MERGE_DIST) return null
     return findRecipe(ta.defId, tb.defId)
   }
 
   merge(a: number, b: number): ActionResult {
     const recipe = this.canMerge(a, b)
     if (!recipe) return { ok: false, error: 'Слияние невозможно' }
-    const ta = this.towers[a]!
-    const tb = this.towers[b]!
+    const ta = this.towerById(a)!
+    const tb = this.towerById(b)!
     const level = Math.min(ta.level, tb.level)
     const invested = ta.invested + tb.invested
-    this.towers[b] = { spot: b, defId: recipe.id, level, invested, cooldown: 0, shotCount: 0, hammerCd: 0 }
-    this.towers[a] = undefined
+    tb.defId = recipe.id
+    tb.level = level
+    tb.invested = invested
+    tb.cooldown = 0
+    tb.shotCount = 0
+    tb.hammerCd = 0
+    this.towers = this.towers.filter((t) => t.id !== a)
     this.stats.merges++
-    this.addFloat(SPOTS[b].x, SPOTS[b].y - 30, recipe.glyph + ' ' + recipe.name, '#f0a44a')
-    this.effects.push({ x: SPOTS[b].x, y: SPOTS[b].y, r: 46, born: this.time, dur: 0.8, color: '#f0a44a', kind: 'blast' })
+    this.addFloat(tb.x, tb.y - 30, recipe.glyph + ' ' + recipe.name, '#f0a44a')
+    this.effects.push({ x: tb.x, y: tb.y, r: 46, born: this.time, dur: 0.8, color: '#f0a44a', kind: 'blast' })
     return { ok: true }
   }
 
-  mergeTargetsFor(spot: number): number[] {
-    const tw = this.towers[spot]
+  mergeTargetsFor(id: number): number[] {
+    const tw = this.towerById(id)
     if (!tw || tw.level < MERGE_MIN_LEVEL) return []
-    return NEIGHBORS[spot].filter((n) => !!this.canMerge(spot, n))
+    return this.towers
+      .filter((t) => t.id !== id && Math.hypot(t.x - tw.x, t.y - tw.y) <= MERGE_DIST)
+      .map((t) => t.id)
+      .filter((tid) => !!this.canMerge(id, tid))
   }
 
   moveAvatar(p: Vec) {
@@ -361,13 +425,13 @@ export class Game {
       let gold: number
       let livesCost: number
       if (o.isBoss) {
-        hp = hpForWave(def.n) * BOSS_HP_MULT
+        hp = hpForWave(def.n) * BOSS_HP_MULT * HP_PLAYTEST_MULT
         speed = BOSS_SPEED
         size = 26
         gold = goldForKill(def.n) * BOSS_GOLD_MULT
         livesCost = BOSS_LIVES_COST
       } else {
-        hp = hpForWave(def.n) * ARMOR_HP_MULT[o.armor] * def.hpMult
+        hp = hpForWave(def.n) * ARMOR_HP_MULT[o.armor] * def.hpMult * HP_PLAYTEST_MULT
         speed = ARMOR_SPEED[o.armor]
         size = o.armor === 'light' ? 11 : o.armor === 'medium' ? 13 : 15
         gold = goldForKill(def.n) * def.goldMult
@@ -464,9 +528,8 @@ export class Game {
 
   private updateTowers(dt: number) {
     for (const tw of this.towers) {
-      if (!tw) continue
       const def = ALL_DEFS[tw.defId]
-      const spot = SPOTS[tw.spot]
+      const spot = { x: tw.x, y: tw.y }
       tw.cooldown -= dt
 
       // Пассивка Молотобойца 5 ур.: оглушение группы раз в 8 с
@@ -507,7 +570,7 @@ export class Game {
   }
 
   private fireTower(tw: Tower, def: TowerDefinition, target: Creep, range: number) {
-    const spot = SPOTS[tw.spot]
+    const spot = { x: tw.x, y: tw.y }
     const dmg = def.damage * levelDamageMult(tw.level)
     let burn = def.burn ? { ...def.burn } : undefined
     let splash = def.splash

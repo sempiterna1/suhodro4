@@ -52,7 +52,8 @@ export interface MergeDef {
 
 export type TowerDefinition = TowerDef | MergeDef
 
-export interface BuildSpot {
+/** Позиция для постройки (плейтест v2.1 — свободное размещение) */
+export interface BuildPos {
   x: number
   y: number
 }
@@ -79,7 +80,9 @@ export interface Creep {
 }
 
 export interface Tower {
-  spot: number
+  id: number // уникальный id (для выбора в UI)
+  x: number
+  y: number // свободная позиция на карте
   defId: string
   level: number // 1..5
   invested: number
