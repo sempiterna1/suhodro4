@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Game } from '@/game/engine'
-import { render, type ViewState } from '@/game/render'
+import { render, type Skin, type ViewState } from '@/game/render'
 import { MAP_H, MAP_W } from '@/game/config'
 import type { GuestCmd } from '@/game/mp-protocol'
 import type { UiState, Vec } from '@/game/types'
@@ -39,6 +39,7 @@ export default function GameShell() {
   const [buildMode, setBuildMode] = useState(true) // клик по земле — постройка
   const [mergeFrom, setMergeFrom] = useState<number | null>(null)
   const [helpOpen, setHelpOpen] = useState(false)
+  const [skin, setSkin] = useState<Skin>('steam')
   const { toast } = useToast()
 
   // ─── Мультиплеер ────────────────────────────────────────────────────────
@@ -61,6 +62,7 @@ export default function GameShell() {
   }, [mpCode])
 
   const viewRef = useRef<ViewState>({
+    skin: 'steam',
     hoverTower: null,
     selectedTower: null,
     mergeFrom: null,
@@ -82,6 +84,28 @@ export default function GameShell() {
   useEffect(() => {
     buildModeRef.current = buildMode
   }, [buildMode])
+
+  // ─── Скин башен: ?skin=lol|steam в ссылке, иначе — последний выбор в этом браузере ───
+  useEffect(() => {
+    const param = new URLSearchParams(window.location.search).get('skin')
+    let saved: string | null = null
+    try {
+      saved = window.localStorage.getItem('zr-skin')
+    } catch {
+      // хранилище недоступно (приватный режим) — просто не запоминаем
+    }
+    const initial = param ?? saved
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage доступен только после монтирования
+    if (initial === 'lol' || initial === 'steam') setSkin(initial)
+  }, [])
+  useEffect(() => {
+    viewRef.current.skin = skin
+    try {
+      window.localStorage.setItem('zr-skin', skin)
+    } catch {
+      // не запомнили — не страшно
+    }
+  }, [skin])
 
   // ─── Настройка canvas ( retina ) ───────────────────────────────────────
   useEffect(() => {
@@ -409,6 +433,16 @@ export default function GameShell() {
     setUi(game.getUiState())
   }
 
+  const doInfiniteGold = () => {
+    const next = !game.infiniteGold
+    if (asGuest && codeRef.current) {
+      sendCmd(codeRef.current, { t: 'setInfiniteGold', on: next })
+      return
+    }
+    game.setInfiniteGold(next)
+    setUi(game.getUiState())
+  }
+
   const doRoll = () => {
     if (asGuest && codeRef.current) {
       sendCmd(codeRef.current, { t: 'roll' })
@@ -479,6 +513,9 @@ export default function GameShell() {
           ui={ui}
           onSpeed={doSpeed}
           onPause={doPause}
+          skin={skin}
+          onSkin={() => setSkin((s) => (s === 'lol' ? 'steam' : 'lol'))}
+          onInfiniteGold={doInfiniteGold}
           onHelp={() => setHelpOpen(true)}
           onRestart={doRestart}
           role={mpRole}

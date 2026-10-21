@@ -50,6 +50,9 @@ export function TopBar({
   ui,
   onSpeed,
   onPause,
+  skin,
+  onSkin,
+  onInfiniteGold,
   onHelp,
   onRestart,
   role = 'single',
@@ -59,6 +62,9 @@ export function TopBar({
   ui: UiState
   onSpeed: () => void
   onPause: () => void
+  skin: 'steam' | 'lol'
+  onSkin: () => void
+  onInfiniteGold: () => void
   onHelp: () => void
   onRestart: () => void
   role?: MpRole
@@ -113,8 +119,19 @@ export function TopBar({
           <Heart className="h-3.5 w-3.5 fill-[#e05252]" /> {ui.lives}
         </span>
         <span className="flex items-center gap-1 rounded border border-[#8a6d3b55] bg-[#1a140e] px-2 py-1 font-mono text-sm text-[#e8c170]" title="Золото">
-          <Coins className="h-3.5 w-3.5 text-[#e8c170]" /> {ui.gold}
+          <Coins className="h-3.5 w-3.5 text-[#e8c170]" /> {ui.infiniteGold ? '∞' : ui.gold}
         </span>
+        <Button
+          onClick={onInfiniteGold}
+          variant="outline"
+          size="sm"
+          className={`h-8 px-2 text-xs hover:bg-[#3a2e1c] ${
+            ui.infiniteGold ? 'border-[#ffd700] bg-[#3a2e1c] text-[#ffd700]' : 'border-[#8a6d3b55] bg-transparent text-[#8a6d3b]'
+          }`}
+          title={ui.infiniteGold ? 'Выключить бесконечное золото (вернётся прежнее)' : 'Бесконечное золото — для тестов'}
+        >
+          {ui.infiniteGold ? '∞ золото: вкл' : '∞ золото'}
+        </Button>
         <span className="flex items-center gap-1 rounded border border-[#8a6d3b55] bg-[#1a140e] px-2 py-1 font-mono text-sm text-[#d8cbb0]" title="Волна">
           <Swords className="h-3.5 w-3.5 text-[#b08d57]" /> {Math.min(ui.wave, ui.totalWaves)}/{ui.totalWaves}
         </span>
@@ -141,6 +158,17 @@ export function TopBar({
         >
           {ui.paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
           {ui.paused ? 'Дальше' : 'Пауза'}
+        </Button>
+        <Button
+          onClick={onSkin}
+          variant="outline"
+          size="sm"
+          className={`h-8 px-2 text-xs hover:bg-[#3a2e1c] ${
+            skin === 'lol' ? 'border-[#e9b896] bg-[#3a2e1c] text-[#e9b896]' : 'border-[#8a6d3b] bg-[#2b2115] text-[#d8cbb0]'
+          }`}
+          title={skin === 'lol' ? 'Вернуть стимпанк-башни' : 'Шуточный скин башен'}
+        >
+          {skin === 'lol' ? '⚙ Стимпанк' : '🍆 Скин'}
         </Button>
         <Button
           onClick={onHelp}

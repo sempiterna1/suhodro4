@@ -11,9 +11,13 @@ import {
 } from './config'
 import type { Game } from './engine'
 import { pointAtLength } from './engine'
+import { drawLolProjectile, drawLolTower } from './render-lol'
 import type { Vec } from './types'
 
+export type Skin = 'steam' | 'lol'
+
 export interface ViewState {
+  skin: Skin // 'lol' — шуточный скин башен (render-lol.ts)
   hoverTower: number | null
   selectedTower: number | null
   mergeFrom: number | null
@@ -191,7 +195,7 @@ export function render(ctx: CanvasRenderingContext2D, game: Game, view: ViewStat
   drawTowers(ctx, game, view)
   drawCreeps(ctx, game)
   drawEffects(ctx, game)
-  drawProjectiles(ctx, game)
+  drawProjectiles(ctx, game, view.skin)
   drawAvatar(ctx, game, view)
   drawFloats(ctx, game)
 }
@@ -294,6 +298,12 @@ function drawTowers(ctx: CanvasRenderingContext2D, game: Game, view: ViewState) 
       ctx.setLineDash([])
     }
 
+    if (view.skin === 'lol') {
+      drawLolTower(ctx, tw, def, game.time, hovered)
+      drawLevelPips(ctx, tw.x, tw.y + 22, tw.level)
+      continue
+    }
+
     // шестигранная бронзовая платформа
     ctx.save()
     ctx.translate(tw.x, tw.y)
@@ -336,6 +346,15 @@ function drawTowers(ctx: CanvasRenderingContext2D, game: Game, view: ViewState) 
     }
     ctx.restore()
     ctx.textBaseline = 'alphabetic'
+  }
+}
+
+function drawLevelPips(ctx: CanvasRenderingContext2D, x: number, y: number, level: number) {
+  for (let l = 0; l < level; l++) {
+    ctx.beginPath()
+    ctx.arc(x + (l - (level - 1) / 2) * 7, y, 2.4, 0, Math.PI * 2)
+    ctx.fillStyle = level >= 5 ? '#ffd700' : '#e8c170'
+    ctx.fill()
   }
 }
 
@@ -430,7 +449,7 @@ function drawCreeps(ctx: CanvasRenderingContext2D, game: Game) {
   }
 }
 
-function drawProjectiles(ctx: CanvasRenderingContext2D, game: Game) {
+function drawProjectiles(ctx: CanvasRenderingContext2D, game: Game, skin: Skin) {
   for (const pr of game.projectiles) {
     const tp = pr.targetPos
     if (!tp) continue
@@ -439,6 +458,11 @@ function drawProjectiles(ctx: CanvasRenderingContext2D, game: Game) {
     const d = Math.hypot(dx, dy) || 1
     const ux = dx / d
     const uy = dy / d
+
+    if (skin === 'lol') {
+      drawLolProjectile(ctx, pr, Math.atan2(uy, ux))
+      continue
+    }
 
     if (pr.kind === 'arrow' || pr.kind === 'bolt') {
       const len = pr.kind === 'bolt' ? 12 : 9

@@ -16,6 +16,7 @@ export interface Snap {
   lives: number
   speed: number
   paused: boolean
+  infiniteGold: boolean
   shop: string[]
   time: number
   previewRemaining: number
@@ -25,7 +26,7 @@ export interface Snap {
   stats: { kills: number; leaked: number; goldEarned: number; merges: number; bossKills: number }
   avatar: Pick<AvatarState, 'x' | 'y' | 'target' | 'level' | 'xp' | 'cooldown' | 'attackCd'>
   towers: Array<Pick<Tower, 'id' | 'x' | 'y' | 'defId' | 'level' | 'invested' | 'cooldown' | 'shotCount' | 'hammerCd'
-    | 'rampMult' | 'focusUid' | 'focusStacks'>>
+    | 'rampMult' | 'focusUid' | 'focusStacks' | 'lastShotAt' | 'aim'>>
   creeps: Array<
     Pick<Creep, 'uid' | 'armor' | 'hp' | 'maxHp' | 'speed' | 'dist' | 'size' | 'isBoss'
       | 'burnDps' | 'burnUntil' | 'stunnedUntil' | 'markedUntil' | 'markedBonus'
@@ -48,4 +49,5 @@ export type GuestCmd =
   | { t: 'startWave' }
   | { t: 'setSpeed'; speed: number }
   | { t: 'setPaused'; paused: boolean }
+  | { t: 'setInfiniteGold'; on: boolean }
   | { t: 'roll' }

@@ -119,6 +119,8 @@ export interface Tower {
   rampMult: number // разгон скорости атаки в волне (Автоматический арсенал), 1 = без разгона
   focusUid: number // кого держит луч (Призма вечности)
   focusStacks: number
+  lastShotAt: number // время последнего выстрела (для анимации атаки)
+  aim: number // угол на последнюю цель, рад
 }
 
 export interface Projectile {
@@ -196,6 +198,7 @@ export interface UiState {
   creepsAlive: number
   speed: number
   paused: boolean
+  infiniteGold: boolean // чит для тестов
   shop: string[] // id башен, доступных к постройке (пул арсенала)
   rollCost: number
   time: number

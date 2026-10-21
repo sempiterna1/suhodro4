@@ -689,6 +689,9 @@ export const markBonusForLevel = (level: number) => 0.5 + 0.05 * (level - 1)
 export const SHOP_SIZE = 5
 export const ROLL_COST = 10
 
+// Чит «бесконечное золото» для тестов: золото держится на этом уровне
+export const INFINITE_GOLD = 99999
+
 // Пауза между волнами (GDD: «Пауза 20 секунд»)
 export const PREVIEW_TIME = 20
 export const FIRST_PREVIEW_TIME = 12

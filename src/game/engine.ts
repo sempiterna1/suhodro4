@@ -19,6 +19,7 @@ import {
   DAMAGE_MATRIX,
   FIRST_PREVIEW_TIME,
   HP_PLAYTEST_MULT,
+  INFINITE_GOLD,
   LEVEL_MULT,
   LINE_WIDTH,
   MAP_H,
@@ -213,6 +214,8 @@ export class Game {
   speed = 1
   paused = false // пауза: время стоит, но строить/улучшать/роллить можно
   shop: string[] = [] // башни, доступные к постройке
+  infiniteGold = false // чит для тестов: золото не кончается (переживает рестарт)
+  private goldBeforeCheat = 0
   time = 0
   previewRemaining = 0
 
@@ -265,6 +268,26 @@ export class Game {
     this.spawnQueue = []
     this.waveSpawned = 0
     this.waveTotal = 0
+    if (this.infiniteGold) {
+      this.goldBeforeCheat = this.gold
+      this.refillGold()
+    }
+  }
+
+  /** Чит «бесконечное золото»: при выключении возвращается золото, что было до включения */
+  setInfiniteGold(on: boolean) {
+    if (on === this.infiniteGold) return
+    this.infiniteGold = on
+    if (on) {
+      this.goldBeforeCheat = this.gold
+      this.refillGold()
+    } else {
+      this.gold = this.goldBeforeCheat
+    }
+  }
+
+  private refillGold() {
+    if (this.infiniteGold) this.gold = INFINITE_GOLD
   }
 
   beginPreview() {
@@ -313,6 +336,7 @@ export class Game {
     if (this.phase === 'over' || this.phase === 'won') return { ok: false, error: 'Игра окончена' }
     if (this.gold < ROLL_COST) return { ok: false, error: 'Не хватает золота' }
     this.gold -= ROLL_COST
+    this.refillGold()
     this.shop = rollPool()
     return { ok: true }
   }
@@ -340,6 +364,7 @@ export class Game {
     if (placeErr) return { ok: false, error: placeErr }
     if (this.gold < def.price) return { ok: false, error: 'Не хватает золота' }
     this.gold -= def.price
+    this.refillGold()
     const tower: Tower = {
       id: this.uid++,
       x,
@@ -353,6 +378,8 @@ export class Game {
       rampMult: 1,
       focusUid: 0,
       focusStacks: 0,
+      lastShotAt: -1e9,
+      aim: -Math.PI / 2,
     }
     this.towers.push(tower)
     return { ok: true, towerId: tower.id }
@@ -365,6 +392,7 @@ export class Game {
     const cost = upgradeCost(ALL_DEFS[tw.defId])
     if (this.gold < cost) return { ok: false, error: 'Не хватает золота' }
     this.gold -= cost
+    this.refillGold()
     tw.invested += cost
     tw.level += 1
     return { ok: true }
@@ -450,6 +478,7 @@ export class Game {
   // ─── Обновление мира ──────────────────────────────────────────────────
   update(dtRaw: number) {
     const dt = Math.min(dtRaw, 0.05) * this.speed
+    this.refillGold() // доходы от убийств и продаж в режиме чита тоже не копятся сверх нормы
     if (this.paused) return
     if (this.phase === 'intro' || this.phase === 'over' || this.phase === 'won') return
     this.time += dt
@@ -641,6 +670,9 @@ export class Game {
 
       tw.cooldown = Math.max(MIN_INTERVAL, (def.interval * levelIntervalMult(tw.level)) / tw.rampMult)
       tw.shotCount++
+      tw.lastShotAt = this.time
+      const tp = pointAtLength(inRange[0].dist)
+      tw.aim = Math.atan2(tp.y - tw.y, tp.x - tw.x)
       if (def.ramp) tw.rampMult += def.ramp * (tw.level >= 5 ? 2 : 1)
       this.fireTower(tw, def, inRange, range)
     }
@@ -1013,6 +1045,7 @@ export class Game {
       creepsAlive: this.creeps.length,
       speed: this.speed,
       paused: this.paused,
+      infiniteGold: this.infiniteGold,
       shop: [...this.shop],
       rollCost: ROLL_COST,
       time: this.time,
@@ -1058,6 +1091,7 @@ export class Game {
       lives: this.lives,
       speed: this.speed,
       paused: this.paused,
+      infiniteGold: this.infiniteGold,
       shop: [...this.shop],
       time: this.time,
       previewRemaining: Math.max(0, this.previewRemaining),
@@ -1075,6 +1109,7 @@ export class Game {
         invested: t.invested, cooldown: t.cooldown,
         shotCount: t.shotCount, hammerCd: t.hammerCd,
         rampMult: t.rampMult, focusUid: t.focusUid, focusStacks: t.focusStacks,
+        lastShotAt: t.lastShotAt, aim: t.aim,
       })),
       creeps: this.creeps.map((c) => ({
         uid: c.uid, armor: c.armor, hp: c.hp, maxHp: c.maxHp, speed: c.speed,
@@ -1105,6 +1140,7 @@ export class Game {
     this.lives = s.lives
     this.speed = s.speed
     this.paused = s.paused
+    this.infiniteGold = s.infiniteGold
     this.shop = [...s.shop]
     this.time = s.time
     this.previewRemaining = s.previewRemaining
@@ -1199,6 +1235,9 @@ export class Game {
         return null
       case 'setPaused':
         this.paused = cmd.paused
+        return null
+      case 'setInfiniteGold':
+        this.setInfiniteGold(cmd.on)
         return null
       case 'roll':
         res = this.roll()

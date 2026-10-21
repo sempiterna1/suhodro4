@@ -96,6 +96,35 @@ function check(name: string, ok: boolean, info = '') {
   check('рестарт снимает паузу', !g.paused)
 }
 
+// ─── Бесконечное золото (чит для тестов) ───
+{
+  const g = new Game()
+  g.beginPreview()
+  g.gold = 123
+  g.setInfiniteGold(true)
+  const full = g.gold
+  check('чит включает много золота', full >= 99999, String(full))
+  const b = g.build(300, 200, g.shop[0])
+  g.roll()
+  if (b.ok) g.upgrade(b.towerId!)
+  check('траты не уменьшают золото', b.ok && g.gold === full, String(g.gold))
+  g.reset()
+  check('чит переживает рестарт', g.infiniteGold && g.gold === full)
+  g.setInfiniteGold(false)
+  check('выключение возвращает обычное золото', g.gold === 150, String(g.gold))
+
+  const h = new Game()
+  h.beginPreview()
+  h.gold = 77
+  h.setInfiniteGold(true)
+  h.setInfiniteGold(false)
+  check('выключение без рестарта — золото как до включения', h.gold === 77, String(h.gold))
+  check('гость: бесконечное золото', h.applyGuestCmd({ t: 'setInfiniteGold', on: true }) === null && h.infiniteGold)
+  const gg = new Game()
+  gg.applySnap(h.serialize())
+  check('снапшот переносит чит', gg.infiniteGold)
+}
+
 // ─── Кооп: команды гостя и снапшот ───
 {
   const host = new Game()
