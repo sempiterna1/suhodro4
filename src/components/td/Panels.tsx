@@ -15,7 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { X, Heart, Coins, Swords, Zap, Repeat2, Trash2, ChevronUp, Users, Copy, Check, Clock, Wifi, WifiOff } from 'lucide-react'
+import { X, Heart, Coins, Swords, Zap, Repeat2, Trash2, ChevronUp, Users, Copy, Check, Clock, Wifi, WifiOff, Pause, Play, Dices } from 'lucide-react'
 
 export type MpRole = 'single' | 'host' | 'guest'
 export type MpStatus = 'off' | 'waiting' | 'linked'
@@ -49,6 +49,7 @@ function BrassTag({ color, children }: { color: string; children: React.ReactNod
 export function TopBar({
   ui,
   onSpeed,
+  onPause,
   onHelp,
   onRestart,
   role = 'single',
@@ -57,6 +58,7 @@ export function TopBar({
 }: {
   ui: UiState
   onSpeed: () => void
+  onPause: () => void
   onHelp: () => void
   onRestart: () => void
   role?: MpRole
@@ -124,6 +126,21 @@ export function TopBar({
           title="Скорость игры"
         >
           ×{ui.speed}
+        </Button>
+        <Button
+          onClick={onPause}
+          disabled={ui.phase === 'intro' || ui.phase === 'over' || ui.phase === 'won'}
+          variant="outline"
+          size="sm"
+          className={`h-8 px-2 text-xs hover:bg-[#3a2e1c] ${
+            ui.paused
+              ? 'border-[#ffd700] bg-[#3a2e1c] text-[#ffd700]'
+              : 'border-[#8a6d3b] bg-[#2b2115] text-[#e8c170] hover:text-[#ffd700]'
+          }`}
+          title={ui.paused ? 'Продолжить (P)' : 'Пауза (P)'}
+        >
+          {ui.paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
+          {ui.paused ? 'Дальше' : 'Пауза'}
         </Button>
         <Button
           onClick={onHelp}
@@ -209,18 +226,43 @@ export function WavePanel({ ui, onStart }: { ui: UiState; onStart: () => void })
   )
 }
 
+// ─── Кнопка ролла арсенала ───────────────────────────────────────────────
+function RollButton({ gold, cost, onRoll }: { gold: number; cost: number; onRoll: () => void }) {
+  const affordable = gold >= cost
+  return (
+    <Button
+      onClick={onRoll}
+      disabled={!affordable}
+      variant="outline"
+      size="sm"
+      className="h-8 w-full border-[#b08d57] bg-[#2b2115] text-xs font-bold text-[#e8c170] hover:bg-[#3a2e1c] hover:text-[#ffd700]"
+      title="Заменить все башни арсенала на новые случайные"
+    >
+      <Dices className="h-3.5 w-3.5" /> Ролл арсенала ·{' '}
+      <span className={affordable ? '' : 'text-[#e05252]'}>{cost} золота</span>
+    </Button>
+  )
+}
+
 // ─── Меню постройки ──────────────────────────────────────────────────────
 export function BuildMenu({
   pos,
   gold,
+  shop,
+  rollCost,
   onBuild,
+  onRoll,
   onClose,
 }: {
   pos: Vec
   gold: number
+  shop: string[]
+  rollCost: number
   onBuild: (defId: string) => void
+  onRoll: () => void
   onClose: () => void
 }) {
+  const pool = shop.map((id) => ALL_DEFS[id]).filter((d): d is TowerDef => !!d && !d.merged)
   return (
     <div className="rounded-lg border-2 border-[#8a6d3b] bg-[#241b12] p-3">
       <div className="mb-2 flex items-center justify-between">
@@ -231,9 +273,8 @@ export function BuildMenu({
           <X className="h-4 w-4" />
         </button>
       </div>
-      {/* 15 башен не помещаются по высоте — список прокручивается внутри панели */}
-      <div className="grid max-h-[55vh] grid-cols-2 gap-2 overflow-y-auto pr-1">
-        {TOWERS.map((t) => {
+      <div className="grid grid-cols-2 gap-2">
+        {pool.map((t) => {
           const affordable = gold >= t.price
           return (
             <button
@@ -261,8 +302,12 @@ export function BuildMenu({
           )
         })}
       </div>
+      <div className="mt-2">
+        <RollButton gold={gold} cost={rollCost} onRoll={onRoll} />
+      </div>
       <p className="mt-2 text-[10px] leading-snug text-[#8a6d3b]">
-        Повторная покупка той же башни повышает её уровень (до 5). Продажа возвращает {SELL_RATIO * 100}%.
+        В арсенале {pool.length} случайных башен из {TOWERS.length}. Улучшать уже построенные можно всегда.
+        Продажа возвращает {SELL_RATIO * 100}%.
       </p>
     </div>
   )
@@ -509,12 +554,27 @@ export function AvatarPanel({
 }
 
 // ─── Список башен (когда ничего не выбрано) ──────────────────────────────
-export function ShopList({ gold, buildMode }: { gold: number; buildMode: boolean }) {
+export function ShopList({
+  gold,
+  buildMode,
+  shop,
+  rollCost,
+  onRoll,
+}: {
+  gold: number
+  buildMode: boolean
+  shop: string[]
+  rollCost: number
+  onRoll: () => void
+}) {
+  const pool = shop.map((id) => ALL_DEFS[id]).filter((d): d is TowerDef => !!d && !d.merged)
   return (
     <div className="rounded-lg border-2 border-[#8a6d3b] bg-[#241b12] p-3">
-      <p className="mb-2 font-serif text-sm font-bold text-[#e8c170]">Арсенал</p>
+      <p className="mb-2 font-serif text-sm font-bold text-[#e8c170]">
+        Арсенал <span className="font-sans text-[10px] font-normal text-[#8a6d3b]">· {pool.length} из {TOWERS.length}</span>
+      </p>
       <div className="grid grid-cols-2 gap-1.5">
-        {TOWERS.map((t) => (
+        {pool.map((t) => (
           <div
             key={t.id}
             className={`flex items-center gap-1.5 rounded border border-[#8a6d3b44] bg-[#2b2115] px-2 py-1 ${
@@ -528,6 +588,12 @@ export function ShopList({ gold, buildMode }: { gold: number; buildMode: boolean
             </span>
           </div>
         ))}
+        {pool.length === 0 && (
+          <p className="col-span-2 text-center text-[10px] text-[#8a6d3b]">Арсенал выпадет с началом игры</p>
+        )}
+      </div>
+      <div className="mt-2">
+        <RollButton gold={gold} cost={rollCost} onRoll={onRoll} />
       </div>
       <p className="mt-2 text-[10px] text-[#8a6d3b]">
         {buildMode
@@ -562,8 +628,16 @@ export function HelpDialog({ open, onOpenChange }: { open: boolean; onOpenChange
             продать; кнопка «идти» — клик по земле двигает Охотницу.
           </p>
           <p>
+            <b className="text-[#e8c170]">Арсенал:</b> строить можно только башни из текущего пула — 5 случайных
+            из {TOWERS.length}. Ролл за 10 золота меняет весь пул.
+          </p>
+          <p>
             <b className="text-[#e8c170]">Уровни:</b> покупка копии башни повышает уровень (до 5): урон ×1.9,
             ×3.2, ×5.0, ×7.5. На 5 уровне — способность.
+          </p>
+          <p>
+            <b className="text-[#e8c170]">Пауза:</b> кнопка вверху или клавиша P. На паузе можно строить,
+            улучшать, сливать и роллить.
           </p>
           <p>
             <b className="text-[#e8c170]">Слияние:</b> две РАЗНЫЕ башни 3+ ур. на расстоянии до 140 px →

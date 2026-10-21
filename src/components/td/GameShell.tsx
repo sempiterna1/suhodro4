@@ -398,6 +398,45 @@ export default function GameShell() {
     game.setSpeed(next)
   }
 
+  const doPause = () => {
+    if (ui.phase === 'intro' || ui.phase === 'over' || ui.phase === 'won') return
+    const next = !game.paused
+    if (asGuest && codeRef.current) {
+      sendCmd(codeRef.current, { t: 'setPaused', paused: next })
+      return
+    }
+    game.setPaused(next)
+    setUi(game.getUiState())
+  }
+
+  const doRoll = () => {
+    if (asGuest && codeRef.current) {
+      sendCmd(codeRef.current, { t: 'roll' })
+      return
+    }
+    const res = game.roll()
+    if (!res.ok && res.error) errToast('Ролл недоступен', res.error)
+    setUi(game.getUiState())
+  }
+
+  // клавиша P — пауза (ref, чтобы обработчик видел свежий doPause)
+  const pauseRef = useRef(doPause)
+  useEffect(() => {
+    pauseRef.current = doPause
+  })
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      if (e.code === 'KeyP') {
+        e.preventDefault()
+        pauseRef.current()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   const doRestart = () => {
     game.reset()
     setSelectedTower(null)
@@ -439,6 +478,7 @@ export default function GameShell() {
         <TopBar
           ui={ui}
           onSpeed={doSpeed}
+          onPause={doPause}
           onHelp={() => setHelpOpen(true)}
           onRestart={doRestart}
           role={mpRole}
@@ -461,6 +501,15 @@ export default function GameShell() {
               onContextMenu={(e) => e.preventDefault()}
               aria-label="Карта игры Пограничный тракт"
             />
+
+            {/* Пауза: плашка не перехватывает клики — на паузе можно строить */}
+            {ui.paused && ui.phase !== 'intro' && ui.phase !== 'over' && ui.phase !== 'won' && (
+              <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center">
+                <span className="rounded-md border-2 border-[#ffd700] bg-[#241b12]/90 px-4 py-1 font-serif text-lg font-black tracking-[0.3em] text-[#ffd700] shadow-lg">
+                  ПАУЗА
+                </span>
+              </div>
+            )}
 
             {/* Плавающие кнопки: режим стройки/движения + способность */}
             {ui.phase !== 'intro' && (
@@ -512,7 +561,8 @@ export default function GameShell() {
                     Титана-ИИ.
                   </p>
                   <div className="mb-5 flex flex-wrap justify-center gap-2 text-[10px] text-[#a89a80]">
-                    <span className="rounded border border-[#8a6d3b55] px-2 py-1">6 башен</span>
+                    <span className="rounded border border-[#8a6d3b55] px-2 py-1">15 башен</span>
+                    <span className="rounded border border-[#8a6d3b55] px-2 py-1">ролл арсенала</span>
                     <span className="rounded border border-[#8a6d3b55] px-2 py-1">слияние</span>
                     <span className="rounded border border-[#8a6d3b55] px-2 py-1">4 типа брони</span>
                     <span className="rounded border border-[#8a6d3b55] px-2 py-1">кооп по ссылке</span>
@@ -635,9 +685,17 @@ export default function GameShell() {
                 onClose={() => setSelectedTower(null)}
               />
             ) : pendingPos ? (
-              <BuildMenu pos={pendingPos} gold={ui.gold} onBuild={doBuild} onClose={() => setPendingPos(null)} />
+              <BuildMenu
+                pos={pendingPos}
+                gold={ui.gold}
+                shop={ui.shop}
+                rollCost={ui.rollCost}
+                onBuild={doBuild}
+                onRoll={doRoll}
+                onClose={() => setPendingPos(null)}
+              />
             ) : (
-              <ShopList gold={ui.gold} buildMode={buildMode} />
+              <ShopList gold={ui.gold} buildMode={buildMode} shop={ui.shop} rollCost={ui.rollCost} onRoll={doRoll} />
             )}
           </div>
           <AvatarPanel ui={ui} onAbility={doAbility} role={mpRole} />

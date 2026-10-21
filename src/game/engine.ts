@@ -29,13 +29,16 @@ import {
   MIN_INTERVAL,
   PATH,
   PREVIEW_TIME,
+  ROLL_COST,
   SELL_RATIO,
+  SHOP_SIZE,
   SLAM_STUN,
   SPOT_RADIUS,
   START_GOLD,
   START_LIVES,
   TOTAL_WAVES,
   TOWER_GAP,
+  TOWERS,
   WAVES,
   goldForKill,
   hpForWave,
@@ -179,6 +182,16 @@ export function hybridMult(attacks: AttackType[], armor: ArmorType): { mult: num
   return best
 }
 
+/** Случайный пул арсенала: SHOP_SIZE разных боевых башен */
+export function rollPool(): string[] {
+  const ids = TOWERS.map((t) => t.id)
+  for (let i = ids.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[ids[i], ids[j]] = [ids[j], ids[i]]
+  }
+  return ids.slice(0, SHOP_SIZE)
+}
+
 export interface ActionResult {
   ok: boolean
   error?: string
@@ -198,6 +211,8 @@ export class Game {
   lives = START_LIVES
   wave = 1 // 1-базный номер текущей/следующей волны
   speed = 1
+  paused = false // пауза: время стоит, но строить/улучшать/роллить можно
+  shop: string[] = [] // башни, доступные к постройке
   time = 0
   previewRemaining = 0
 
@@ -234,6 +249,10 @@ export class Game {
     this.lives = START_LIVES
     this.wave = 1
     this.speed = 1
+    this.paused = false
+    // пул выпадает при старте игры (beginPreview), а не здесь: Game создаётся и на сервере
+    // при SSR — случайный пул разошёлся бы с клиентским и сломал гидратацию React
+    this.shop = []
     this.time = 0
     this.previewRemaining = 0
     this.creeps = []
@@ -250,6 +269,7 @@ export class Game {
 
   beginPreview() {
     if (this.phase !== 'intro' && this.phase !== 'wave') return
+    if (this.phase === 'intro' && this.shop.length === 0) this.shop = rollPool() // первый пул бесплатный
     this.phase = 'preview'
     this.previewRemaining = this.wave === 1 ? FIRST_PREVIEW_TIME : PREVIEW_TIME
   }
@@ -279,6 +299,24 @@ export class Game {
     this.speed = s
   }
 
+  setPaused(p: boolean) {
+    this.paused = p
+  }
+
+  /** Открыть в арсенале все башни (тесты, будущий режим отладки) */
+  unlockAllTowers() {
+    this.shop = TOWERS.map((t) => t.id)
+  }
+
+  /** Ролл арсенала: новый пул из SHOP_SIZE башен за ROLL_COST золота */
+  roll(): ActionResult {
+    if (this.phase === 'over' || this.phase === 'won') return { ok: false, error: 'Игра окончена' }
+    if (this.gold < ROLL_COST) return { ok: false, error: 'Не хватает золота' }
+    this.gold -= ROLL_COST
+    this.shop = rollPool()
+    return { ok: true }
+  }
+
   // ─── Действия игрока ──────────────────────────────────────────────────
   towerById(id: number): Tower | undefined {
     return this.towers.find((t) => t.id === id)
@@ -291,12 +329,13 @@ export class Game {
 
   canBuild(x: number, y: number, defId: string): boolean {
     const def = ALL_DEFS[defId]
-    return !!def && this.gold >= def.price && this.canPlace(x, y) === null
+    return !!def && this.shop.includes(defId) && this.gold >= def.price && this.canPlace(x, y) === null
   }
 
   build(x: number, y: number, defId: string): ActionResult {
     const def = ALL_DEFS[defId]
     if (!def) return { ok: false, error: 'Нет такой башни' }
+    if (!this.shop.includes(defId)) return { ok: false, error: 'Этой башни нет в арсенале — сделайте ролл' }
     const placeErr = this.canPlace(x, y)
     if (placeErr) return { ok: false, error: placeErr }
     if (this.gold < def.price) return { ok: false, error: 'Не хватает золота' }
@@ -411,6 +450,7 @@ export class Game {
   // ─── Обновление мира ──────────────────────────────────────────────────
   update(dtRaw: number) {
     const dt = Math.min(dtRaw, 0.05) * this.speed
+    if (this.paused) return
     if (this.phase === 'intro' || this.phase === 'over' || this.phase === 'won') return
     this.time += dt
 
@@ -972,6 +1012,9 @@ export class Game {
       waveTotal: this.waveTotal,
       creepsAlive: this.creeps.length,
       speed: this.speed,
+      paused: this.paused,
+      shop: [...this.shop],
+      rollCost: ROLL_COST,
       time: this.time,
       stats: { ...this.stats },
       avatar: {
@@ -1014,6 +1057,8 @@ export class Game {
       gold: Math.floor(this.gold),
       lives: this.lives,
       speed: this.speed,
+      paused: this.paused,
+      shop: [...this.shop],
       time: this.time,
       previewRemaining: Math.max(0, this.previewRemaining),
       waveSpawned: this.waveSpawned,
@@ -1059,6 +1104,8 @@ export class Game {
     this.gold = s.gold
     this.lives = s.lives
     this.speed = s.speed
+    this.paused = s.paused
+    this.shop = [...s.shop]
     this.time = s.time
     this.previewRemaining = s.previewRemaining
     this.waveSpawned = s.waveSpawned
@@ -1092,6 +1139,7 @@ export class Game {
    */
   guestTick(dtRaw: number) {
     const dt = Math.min(dtRaw, 0.05) * this.speed
+    if (this.paused) return
     if (this.phase === 'intro' || this.phase === 'over' || this.phase === 'won') return
     this.time += dt
     if (this.phase === 'preview') this.previewRemaining = Math.max(0, this.previewRemaining - dt)
@@ -1149,6 +1197,12 @@ export class Game {
       case 'setSpeed':
         this.speed = cmd.speed
         return null
+      case 'setPaused':
+        this.paused = cmd.paused
+        return null
+      case 'roll':
+        res = this.roll()
+        break
       default:
         return 'Неизвестная команда'
     }

@@ -15,6 +15,8 @@ export interface Snap {
   gold: number
   lives: number
   speed: number
+  paused: boolean
+  shop: string[]
   time: number
   previewRemaining: number
   waveSpawned: number
@@ -45,3 +47,5 @@ export type GuestCmd =
   | { t: 'merge'; a: number; b: number }
   | { t: 'startWave' }
   | { t: 'setSpeed'; speed: number }
+  | { t: 'setPaused'; paused: boolean }
+  | { t: 'roll' }

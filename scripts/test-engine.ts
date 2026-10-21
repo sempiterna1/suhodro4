@@ -3,6 +3,8 @@ import { Game } from '../src/game/engine'
 import { WAVES, hpForWave, ARMOR_HP_MULT } from '../src/game/config'
 
 const g = new Game()
+
+g.unlockAllTowers() // арсенал случаен — тестам нужны все башни
 console.log('phase:', g.phase, 'gold:', g.gold, 'lives:', g.lives)
 
 g.beginPreview()
@@ -42,6 +44,7 @@ console.log('build(300,300):', r1.ok, '| build(301,301):', r2.ok, r2.error, '| b
 
 // проверка слияния при свободной постройке (Лучница + Пиромант рядом, оба 3 ур.)
 const g2 = new Game()
+g2.unlockAllTowers() // арсенал случаен — тестам нужны все башни
 const bA = g2.build(285, 260, 'archer')
 const bB = g2.build(285, 340, 'pyro')
 const idA = bA.towerId!

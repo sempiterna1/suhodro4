@@ -195,6 +195,9 @@ export interface UiState {
   waveTotal: number
   creepsAlive: number
   speed: number
+  paused: boolean
+  shop: string[] // id башен, доступных к постройке (пул арсенала)
+  rollCost: number
   time: number
   stats: GameStats
   avatar: {

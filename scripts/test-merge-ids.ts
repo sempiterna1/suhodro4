@@ -5,6 +5,8 @@
 import { Game } from '../src/game/engine'
 
 const g = new Game()
+
+g.unlockAllTowers() // арсенал случаен — тестам нужны все башни
 g.beginPreview()
 g.gold = 99999
 
