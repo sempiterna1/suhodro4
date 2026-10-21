@@ -7,6 +7,8 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   reactStrictMode: false,
+  // значок Next.js в углу (только в разработке) ложился на HUD Охотницы
+  devIndicators: false,
 };
 
 export default nextConfig;
