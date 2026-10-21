@@ -45,11 +45,17 @@ const pairs = new Set(MERGED_TOWERS.map((m) => [...m.parents].sort().join('+')))
 check('пары родителей не повторяются', pairs.size === MERGED_TOWERS.length)
 
 // ─── каждая башня и слитая башня наносит урон (1 и 5 ур.) ───
+// Проверяем урон, а не убийства: одиночная слабая башня 1 ур. (Ледяной шпиль) может не добить
+// ни одного врага — HP видов врагов случайно отличаются на ±15%, и тест «мигал».
 for (const def of [...TOWERS, ...MERGED_TOWERS]) {
   for (const level of [1, 5]) {
     const g = setup(def.id, level)
-    run(g, 40)
-    check(`${def.name} ур.${level} убивает`, g.stats.kills > 0, `убийств ${g.stats.kills}, ошибок нет`)
+    let damaged = false
+    for (let t = 0; t < 40; t += 0.05) {
+      g.update(0.05)
+      if (g.creeps.some((c) => c.hp < c.maxHp)) damaged = true
+    }
+    check(`${def.name} ур.${level} наносит урон`, damaged || g.stats.kills > 0, `убийств ${g.stats.kills}, ошибок нет`)
   }
 }
 

@@ -15,7 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { X, Heart, Coins, Swords, Zap, Repeat2, Trash2, ChevronUp, Users, Copy, Check, Clock, Wifi, WifiOff, Pause, Play, Dices } from 'lucide-react'
+import { X, Heart, Coins, Swords, Zap, Repeat2, Trash2, ChevronUp, Users, Copy, Check, Clock, Wifi, WifiOff, Pause, Play, Dices, Maximize2, Minimize2 } from 'lucide-react'
 
 export type MpRole = 'single' | 'host' | 'guest'
 export type MpStatus = 'off' | 'waiting' | 'linked'
@@ -113,6 +113,8 @@ export function TopBar({
   skin,
   onSkin,
   onInfiniteGold,
+  fullscreen,
+  onFullscreen,
   onHelp,
   onRestart,
   role = 'single',
@@ -125,6 +127,8 @@ export function TopBar({
   skin: 'steam' | 'lol'
   onSkin: () => void
   onInfiniteGold: () => void
+  fullscreen: boolean
+  onFullscreen: () => void
   onHelp: () => void
   onRestart: () => void
   role?: MpRole
@@ -204,6 +208,9 @@ export function TopBar({
         </ToolButton>
         <ToolButton onClick={onRestart} quiet title="Начать заново (новая карта)">
           Заново
+        </ToolButton>
+        <ToolButton onClick={onFullscreen} active={fullscreen} title={fullscreen ? 'Выйти из полноэкранного режима' : 'На весь экран'}>
+          {fullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
         </ToolButton>
       </div>
     </div>
@@ -530,8 +537,8 @@ export function AvatarPanel({
   )
 }
 
-// ─── Арсенал (когда ничего не выбрано): карточки перетаскиваются на клетку ─
-export function ShopList({
+// ─── Док арсенала под полем: карточки в ряд перетаскиваются на клетку ────
+export function ArsenalDock({
   gold,
   shop,
   rollCost,
@@ -550,11 +557,14 @@ export function ShopList({
 }) {
   const pool = shop.map((id) => ALL_DEFS[id]).filter((d): d is TowerDef => !!d && !d.merged)
   return (
-    <div className="rounded-lg border-2 border-[#8a6d3b] bg-[#241b12] p-3">
-      <p className="mb-2 font-serif text-sm font-bold text-[#e8c170]">
-        Арсенал <span className="font-sans text-[10px] font-normal text-[#8a6d3b]">· {pool.length} из {TOWERS.length}</span>
-      </p>
-      <div className="grid grid-cols-2 gap-1.5">
+    <div className="flex flex-col gap-2 rounded-lg border-2 border-[#8a6d3b] bg-[#241b12] p-2 sm:flex-row sm:items-stretch">
+      <div className="flex shrink-0 items-center justify-between gap-2 sm:w-24 sm:flex-col sm:items-start sm:justify-center">
+        <p className="font-serif text-sm font-bold text-[#e8c170]">Арсенал</p>
+        <p className="text-[10px] leading-tight text-[#8a6d3b]">
+          {pool.length} из {TOWERS.length} · тащите на клетку
+        </p>
+      </div>
+      <div className="grid min-w-0 flex-1 grid-cols-2 gap-1.5 sm:grid-cols-5">
         {pool.map((t) => {
           const affordable = gold >= t.price
           const usable = canBuild && affordable
@@ -566,36 +576,64 @@ export function ShopList({
               disabled={!usable}
               onPointerDown={(e) => usable && onPick(t.id, e)}
               // перетаскивание пальцем не должно прокручивать страницу
-              style={{ touchAction: 'none' }}
-              className={`flex items-center gap-1.5 rounded border px-2 py-1 text-left transition-colors ${
+              style={{ touchAction: 'none', borderLeftColor: ATTACK_COLORS[t.attack] }}
+              className={`flex min-w-0 items-center gap-2 rounded border border-l-4 px-2 py-1.5 text-left transition-colors ${
                 picked
                   ? 'border-[#ffd700] bg-[#3a2e1c] ring-1 ring-[#ffd700]'
                   : usable
-                    ? 'cursor-grab border-[#8a6d3b66] bg-[#2b2115] hover:border-[#e8c170] active:cursor-grabbing'
+                    ? 'cursor-grab border-[#8a6d3b66] bg-[#2b2115] hover:border-[#e8c170] hover:bg-[#3a2e1c] active:cursor-grabbing'
                     : 'cursor-not-allowed border-[#8a6d3b33] bg-[#221a10] opacity-50'
               }`}
-              title={`${t.name} — ${t.role}. Радиус ${t.range}. Перетащите на клетку или нажмите и выберите клетку`}
+              title={`${t.name} — ${t.role}. ${ATTACK_NAMES[t.attack]} атака, радиус ${t.range}. Перетащите на клетку или нажмите и выберите клетку`}
             >
-              <span className="text-base leading-none">{t.glyph}</span>
-              <span className="min-w-0 flex-1 truncate text-[10px] text-[#d8cbb0]">{t.name}</span>
-              <Price value={t.price} ok={affordable} className="text-[10px]" />
+              <span className="text-xl leading-none">{t.glyph}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[11px] font-semibold text-[#e8c170]">{t.name}</span>
+                <span className="flex items-center justify-between gap-1">
+                  <span className="truncate text-[9px] text-[#a89a80]">{t.role}</span>
+                  <Price value={t.price} ok={affordable} className="text-[10px]" />
+                </span>
+              </span>
             </button>
           )
         })}
         {pool.length === 0 && (
-          <p className="col-span-2 text-center text-[10px] text-[#8a6d3b]">Арсенал выпадет с началом игры</p>
+          <p className="col-span-2 self-center text-center text-[10px] text-[#8a6d3b] sm:col-span-5">
+            Арсенал выпадет с началом игры
+          </p>
         )}
       </div>
-      <div className="mt-2">
+      <div className="shrink-0 sm:w-36">
         <RollButton gold={gold} cost={rollCost} onRoll={onRoll} />
       </div>
-      <p className="mt-2 text-[10px] text-[#8a6d3b]">
-        Перетащите башню на свободную клетку — пока тянете, видно радиус атаки. Или нажмите башню, потом клетку.
-        Повышать уровень и сливать — кликом по башне на поле. Продажа возвращает {SELL_RATIO * 100}%.
-      </p>
     </div>
   )
 }
+
+// ─── Подсказки в правой колонке, когда ничего не выбрано ────────────────
+export function TipsPanel() {
+  const tips: [string, string][] = [
+    ['🏗', 'Перетащите башню из арсенала на свободную клетку. Или нажмите башню, потом клетку; Esc — отмена.'],
+    ['⬆', 'Клик по башне на поле — улучшить, слить или продать.'],
+    ['🔁', 'Две разные башни 3+ уровня рядом сливаются в уникальную — рецепты в «Как играть».'],
+    ['🏹', 'Клик по пустой земле — Охотница идёт туда. Метка добычи — кнопка в углу поля.'],
+    ['⏸', 'P — пауза. На паузе можно строить и роллить арсенал.'],
+  ]
+  return (
+    <div className="rounded-lg border-2 border-[#8a6d3b] bg-[#241b12] p-3">
+      <p className="mb-2 font-serif text-sm font-bold text-[#e8c170]">Подсказки</p>
+      <ul className="space-y-1.5">
+        {tips.map(([icon, text]) => (
+          <li key={icon} className="flex gap-2 text-[11px] leading-snug text-[#c8b896]">
+            <span className="w-4 shrink-0 text-center">{icon}</span>
+            <span>{text}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 
 // ─── Справка ─────────────────────────────────────────────────────────────
 export function HelpDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {

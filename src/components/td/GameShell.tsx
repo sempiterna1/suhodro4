@@ -13,12 +13,13 @@ import type { GuestCmd } from '@/game/mp-protocol'
 import type { UiState, Vec } from '@/game/types'
 import { closeLobby, createLobby, getMpSocket, joinLobby, sendCmd, sendSnap } from '@/lib/mp-client'
 import {
+  ArsenalDock,
   AvatarPanel,
   HelpDialog,
   MergePanel,
   MpGuestWait,
   MpLobbyPanel,
-  ShopList,
+  TipsPanel,
   TopBar,
   TowerPanel,
   WavePanel,
@@ -564,13 +565,51 @@ export default function GameShell() {
     setShowInvite(false)
   }
 
+  // ─── Поле вписывается в свободное место с сохранением пропорций 16:10 ──
+  const fieldRef = useRef<HTMLElement>(null)
+  const [stage, setStage] = useState({ w: MAP_W, h: MAP_H })
+  useEffect(() => {
+    const el = fieldRef.current
+    if (!el) return
+    const fit = () => {
+      const r = el.getBoundingClientRect()
+      const desktop = window.matchMedia('(min-width: 1024px)').matches
+      // на десктопе — по меньшей из сторон; на телефоне — по ширине (страница прокручивается)
+      const w = desktop ? Math.min(r.width, r.height * (MAP_W / MAP_H)) : r.width
+      setStage({ w: Math.floor(w), h: Math.floor((w * MAP_H) / MAP_W) })
+    }
+    fit()
+    const ro = new ResizeObserver(fit)
+    ro.observe(el)
+    window.addEventListener('resize', fit)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener('resize', fit)
+    }
+  }, [])
+
+  // ─── Полноэкранный режим браузера ─────────────────────────────────────
+  const [fullscreen, setFullscreen] = useState(false)
+  useEffect(() => {
+    const onChange = () => setFullscreen(!!document.fullscreenElement)
+    document.addEventListener('fullscreenchange', onChange)
+    return () => document.removeEventListener('fullscreenchange', onChange)
+  }, [])
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
+    else document.documentElement.requestFullscreen().catch(() => errToast('Полный экран недоступен', 'Браузер не разрешил'))
+  }
+
   const selectedTowerObj = selectedTower !== null ? game.towerById(selectedTower) : undefined
   const guestWaiting = mpRole === 'guest' && !mpHostLeft
   const hostLobbyIntro = mpRole === 'host' && ui.phase === 'intro'
+  const canBuild = ui.phase !== 'intro' && ui.phase !== 'over' && ui.phase !== 'won'
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#1a140e]">
-      <header className="sticky top-0 z-20 border-b-2 border-[#8a6d3b] bg-[#241b12]/95 backdrop-blur">
+    // На десктопе — ровно экран без прокрутки: шапка, поле с доком арсенала, правая колонка.
+    // На телефоне — столбиком: поле, арсенал, информация (страница прокручивается).
+    <div className="flex min-h-dvh flex-col bg-[#120d08] lg:h-dvh lg:overflow-hidden">
+      <header className="z-20 shrink-0 border-b-2 border-[#8a6d3b] bg-[#241b12]/95">
         <TopBar
           ui={ui}
           onSpeed={doSpeed}
@@ -578,6 +617,8 @@ export default function GameShell() {
           skin={skin}
           onSkin={() => setSkin((s) => (s === 'lol' ? 'steam' : 'lol'))}
           onInfiniteGold={doInfiniteGold}
+          fullscreen={fullscreen}
+          onFullscreen={toggleFullscreen}
           onHelp={() => setHelpOpen(true)}
           onRestart={doRestart}
           role={mpRole}
@@ -586,182 +627,193 @@ export default function GameShell() {
         />
       </header>
 
-      <main className="mx-auto flex w-full max-w-[1400px] flex-1 flex-col gap-4 p-3 lg:flex-row lg:p-4">
-        {/* Поле боя */}
-        <section className="min-w-0 flex-1">
-          <div className="relative overflow-hidden rounded-lg border-2 border-[#8a6d3b] shadow-[0_0_24px_rgba(0,0,0,0.6)]">
-            <canvas
-              ref={canvasRef}
-              className="block h-auto w-full select-none"
-              // pixelated — браузер не размывает пиксели при растягивании под экран
-              style={{ aspectRatio: `${MAP_W} / ${MAP_H}`, touchAction: 'manipulation', imageRendering: 'pixelated' }}
-              onPointerMove={handleMove}
-              onPointerLeave={handleLeave}
-              onPointerDown={handleTap}
-              onContextMenu={(e) => e.preventDefault()}
-              aria-label="Карта игры Пограничный тракт"
-            />
-
-            {/* Пауза: плашка не перехватывает клики — на паузе можно строить */}
-            {ui.paused && ui.phase !== 'intro' && ui.phase !== 'over' && ui.phase !== 'won' && (
-              <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center">
-                <span className="rounded-md border-2 border-[#ffd700] bg-[#241b12]/90 px-4 py-1 font-serif text-lg font-black tracking-[0.3em] text-[#ffd700] shadow-lg">
-                  ПАУЗА
-                </span>
-              </div>
-            )}
-
-            {/* Подсказка, пока башня выбрана для постройки */}
-            {armed && (
-              <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
-                <span className="rounded-md border border-[#e8c170] bg-[#241b12]/90 px-3 py-1 text-xs text-[#e8c170] shadow-lg">
-                  {ALL_DEFS[armed]?.glyph} {ALL_DEFS[armed]?.name}: нажмите на клетку · Esc или правая кнопка — отмена
-                </span>
-              </div>
-            )}
-
-            {/* Плавающая кнопка способности */}
-            {ui.phase !== 'intro' && mpRole !== 'guest' && (
-              <button
-                onClick={doAbility}
-                disabled={Math.ceil(ui.avatar.cooldown) > 0}
-                className={`absolute bottom-3 right-3 flex h-14 w-14 flex-col items-center justify-center rounded-full border-2 font-mono text-lg font-bold shadow-lg transition-transform active:scale-95 ${
-                  ui.avatar.cooldown > 0
-                    ? 'border-[#8a6d3b66] bg-[#241b12]/80 text-[#8a6d3b]'
-                    : 'border-[#ffd700] bg-[#3a2e1c]/95 text-[#ffd700] hover:scale-105'
-                }`}
-                title="Метка добычи"
-              >
-                <Zap className="h-5 w-5" />
-                {ui.avatar.cooldown > 0 && (
-                  <span className="text-[10px]">{Math.ceil(ui.avatar.cooldown)}</span>
-                )}
-              </button>
-            )}
-
-            {/* Интро (одиночка / хост без лобби) */}
-            {mpRole !== 'guest' && ui.phase === 'intro' && !showInvite && (
-              <div className="absolute inset-0 flex items-center justify-center bg-[#120d08]/88 p-4 backdrop-blur-[2px]">
-                <div className="max-w-md text-center">
-                  <p className="mb-1 font-mono text-[10px] uppercase tracking-[0.3em] text-[#8a6d3b]">
-                    стимпанк · tower defense · прототип
-                  </p>
-                  <h1 className="mb-3 font-serif text-3xl font-black tracking-wide text-[#e8c170] sm:text-4xl">
-                    ЖЕЛЕЗНЫЙ РАЗЛОМ
-                  </h1>
-                  <p className="mb-4 text-xs leading-relaxed text-[#c8b896] sm:text-sm">
-                    Новый минерал пробудил древний ИИ. Его машины маршируют по Пограничному тракту.
-                    Ставьте башни, сливайте их в уникальные и продержитесь <b className="text-[#e8c170]">10 волн</b> до
-                    Титана-ИИ.
-                  </p>
-                  <div className="mb-5 flex flex-wrap justify-center gap-2 text-[10px] text-[#a89a80]">
-                    <span className="rounded border border-[#8a6d3b55] px-2 py-1">15 башен</span>
-                    <span className="rounded border border-[#8a6d3b55] px-2 py-1">ролл арсенала</span>
-                    <span className="rounded border border-[#8a6d3b55] px-2 py-1">слияние</span>
-                    <span className="rounded border border-[#8a6d3b55] px-2 py-1">4 типа брони</span>
-                    <span className="rounded border border-[#8a6d3b55] px-2 py-1">кооп по ссылке</span>
-                  </div>
-                  <div className="flex flex-wrap justify-center gap-2">
-                    <Button
-                      onClick={() => game.beginPreview()}
-                      className="h-11 border-2 border-[#b08d57] bg-[#3a2e1c] px-6 font-serif text-base font-bold text-[#ffd700] hover:bg-[#4a3a24]"
-                    >
-                      ⚙ Начать игру
-                    </Button>
-                    <Button
-                      onClick={doCreateLobby}
-                      variant="outline"
-                      className="h-11 border-2 border-[#7fd0a0] bg-[#1f2d24] px-5 text-sm font-bold text-[#7fd0a0] hover:bg-[#243a2c]"
-                    >
-                      ⚔ Играть вдвоём (кооп)
-                    </Button>
-                    <Button
-                      onClick={() => setHelpOpen(true)}
-                      variant="outline"
-                      className="h-11 border-[#8a6d3b] bg-transparent px-4 text-sm text-[#d8cbb0] hover:bg-[#3a2e1c]"
-                    >
-                      Как играть
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Лобби хоста (ожидание друга; onStart доступен и без друга) */}
-            {mpRole === 'host' && mpCode && (hostLobbyIntro || showInvite) && (
-              <MpLobbyPanel
-                code={mpCode}
-                inviteUrl={inviteUrl}
-                status={mpStatus}
-                inGame={!hostLobbyIntro}
-                onStart={() => {
-                  setShowInvite(false)
-                  game.beginPreview()
-                }}
-                onClose={hostLobbyIntro ? doCloseLobby : () => setShowInvite(false)}
-                onHelp={() => setHelpOpen(true)}
+      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        {/* Поле + док арсенала */}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 p-2">
+          <section ref={fieldRef} className="flex min-h-0 flex-1 items-center justify-center">
+            <div
+              className="relative shrink-0 overflow-hidden rounded-md border-2 border-[#8a6d3b] shadow-[0_0_32px_rgba(0,0,0,0.7)]"
+              style={{ width: stage.w, height: stage.h }}
+            >
+              <canvas
+                ref={canvasRef}
+                className="absolute inset-0 block h-full w-full select-none"
+                // pixelated — браузер не размывает пиксели при растягивании под экран
+                style={{ touchAction: 'manipulation', imageRendering: 'pixelated' }}
+                onPointerMove={handleMove}
+                onPointerLeave={handleLeave}
+                onPointerDown={handleTap}
+                onContextMenu={(e) => e.preventDefault()}
+                aria-label="Карта игры Пограничный тракт"
               />
-            )}
 
-            {/* Экран ожидания гостя */}
-            {guestWaiting && ui.phase === 'intro' && (
-              <MpGuestWait code={mpCode ?? ''} status={mpStatus} hostLeft={false} />
-            )}
-            {mpRole === 'guest' && mpHostLeft && (
-              <MpGuestWait code={mpCode ?? ''} status={mpStatus} hostLeft />
-            )}
-
-            {/* Поражение */}
-            {ui.phase === 'over' && (
-              <div className="absolute inset-0 flex items-center justify-center bg-[#120d08]/90 p-4">
-                <div className="max-w-sm text-center">
-                  <h2 className="mb-2 font-serif text-3xl font-black text-[#e05252]">ОБОРОНА ПАЛА</h2>
-                  <p className="mb-4 text-sm text-[#c8b896]">
-                    Машины ИИ прорвались на волне {ui.wave}. Разлом поглощает тракт...
-                  </p>
-                  <Stats ui={ui} />
-                  {mpRole !== 'guest' && (
-                    <Button
-                      onClick={doRestart}
-                      className="mt-4 h-10 border-2 border-[#b08d57] bg-[#3a2e1c] px-6 font-serif font-bold text-[#ffd700] hover:bg-[#4a3a24]"
-                    >
-                      Играть снова
-                    </Button>
-                  )}
+              {/* Пауза: плашка не перехватывает клики — на паузе можно строить */}
+              {ui.paused && canBuild && (
+                <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center">
+                  <span className="rounded-md border-2 border-[#ffd700] bg-[#241b12]/90 px-4 py-1 font-serif text-lg font-black tracking-[0.3em] text-[#ffd700] shadow-lg">
+                    ПАУЗА
+                  </span>
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* Победа */}
-            {ui.phase === 'won' && (
-              <div className="absolute inset-0 flex items-center justify-center bg-[#120d08]/90 p-4">
-                <div className="max-w-sm text-center">
-                  <h2 className="mb-2 font-serif text-3xl font-black text-[#ffd700]">ТРАКТ УДЕРЖАН!</h2>
-                  <p className="mb-4 text-sm text-[#c8b896]">
-                    Титан-ИИ уничтожен. В полной версии вас ждут ещё 9 карт и 3 сложности.
-                  </p>
-                  <Stats ui={ui} />
-                  {mpRole !== 'guest' && (
-                    <Button
-                      onClick={doRestart}
-                      className="mt-4 h-10 border-2 border-[#b08d57] bg-[#3a2e1c] px-6 font-serif font-bold text-[#ffd700] hover:bg-[#4a3a24]"
-                    >
-                      Играть снова
-                    </Button>
-                  )}
+              {/* Подсказка, пока башня выбрана для постройки */}
+              {armed && (
+                <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-20">
+                  <span className="rounded-md border border-[#e8c170] bg-[#241b12]/90 px-3 py-1 text-center text-xs text-[#e8c170] shadow-lg">
+                    {ALL_DEFS[armed]?.glyph} {ALL_DEFS[armed]?.name}: нажмите на клетку · Esc или правая кнопка — отмена
+                  </span>
                 </div>
-              </div>
-            )}
+              )}
+
+              {/* Кнопка способности — в углу поля, под большим пальцем на телефоне */}
+              {ui.phase !== 'intro' && mpRole !== 'guest' && (
+                <button
+                  onClick={doAbility}
+                  disabled={Math.ceil(ui.avatar.cooldown) > 0}
+                  className={`absolute bottom-3 right-3 flex h-14 w-14 flex-col items-center justify-center rounded-full border-2 font-mono text-lg font-bold shadow-lg transition-transform active:scale-95 ${
+                    ui.avatar.cooldown > 0
+                      ? 'border-[#8a6d3b66] bg-[#241b12]/80 text-[#8a6d3b]'
+                      : 'border-[#ffd700] bg-[#3a2e1c]/95 text-[#ffd700] hover:scale-105'
+                  }`}
+                  title="Метка добычи"
+                >
+                  <Zap className="h-5 w-5" />
+                  {ui.avatar.cooldown > 0 && <span className="text-[10px]">{Math.ceil(ui.avatar.cooldown)}</span>}
+                </button>
+              )}
+
+              {/* Интро (одиночка / хост без лобби) */}
+              {mpRole !== 'guest' && ui.phase === 'intro' && !showInvite && (
+                <div className="absolute inset-0 flex items-center justify-center bg-[#120d08]/88 p-4 backdrop-blur-[2px]">
+                  <div className="max-w-md text-center">
+                    <p className="mb-1 font-mono text-[10px] uppercase tracking-[0.3em] text-[#8a6d3b]">
+                      стимпанк · tower defense · прототип
+                    </p>
+                    <h1 className="mb-3 font-serif text-3xl font-black tracking-wide text-[#e8c170] sm:text-4xl">
+                      ЖЕЛЕЗНЫЙ РАЗЛОМ
+                    </h1>
+                    <p className="mb-4 text-xs leading-relaxed text-[#c8b896] sm:text-sm">
+                      Новый минерал пробудил древний ИИ. Его машины маршируют по Пограничному тракту.
+                      Ставьте башни, сливайте их в уникальные и продержитесь <b className="text-[#e8c170]">10 волн</b> до
+                      Титана-ИИ.
+                    </p>
+                    <div className="mb-5 flex flex-wrap justify-center gap-2 text-[10px] text-[#a89a80]">
+                      <span className="rounded border border-[#8a6d3b55] px-2 py-1">15 башен</span>
+                      <span className="rounded border border-[#8a6d3b55] px-2 py-1">ролл арсенала</span>
+                      <span className="rounded border border-[#8a6d3b55] px-2 py-1">слияние</span>
+                      <span className="rounded border border-[#8a6d3b55] px-2 py-1">4 типа брони</span>
+                      <span className="rounded border border-[#8a6d3b55] px-2 py-1">кооп по ссылке</span>
+                    </div>
+                    <div className="flex flex-wrap justify-center gap-2">
+                      <Button
+                        onClick={() => game.beginPreview()}
+                        className="h-11 border-2 border-[#b08d57] bg-[#3a2e1c] px-6 font-serif text-base font-bold text-[#ffd700] hover:bg-[#4a3a24]"
+                      >
+                        ⚙ Начать игру
+                      </Button>
+                      <Button
+                        onClick={doCreateLobby}
+                        variant="outline"
+                        className="h-11 border-2 border-[#7fd0a0] bg-[#1f2d24] px-5 text-sm font-bold text-[#7fd0a0] hover:bg-[#243a2c]"
+                      >
+                        ⚔ Играть вдвоём (кооп)
+                      </Button>
+                      <Button
+                        onClick={() => setHelpOpen(true)}
+                        variant="outline"
+                        className="h-11 border-[#8a6d3b] bg-transparent px-4 text-sm text-[#d8cbb0] hover:bg-[#3a2e1c]"
+                      >
+                        Как играть
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Лобби хоста (ожидание друга; onStart доступен и без друга) */}
+              {mpRole === 'host' && mpCode && (hostLobbyIntro || showInvite) && (
+                <MpLobbyPanel
+                  code={mpCode}
+                  inviteUrl={inviteUrl}
+                  status={mpStatus}
+                  inGame={!hostLobbyIntro}
+                  onStart={() => {
+                    setShowInvite(false)
+                    game.beginPreview()
+                  }}
+                  onClose={hostLobbyIntro ? doCloseLobby : () => setShowInvite(false)}
+                  onHelp={() => setHelpOpen(true)}
+                />
+              )}
+
+              {/* Экран ожидания гостя */}
+              {guestWaiting && ui.phase === 'intro' && (
+                <MpGuestWait code={mpCode ?? ''} status={mpStatus} hostLeft={false} />
+              )}
+              {mpRole === 'guest' && mpHostLeft && <MpGuestWait code={mpCode ?? ''} status={mpStatus} hostLeft />}
+
+              {/* Поражение */}
+              {ui.phase === 'over' && (
+                <div className="absolute inset-0 flex items-center justify-center bg-[#120d08]/90 p-4">
+                  <div className="max-w-sm text-center">
+                    <h2 className="mb-2 font-serif text-3xl font-black text-[#e05252]">ОБОРОНА ПАЛА</h2>
+                    <p className="mb-4 text-sm text-[#c8b896]">
+                      Машины ИИ прорвались на волне {ui.wave}. Разлом поглощает тракт...
+                    </p>
+                    <Stats ui={ui} />
+                    {mpRole !== 'guest' && (
+                      <Button
+                        onClick={doRestart}
+                        className="mt-4 h-10 border-2 border-[#b08d57] bg-[#3a2e1c] px-6 font-serif font-bold text-[#ffd700] hover:bg-[#4a3a24]"
+                      >
+                        Играть снова
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Победа */}
+              {ui.phase === 'won' && (
+                <div className="absolute inset-0 flex items-center justify-center bg-[#120d08]/90 p-4">
+                  <div className="max-w-sm text-center">
+                    <h2 className="mb-2 font-serif text-3xl font-black text-[#ffd700]">ТРАКТ УДЕРЖАН!</h2>
+                    <p className="mb-4 text-sm text-[#c8b896]">
+                      Титан-ИИ уничтожен. В полной версии вас ждут ещё 9 карт и 3 сложности.
+                    </p>
+                    <Stats ui={ui} />
+                    {mpRole !== 'guest' && (
+                      <Button
+                        onClick={doRestart}
+                        className="mt-4 h-10 border-2 border-[#b08d57] bg-[#3a2e1c] px-6 font-serif font-bold text-[#ffd700] hover:bg-[#4a3a24]"
+                      >
+                        Играть снова
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* Док арсенала — прямо под полем, откуда удобно тащить башни */}
+          <div className="shrink-0" style={{ maxWidth: Math.max(stage.w, 320), width: '100%', alignSelf: 'center' }}>
+            <ArsenalDock
+              gold={ui.gold}
+              shop={ui.shop}
+              rollCost={ui.rollCost}
+              armed={armed}
+              canBuild={canBuild}
+              onPick={startArm}
+              onRoll={doRoll}
+            />
           </div>
-          <p className="mt-2 text-center text-[10px] text-[#8a6d3b]">
-            🏗 Перетащите башню из арсенала на свободную клетку (или нажмите башню, потом клетку) · клик по башне — улучшение/слияние/продажа · клик по земле — движение Охотницы
-          </p>
-        </section>
+        </div>
 
-        {/* Боковая панель */}
-        <aside className="flex w-full flex-col gap-3 lg:w-[350px] lg:shrink-0">
+        {/* Правая колонка: волна, выбранная башня или подсказки, Охотница */}
+        <aside className="flex w-full shrink-0 flex-col gap-2 p-2 lg:w-[320px] lg:overflow-y-auto lg:border-l-2 lg:border-[#8a6d3b55] lg:bg-[#1a140e]">
           <WavePanel ui={ui} onStart={doStartWave} />
-          <div ref={panelRef} className="flex flex-col gap-3">
+          <div ref={panelRef} className="flex flex-col gap-2">
             {mergeFrom !== null ? (
               <MergePanel game={game} from={mergeFrom} onCancel={() => setMergeFrom(null)} />
             ) : selectedTowerObj ? (
@@ -779,20 +831,12 @@ export default function GameShell() {
                 onClose={() => setSelectedTower(null)}
               />
             ) : (
-              <ShopList
-                gold={ui.gold}
-                shop={ui.shop}
-                rollCost={ui.rollCost}
-                armed={armed}
-                canBuild={ui.phase !== 'intro' && ui.phase !== 'over' && ui.phase !== 'won'}
-                onPick={startArm}
-                onRoll={doRoll}
-              />
+              <TipsPanel />
             )}
           </div>
           <AvatarPanel ui={ui} onAbility={doAbility} role={mpRole} />
         </aside>
-      </main>
+      </div>
 
       <HelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
     </div>
