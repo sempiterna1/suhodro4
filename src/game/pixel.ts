@@ -505,7 +505,51 @@ function hash(x: number, y: number, seed: number) {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296
 }
 
-const GROUND = ['#2a2015', '#2d2317', '#271d13', '#30251a']
+const GROUND = ['#201811', '#231a12', '#1d150f', '#261c13']
+
+/** Большая стальная плита пола: клёпки по углам, шов посередине, ржавые пятна */
+function floorPlate(L: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: () => number) {
+  const base = r() > 0.5 ? '#2c2925' : '#29261f'
+  px(L, x, y, '#120e0a', w, h)
+  px(L, x + 1, y + 1, base, w - 2, h - 2)
+  px(L, x + 1, y + 1, '#3a362f', w - 2, 1) // блик сверху
+  px(L, x + 1, y + 1, '#35322b', 1, h - 2)
+  px(L, x + 1, y + h - 2, '#1a1712', w - 2, 1) // тень снизу
+  px(L, x + w - 2, y + 1, '#1d1a15', 1, h - 2)
+  // шов по середине длинной стороны
+  if (w >= h) px(L, x + Math.floor(w / 2), y + 2, '#1a1712', 1, h - 4)
+  else px(L, x + 2, y + Math.floor(h / 2), '#1a1712', w - 4, 1)
+  for (const [cx, cy] of [[3, 3], [w - 4, 3], [3, h - 4], [w - 4, h - 4]]) {
+    px(L, x + cx, y + cy, '#4e483d')
+    px(L, x + cx + 1, y + cy + 1, '#15110d')
+  }
+  // ржавые потёки
+  const n = Math.floor(r() * 4)
+  for (let i = 0; i < n; i++) {
+    const rx = x + 3 + Math.floor(r() * (w - 6))
+    const ry = y + 3 + Math.floor(r() * (h - 6))
+    px(L, rx, ry, '#4a2e1c', 2, 1)
+    px(L, rx + 1, ry + 1, '#3a2416', 1, 2)
+  }
+}
+
+/** Труба вдоль границы клеток: стальной корпус с бликом, латунные фланцы */
+function pipe(L: CanvasRenderingContext2D, x: number, y: number, len: number, vertical: boolean) {
+  const W = vertical ? 4 : len
+  const H = vertical ? len : 4
+  px(L, x, y, '#100c08', W, H)
+  if (vertical) {
+    px(L, x + 1, y, '#5a5f66', 2, len)
+    px(L, x + 1, y, '#8a9096', 1, len)
+  } else {
+    px(L, x, y + 1, '#5a5f66', len, 2)
+    px(L, x, y + 1, '#8a9096', len, 1)
+  }
+  for (let i = 4; i < len - 2; i += LC) {
+    if (vertical) px(L, x - 1, y + i, '#7d5a2c', 6, 2)
+    else px(L, x + i, y - 1, '#7d5a2c', 2, 6)
+  }
+}
 
 export function buildPixelBackground(map: GameMap): HTMLCanvasElement {
   const cv = document.createElement('canvas')
@@ -513,16 +557,21 @@ export function buildPixelBackground(map: GameMap): HTMLCanvasElement {
   cv.height = LOW_H
   const L = cv.getContext('2d')!
   const seed = map.seed + 17
+  let rs = (seed * 2654435761) >>> 0
+  const r = () => {
+    rs = (Math.imul(rs ^ (rs >>> 15), 2246822519) + 0x9e3779b9) >>> 0
+    return rs / 4294967296
+  }
 
-  // земля: крупный «шум» пятнами по 2×2 и редкие светлые камешки
+  // земля: тёмная утоптанная почва пятнами по 2×2 и редкие камешки
   const img = L.createImageData(LOW_W, LOW_H)
   const ground = GROUND.map(hexToRgb)
   for (let y = 0; y < LOW_H; y++) {
     for (let x = 0; x < LOW_W; x++) {
       const n = hash(x >> 1, y >> 1, seed)
-      const big = hash(x >> 4, y >> 4, seed + 3) // крупные пятна почвы
+      const big = hash(x >> 4, y >> 4, seed + 3)
       let c = ground[Math.floor((n * 0.6 + big * 0.4) * ground.length) % ground.length]
-      if (hash(x, y, seed + 9) > 0.992) c = [70, 56, 38] // камешек
+      if (hash(x, y, seed + 9) > 0.993) c = [64, 52, 36]
       const i = (y * LOW_W + x) * 4
       img.data[i] = c[0]
       img.data[i + 1] = c[1]
@@ -532,64 +581,84 @@ export function buildPixelBackground(map: GameMap): HTMLCanvasElement {
   }
   L.putImageData(img, 0, 0)
 
-  // еле заметная сетка клеток постройки — точки по углам
-  L.fillStyle = 'rgba(176,141,87,0.18)'
-  for (let x = LC; x < LOW_W; x += LC) for (let y = LC; y < LOW_H; y += LC) L.fillRect(x, y, 1, 1)
-
-  // декор — до тропы, чтобы тропа его не перекрывала криво
-  const onPath = new Set(map.cells.map((c) => c.cx + ',' + c.cy))
   const cols = MAP_W / CELL
   const rows = MAP_H / CELL
+  // индустриальный пол: стальные плиты на 2–4 клетки (тропа ляжет поверх)
+  for (let i = 0; i < 22; i++) {
+    const w = 2 + Math.floor(r() * 3)
+    const h = 2 + Math.floor(r() * 2)
+    const cx = Math.floor(r() * (cols - w + 1))
+    const cy = Math.floor(r() * (rows - h + 1))
+    floorPlate(L, cx * LC, cy * LC, w * LC, h * LC, r)
+  }
+  // трубы по границам клеток
+  for (let i = 0; i < 7; i++) {
+    const vertical = r() > 0.5
+    const len = (3 + Math.floor(r() * 6)) * LC
+    const cx = Math.floor(r() * cols)
+    const cy = Math.floor(r() * rows)
+    pipe(L, cx * LC - 2, cy * LC - 2, len, vertical)
+  }
+
+  // еле заметная сетка клеток постройки — точки по углам
+  L.fillStyle = 'rgba(176,141,87,0.16)'
+  for (let x = LC; x < LOW_W; x += LC) for (let y = LC; y < LOW_H; y += LC) L.fillRect(x, y, 1, 1)
+
+  // мелкий декор в углах клеток (центр остаётся под башню)
+  const onPath = new Set(map.cells.map((c) => c.cx + ',' + c.cy))
   for (let cx = 0; cx < cols; cx++) {
     for (let cy = 0; cy < rows; cy++) {
       if (onPath.has(cx + ',' + cy)) continue
-      const r = hash(cx, cy, seed + 101)
-      if (r > 0.3) continue // ~30% клеток с декором
+      if (hash(cx, cy, seed + 101) > 0.32) continue
       const kind = Math.floor(hash(cx, cy, seed + 202) * DECOR.length)
-      // в углу клетки, чтобы центр оставался под башню
       const corner = Math.floor(hash(cx, cy, seed + 303) * 4)
-      const ox = cx * LC + (corner % 2 ? LC - 8 : 1)
-      const oy = cy * LC + (corner < 2 ? 1 : LC - 8)
+      const ox = cx * LC + (corner % 2 ? LC - 9 : 1)
+      const oy = cy * LC + (corner < 2 ? 1 : LC - 9)
       DECOR[kind](L, ox, oy, hash(cx, cy, seed + 404))
     }
   }
 
-  // тропа — клёпаные стальные плиты, кромка там, где сосед не тропа
+  // тропа — светлая каменно-латунная плитка 2×2 на клетку со швами
   for (const c of map.cells) {
     const x0 = c.cx * LC
     const y0 = c.cy * LC
-    L.fillStyle = '#4a3c2a'
-    L.fillRect(x0, y0, LC, LC)
-    // плитка 2×2 с бликом и тенью
+    px(L, x0, y0, '#3a3022', LC, LC) // швы
     for (const [dx, dy] of [[0, 0], [10, 0], [0, 10], [10, 10]]) {
-      L.fillStyle = '#56462f'
-      L.fillRect(x0 + dx + 1, y0 + dy + 1, 8, 1)
-      L.fillRect(x0 + dx + 1, y0 + dy + 1, 1, 8)
-      L.fillStyle = '#382c1d'
-      L.fillRect(x0 + dx + 1, y0 + dy + 9, 9, 1)
-      L.fillRect(x0 + dx + 9, y0 + dy + 1, 1, 9)
-      if (hash(c.cx * 2 + dx, c.cy * 2 + dy, seed) > 0.6) {
-        L.fillStyle = '#8a6d3b' // клёпка
-        L.fillRect(x0 + dx + 2, y0 + dy + 2, 1, 1)
-      }
-      if (hash(c.cx * 3 + dx, c.cy * 3 + dy, seed + 5) > 0.85) {
-        L.fillStyle = '#2f3b2a' // мох в стыках
-        L.fillRect(x0 + dx + 6, y0 + dy + 8, 2, 1)
-      }
+      const tx = x0 + dx + 1
+      const ty = y0 + dy + 1
+      const shadeK = hash(c.cx * 2 + dx, c.cy * 2 + dy, seed + 7)
+      px(L, tx, ty, shadeK > 0.5 ? '#5e5137' : '#584b32', 9, 9)
+      px(L, tx, ty, '#6f6145', 9, 1) // блик
+      px(L, tx, ty, '#695b40', 1, 9)
+      px(L, tx, ty + 8, '#483d29', 9, 1) // тень
+      px(L, tx + 8, ty, '#4c402c', 1, 9)
+      if (shadeK > 0.82) px(L, tx + 3, ty + 4, '#463b28', 3, 1) // трещина
+      if (shadeK < 0.08) px(L, tx + 2, ty + 2, '#8a6d3b') // латунная клёпка
     }
   }
   for (const c of map.cells) {
     const x0 = c.cx * LC
     const y0 = c.cy * LC
     const edge = (dx: number, dy: number) => !onPath.has(c.cx + dx + ',' + (c.cy + dy))
-    L.fillStyle = '#140d07'
-    if (edge(0, -1)) L.fillRect(x0, y0, LC, 1)
-    if (edge(0, 1)) L.fillRect(x0, y0 + LC - 1, LC, 1)
-    if (edge(-1, 0) && c.cx > 0) L.fillRect(x0, y0, 1, LC)
-    if (edge(1, 0) && c.cx < cols - 1) L.fillRect(x0 + LC - 1, y0, 1, LC)
-    L.fillStyle = 'rgba(0,0,0,0.3)' // тень от кромки на землю
-    if (edge(0, 1)) L.fillRect(x0, y0 + LC, LC, 1)
-    if (edge(1, 0) && c.cx < cols - 1) L.fillRect(x0 + LC, y0, 1, LC)
+    // светлый кант по краю тропы и тёмный контур снаружи, как бордюр
+    if (edge(0, -1)) {
+      px(L, x0, y0, '#7a6a48', LC, 1)
+      px(L, x0, y0 - 1, '#120d08', LC, 1)
+    }
+    if (edge(0, 1)) {
+      px(L, x0, y0 + LC - 1, '#2e2619', LC, 1)
+      px(L, x0, y0 + LC, '#120d08', LC, 1)
+      px(L, x0, y0 + LC + 1, 'rgba(0,0,0,0.35)', LC, 1)
+    }
+    if (edge(-1, 0) && c.cx > 0) {
+      px(L, x0, y0, '#7a6a48', 1, LC)
+      px(L, x0 - 1, y0, '#120d08', 1, LC)
+    }
+    if (edge(1, 0) && c.cx < cols - 1) {
+      px(L, x0 + LC - 1, y0, '#2e2619', 1, LC)
+      px(L, x0 + LC, y0, '#120d08', 1, LC)
+      px(L, x0 + LC + 1, y0, 'rgba(0,0,0,0.35)', 1, LC)
+    }
   }
 
   // входной портал Разлома и выходные ворота города
@@ -599,8 +668,8 @@ export function buildPixelBackground(map: GameMap): HTMLCanvasElement {
   drawGate(L, LOW_W - 7, last.cy * LC)
 
   // виньетка по краям
-  for (let i = 0; i < 6; i++) {
-    L.fillStyle = `rgba(0,0,0,${0.22 - i * 0.035})`
+  for (let i = 0; i < 8; i++) {
+    L.fillStyle = `rgba(0,0,0,${0.28 - i * 0.034})`
     L.fillRect(0, i, LOW_W, 1)
     L.fillRect(0, LOW_H - 1 - i, LOW_W, 1)
     L.fillRect(i, 0, 1, LOW_H)
@@ -701,6 +770,32 @@ const DECOR: ((L: CanvasRenderingContext2D, x: number, y: number, r: number) => 
     px(L, x, y + 4, '#9aa0a6', 8, 1)
     px(L, x + 3, y + 1, '#8e4b2b', 3, 1)
     px(L, x + 4, y + 2, '#5a3c22', 1, 2)
+  },
+  // машина-печь с решёткой и тлеющим огнём
+  (L, x, y, r) => {
+    px(L, x, y, '#100c08', 8, 8)
+    px(L, x + 1, y + 1, '#3c4046', 6, 6)
+    px(L, x + 1, y + 1, '#565b62', 6, 1)
+    px(L, x + 2, y + 3, '#1a140e', 4, 3)
+    px(L, x + 2, y + 4, r > 0.5 ? '#ff8a1e' : '#c8501a', 4, 1)
+    px(L, x + 2, y + 3, '#565b62', 1, 3)
+    px(L, x + 4, y + 3, '#565b62', 1, 3)
+    px(L, x + 6, y - 1, '#2a2016', 1, 2) // труба
+  },
+  // вентиляционная решётка в полу
+  (L, x, y) => {
+    px(L, x, y + 1, '#0e0a07', 8, 6)
+    px(L, x + 1, y + 2, '#1a1612', 6, 4)
+    for (let i = 0; i < 6; i += 2) px(L, x + 1 + i, y + 2, '#3c4046', 1, 4)
+    px(L, x, y + 1, '#3a362f', 8, 1)
+  },
+  // паровой вентиль с манометром
+  (L, x, y) => {
+    px(L, x + 3, y + 3, '#5a5f66', 2, 5)
+    px(L, x + 1, y + 1, '#140d07', 6, 4)
+    px(L, x + 2, y + 2, '#d8d0bc', 4, 2)
+    px(L, x + 4, y + 2, '#ff3b24', 1, 1)
+    px(L, x + 2, y + 7, '#7d5a2c', 4, 1)
   },
 ]
 
@@ -812,5 +907,157 @@ export function drawPixelTower(
   if (tw.level >= 5 && Math.floor(time * 3) % 2 === 0) {
     px(L, cx - 9, cy + 1, '#ffd700', 1, 9)
     px(L, cx + 8, cy + 1, '#ffd700', 1, 9)
+  }
+}
+
+
+// ─── Растения: живой слой поверх фона, качаются на ветру ─────────────────
+type PlantKind = 'grass' | 'reed' | 'fern' | 'bush' | 'flower'
+interface Plant {
+  x: number // LOW-пиксели, основание
+  y: number
+  kind: PlantKind
+  h: number
+  tone: number
+  phase: number
+}
+
+const PLANT_TONES = ['#4f5f22', '#5e6e2a', '#6f7d34', '#7a6f34']
+const FLOWER_TONES = ['#c8501a', '#e8c14a', '#7ad0c8', '#b48ad8']
+let plantsSeed = -1
+let plants: Plant[] = []
+
+/** Где растёт: у краёв свободных клеток (центр клетки — под башню), гуще у тропы */
+function buildPlants(map: GameMap) {
+  plantsSeed = map.seed
+  plants = []
+  const seed = map.seed + 911
+  const onPath = new Set(map.cells.map((c) => c.cx + ',' + c.cy))
+  const kinds: PlantKind[] = ['grass', 'grass', 'grass', 'reed', 'fern', 'bush', 'flower']
+  for (let cx = 0; cx < MAP_W / CELL; cx++) {
+    for (let cy = 0; cy < MAP_H / CELL; cy++) {
+      if (onPath.has(cx + ',' + cy)) continue
+      const nearPath = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => onPath.has(cx + dx + ',' + (cy + dy)))
+      const n = hash(cx, cy, seed) < (nearPath ? 0.75 : 0.35) ? 1 + Math.floor(hash(cx, cy, seed + 1) * 3) : 0
+      for (let i = 0; i < n; i++) {
+        const a = hash(cx * 7 + i, cy * 5, seed + 2)
+        const b = hash(cx * 3, cy * 11 + i, seed + 3)
+        // вдоль одного из краёв клетки
+        const side = Math.floor(hash(cx + i, cy - i, seed + 4) * 4)
+        const along = 2 + Math.floor(a * (LC - 4))
+        const x = cx * LC + (side === 0 ? 2 : side === 1 ? LC - 3 : along)
+        const y = cy * LC + (side === 2 ? 4 : side === 3 ? LC - 1 : along)
+        const kind = kinds[Math.floor(b * kinds.length)]
+        plants.push({ x, y, kind, h: 3 + Math.floor(b * 4), tone: Math.floor(a * PLANT_TONES.length), phase: a * 6.28 })
+      }
+    }
+  }
+  // сначала дальние (выше по экрану) — ближние перекрывают их
+  plants.sort((p, q) => p.y - q.y)
+}
+
+/** Стебель/травинка: чем выше, тем сильнее отклоняется по ветру */
+function blade(L: CanvasRenderingContext2D, x: number, y: number, h: number, wind: number, color: string, tip?: string) {
+  for (let i = 0; i < h; i++) {
+    const t = i / Math.max(1, h - 1)
+    const off = Math.round(wind * t * t)
+    L.fillStyle = i === h - 1 && tip ? tip : color
+    L.fillRect(x + off, y - i, 1, 1)
+  }
+}
+
+/** Растения в LOW-контексте (единичная матрица). time — секунды (идёт и на паузе — ветер не стоит) */
+export function drawPlants(L: CanvasRenderingContext2D, map: GameMap, time: number) {
+  if (plantsSeed !== map.seed) buildPlants(map)
+  // порывы: медленная волна, бегущая по полю слева направо
+  for (const p of plants) {
+    const gust = 0.7 + 0.5 * Math.sin(time * 0.45 - p.x * 0.02) + 0.25 * Math.sin(time * 1.3 + p.y * 0.05)
+    const sway = Math.sin(time * 2.1 + p.phase + p.x * 0.09) * 0.6 + gust
+    const c = PLANT_TONES[p.tone]
+    const dark = shade(c.startsWith('#') ? c : '#5e6e2a', 0.7)
+    switch (p.kind) {
+      case 'grass':
+        blade(L, p.x - 1, p.y, p.h - 1, sway * 1.2, dark)
+        blade(L, p.x, p.y, p.h + 1, sway * 1.6, c, shade(c, 1.3))
+        blade(L, p.x + 1, p.y, p.h, sway * 1.4, c)
+        break
+      case 'reed':
+        blade(L, p.x, p.y, p.h + 5, sway * 2.2, '#6a6a2a')
+        blade(L, p.x + 2, p.y, p.h + 3, sway * 1.9, dark)
+        L.fillStyle = '#6b4a2e' // початок камыша
+        L.fillRect(p.x + Math.round(sway * 2.2), p.y - p.h - 5, 1, 2)
+        break
+      case 'fern': {
+        // две выгнутые ветки с листочками
+        for (const dir of [-1, 1]) {
+          for (let i = 0; i < p.h + 1; i++) {
+            const t = i / p.h
+            const bx = p.x + dir * Math.round(i * 0.7) + Math.round(sway * t * t * 1.5)
+            const by = p.y - Math.round(i * 0.8)
+            L.fillStyle = i % 2 ? c : dark
+            L.fillRect(bx, by, 1, 1)
+            if (i % 2 === 0 && i > 0) L.fillRect(bx + dir, by - 1, 1, 1)
+          }
+        }
+        break
+      }
+      case 'bush': {
+        // куст: тёмный низ неподвижен, верх колышется
+        const top = Math.round(sway * 0.8)
+        L.fillStyle = dark
+        L.fillRect(p.x - 3, p.y - 2, 7, 2)
+        L.fillStyle = c
+        L.fillRect(p.x - 2 + top, p.y - 4, 5, 2)
+        L.fillRect(p.x - 1 + top, p.y - 5, 3, 1)
+        L.fillStyle = shade(c, 1.3)
+        L.fillRect(p.x - 1 + top, p.y - 4, 1, 1)
+        L.fillStyle = '#8e3a2a' // ягоды
+        L.fillRect(p.x + 1 + top, p.y - 3, 1, 1)
+        break
+      }
+      case 'flower':
+        blade(L, p.x, p.y, p.h + 1, sway * 1.3, dark)
+        L.fillStyle = FLOWER_TONES[p.tone]
+        L.fillRect(p.x + Math.round(sway * 1.3) - 1, p.y - p.h - 1, 2, 2)
+        L.fillStyle = '#ffe9a0'
+        L.fillRect(p.x + Math.round(sway * 1.3), p.y - p.h - 1, 1, 1)
+        break
+    }
+  }
+}
+
+// ─── Превью башни для карточек арсенала (data URL, кэш по id) ────────────
+const thumbCache = new Map<string, string>()
+
+/** Пиксельная башня 1 уровня на прозрачном фоне 20×25 — для <img> с image-rendering: pixelated */
+export function towerThumb(def: TowerDefinition): string {
+  const hit = thumbCache.get(def.id)
+  if (hit) return hit
+  const cv = document.createElement('canvas')
+  cv.width = 20
+  cv.height = 25
+  const ctx = cv.getContext('2d')!
+  const tw: Tower = {
+    id: 1, x: 10 / PX, y: 14 / PX, defId: def.id, level: 1, invested: 0, cooldown: 0, shotCount: 0,
+    hammerCd: 0, rampMult: 1, focusUid: 0, focusStacks: 0, lastShotAt: -1e9, aim: -Math.PI / 4,
+  }
+  drawPixelTower(ctx, tw, def, 0, false)
+  const url = cv.toDataURL()
+  thumbCache.set(def.id, url)
+  return url
+}
+
+
+// ─── Пыль и угольки: дрейфуют по ветру над полем (атмосфера) ─────────────
+/** Детерминированные частицы: положение — функция от номера и времени, без состояния */
+export function drawMotes(L: CanvasRenderingContext2D, time: number) {
+  for (let i = 0; i < 46; i++) {
+    const ember = i % 7 === 0 // каждая седьмая — тлеющий уголёк
+    const speed = 6 + (i % 5) * 3
+    const x = Math.floor((i * 97.3 + time * speed) % (LOW_W + 20)) - 10
+    const y = Math.floor((i * 53.7) % LOW_H + Math.sin(time * 0.8 + i) * 6 - (ember ? (time * 4 + i * 11) % 40 : 0))
+    const a = 0.25 + 0.25 * Math.sin(time * 2 + i * 1.7)
+    L.fillStyle = ember ? `rgba(255,150,60,${a + 0.2})` : `rgba(230,220,190,${a * 0.6})`
+    L.fillRect(x, ((y % LOW_H) + LOW_H) % LOW_H, 1, 1)
   }
 }

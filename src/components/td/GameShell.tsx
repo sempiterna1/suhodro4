@@ -21,7 +21,8 @@ import {
   type MpRole,
   type MpStatus,
 } from './Panels'
-import { CenterNotices, ControlBar, HudArsenal, HunterWidget, ResourceBar, WaveBanner, WaveWidget } from './Hud'
+import { BottomPanel, CenterNotices, ControlBar, ResourceBar, WaveBanner, WaveWidget } from './Hud'
+import { Sfx } from '@/game/audio'
 import { useToast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
 import { AnimatePresence, motion } from 'framer-motion'
@@ -38,6 +39,35 @@ export default function GameShell() {
   const [helpOpen, setHelpOpen] = useState(false)
   const [skin, setSkin] = useState<Skin>('steam')
   const { toast } = useToast()
+
+  // ─── Звук: синтез Web Audio; включается после первого жеста, выбор «без звука» запоминается ───
+  const [sfx] = useState(() => new Sfx())
+  const [muted, setMuted] = useState(false)
+  useEffect(() => {
+    let saved = false
+    try {
+      saved = window.localStorage.getItem('zr-muted') === '1'
+    } catch {
+      // хранилище недоступно — звук по умолчанию включён
+    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage доступен только после монтирования
+    if (saved) setMuted(true)
+    const unlock = () => sfx.unlock()
+    window.addEventListener('pointerdown', unlock)
+    window.addEventListener('keydown', unlock)
+    return () => {
+      window.removeEventListener('pointerdown', unlock)
+      window.removeEventListener('keydown', unlock)
+    }
+  }, [sfx])
+  useEffect(() => {
+    sfx.setMuted(muted)
+    try {
+      window.localStorage.setItem('zr-muted', muted ? '1' : '0')
+    } catch {
+      // не запомнили — не страшно
+    }
+  }, [muted, sfx])
 
   // ─── Мультиплеер ────────────────────────────────────────────────────────
   const [mpRole, setMpRole] = useState<MpRole>('single')
@@ -226,6 +256,7 @@ export default function GameShell() {
       if (roleRef.current === 'guest') game.guestTick(dt)
       else game.update(dt)
       render(ctx, game, viewRef.current)
+      sfx.tick(game)
       uiAcc += dt
       if (uiAcc >= 0.12) {
         uiAcc = 0
@@ -561,17 +592,19 @@ export default function GameShell() {
     setShowInvite(false)
   }
 
-  // ─── Поле: на десктопе — на весь экран (16:10, вписано), на телефоне — по ширине ──
+  // ─── Раскладка: поле над нижней панелью, HUD масштабируется под экран ────
+  // ui — общий масштаб HUD: 1 на 1440×860 и меньше, растёт на 2K/4K (до 2.6)
   const fieldRef = useRef<HTMLDivElement>(null)
   const [stage, setStage] = useState({ w: MAP_W, h: MAP_H })
   const [desktop, setDesktop] = useState(true)
+  const [uiScale, setUiScale] = useState(1)
   useEffect(() => {
     const fit = () => {
       const isDesktop = window.matchMedia('(min-width: 1024px)').matches
       setDesktop(isDesktop)
-      const w = isDesktop
-        ? Math.min(window.innerWidth, window.innerHeight * (MAP_W / MAP_H))
-        : (fieldRef.current?.getBoundingClientRect().width ?? window.innerWidth)
+      setUiScale(isDesktop ? Math.max(1, Math.min(2.6, Math.min(window.innerWidth / 1440, window.innerHeight / 860))) : 1)
+      const r = fieldRef.current?.getBoundingClientRect()
+      const w = isDesktop && r ? Math.min(r.width, r.height * (MAP_W / MAP_H)) : (r?.width ?? window.innerWidth)
       setStage({ w: Math.floor(w), h: Math.floor((w * MAP_H) / MAP_W) })
     }
     fit()
@@ -583,6 +616,8 @@ export default function GameShell() {
       window.removeEventListener('resize', fit)
     }
   }, [])
+  // верхняя полоса не выше верхнего ряда клеток (туда тропа не заходит): 48 px полосы на ряд
+  const topScale = Math.max(0.7, Math.min(uiScale, (stage.h / 15 - 4) / 48))
 
   // ─── Полноэкранный режим браузера ─────────────────────────────────────
   const [fullscreen, setFullscreen] = useState(false)
@@ -602,6 +637,7 @@ export default function GameShell() {
   const canBuild = ui.phase === 'preview' || ui.phase === 'wave'
   // HUD — только в бою; в интро, лобби и на экранах итогов поле закрыто своим оверлеем
   const hudOn = canBuild && !showInvite
+  const armedName = armed ? `${ALL_DEFS[armed]?.glyph} ${ALL_DEFS[armed]?.name}` : null
   const contextPanel =
     mergeFrom !== null ? (
       <MergePanel game={game} from={mergeFrom} onCancel={() => setMergeFrom(null)} />
@@ -621,7 +657,7 @@ export default function GameShell() {
       />
     ) : null
 
-  const top = (
+  const topBand = (
     <>
       <div className="flex flex-1 justify-start">
         <ResourceBar ui={ui} />
@@ -632,6 +668,7 @@ export default function GameShell() {
           ui={ui}
           skin={skin}
           fullscreen={fullscreen}
+          muted={muted}
           role={mpRole}
           mpStatus={mpStatus}
           onSpeed={doSpeed}
@@ -639,6 +676,7 @@ export default function GameShell() {
           onInvite={mpRole === 'host' ? () => setShowInvite(true) : undefined}
           onInfiniteGold={doInfiniteGold}
           onSkin={() => setSkin((s) => (s === 'lol' ? 'steam' : 'lol'))}
+          onMute={() => setMuted((m) => !m)}
           onHelp={() => setHelpOpen(true)}
           onRestart={doRestart}
           onFullscreen={toggleFullscreen}
@@ -646,34 +684,19 @@ export default function GameShell() {
       </div>
     </>
   )
-  const bottom = (
-    <>
-      <div className="flex flex-1 justify-start">
-        <HunterWidget ui={ui} onAbility={doAbility} role={mpRole} />
-      </div>
-      <HudArsenal
-        gold={ui.gold}
-        shop={ui.shop}
-        rollCost={ui.rollCost}
-        armed={armed}
-        canBuild={canBuild}
-        onPick={startArm}
-        onRoll={doRoll}
-      />
-      {/* правый «противовес», чтобы арсенал стоял по центру, пока хватает места */}
-      <div className="hidden flex-1 lg:block" />
-    </>
+  const bottomPanel = (
+    <BottomPanel ui={ui} role={mpRole} armed={armed} onAbility={doAbility} onPick={startArm} onRoll={doRoll} />
   )
 
   return (
-    // Десктоп: экран целиком — поле по центру, HUD поверх (сетка из трёх рядов: элементы не налезают).
-    // Телефон: верхняя полоса, поле, нижняя полоса и панель башни — столбиком, страница прокручивается.
-    <div className="relative flex min-h-dvh flex-col bg-[#0c0905] lg:block lg:h-dvh lg:overflow-hidden">
-      {/* телефон: верхняя полоса HUD над полем */}
-      {!desktop && hudOn && <div className="flex flex-wrap items-center justify-center gap-2 p-2">{top}</div>}
+    // Десктоп: экран целиком без прокрутки — поле (с верхней полосой HUD поверх свободного ряда) над нижней
+    // латунной панелью. Телефон: столбиком — полоса, поле, панель, панель башни (страница прокручивается).
+    <div className="relative flex min-h-dvh flex-col bg-[radial-gradient(ellipse_at_center,#1a140e,#080604)] lg:h-dvh lg:overflow-hidden">
+      {/* телефон: верхняя полоса над полем */}
+      {!desktop && hudOn && <div className="flex flex-wrap items-center justify-center gap-2 p-2">{topBand}</div>}
 
-      <div ref={fieldRef} className="relative w-full lg:absolute lg:inset-0 lg:flex lg:items-center lg:justify-center">
-        <div className="relative mx-auto shrink-0 overflow-hidden" style={{ width: stage.w, height: stage.h }}>
+      <div ref={fieldRef} className="relative w-full lg:min-h-0 lg:flex-1">
+        <div className="relative mx-auto overflow-hidden lg:absolute lg:inset-0 lg:m-auto" style={{ width: stage.w, height: stage.h }}>
           <canvas
             ref={canvasRef}
             className="absolute inset-0 block h-full w-full select-none"
@@ -688,30 +711,33 @@ export default function GameShell() {
 
           {/* Интро (одиночка / хост без лобби) */}
           {mpRole !== 'guest' && ui.phase === 'intro' && !showInvite && (
-            <div className="absolute inset-0 flex items-center justify-center bg-[#120d08]/88 p-4 backdrop-blur-[2px]">
-              <motion.div initial={{ y: 16, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="max-w-md text-center">
+            <div className="absolute inset-0 flex items-center justify-center bg-[#0c0905]/85 p-4 backdrop-blur-[2px]">
+              <motion.div
+                initial={{ y: 16, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                className="relative max-w-lg rounded-md border-2 border-[#b08d57] bg-gradient-to-b from-[#2f2416] to-[#17110b] px-8 py-7 text-center shadow-[inset_0_0_0_2px_#3d2f1c,0_10px_30px_rgba(0,0,0,0.7)]"
+                style={{ zoom: uiScale }}
+              >
                 <p className="mb-1 font-mono text-[10px] uppercase tracking-[0.3em] text-[#8a6d3b]">
                   стимпанк · tower defense · прототип
                 </p>
-                <h1 className="mb-3 font-serif text-3xl font-black tracking-wide text-[#e8c170] sm:text-5xl">
+                <h1 className="mb-3 font-serif text-4xl font-black tracking-wide text-[#ffd76a] drop-shadow-[0_3px_0_rgba(0,0,0,0.7)] sm:text-5xl">
                   ЖЕЛЕЗНЫЙ РАЗЛОМ
                 </h1>
                 <p className="mb-4 text-xs leading-relaxed text-[#c8b896] sm:text-sm">
                   Новый минерал пробудил древний ИИ. Его машины маршируют по Пограничному тракту.
-                  Ставьте башни, сливайте их в уникальные и продержитесь <b className="text-[#e8c170]">10 волн</b> до
+                  Ставьте башни, сливайте их в уникальные и продержитесь <b className="text-[#ffd76a]">10 волн</b> до
                   Титана-ИИ.
                 </p>
                 <div className="mb-5 flex flex-wrap justify-center gap-2 text-[10px] text-[#a89a80]">
-                  <span className="rounded border border-[#8a6d3b55] px-2 py-1">15 башен</span>
-                  <span className="rounded border border-[#8a6d3b55] px-2 py-1">ролл арсенала</span>
-                  <span className="rounded border border-[#8a6d3b55] px-2 py-1">слияние</span>
-                  <span className="rounded border border-[#8a6d3b55] px-2 py-1">4 типа брони</span>
-                  <span className="rounded border border-[#8a6d3b55] px-2 py-1">кооп по ссылке</span>
+                  {['15 башен', 'ролл арсенала', 'слияние', 'новая карта каждый раз', 'кооп по ссылке'].map((t) => (
+                    <span key={t} className="rounded border border-[#8a6d3b55] px-2 py-1">{t}</span>
+                  ))}
                 </div>
                 <div className="flex flex-wrap justify-center gap-2">
                   <Button
                     onClick={() => game.beginPreview()}
-                    className="h-11 border-2 border-[#b08d57] bg-[#3a2e1c] px-6 font-serif text-base font-bold text-[#ffd700] hover:bg-[#4a3a24]"
+                    className="h-11 border-2 border-[#d4a85a] bg-gradient-to-b from-[#5a4424] to-[#3a2e1c] px-6 font-serif text-base font-bold text-[#ffd700] hover:from-[#6a5430]"
                   >
                     ⚙ Начать игру
                   </Button>
@@ -720,7 +746,7 @@ export default function GameShell() {
                     variant="outline"
                     className="h-11 border-2 border-[#7fd0a0] bg-[#1f2d24] px-5 text-sm font-bold text-[#7fd0a0] hover:bg-[#243a2c]"
                   >
-                    ⚔ Играть вдвоём (кооп)
+                    ⚔ Играть вдвоём
                   </Button>
                   <Button
                     onClick={() => setHelpOpen(true)}
@@ -763,8 +789,13 @@ export default function GameShell() {
 
           {/* Поражение / победа */}
           {(ui.phase === 'over' || ui.phase === 'won') && (
-            <div className="absolute inset-0 flex items-center justify-center bg-[#120d08]/90 p-4">
-              <motion.div initial={{ scale: 0.85, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="max-w-sm text-center">
+            <div className="absolute inset-0 flex items-center justify-center bg-[#0c0905]/88 p-4">
+              <motion.div
+                initial={{ scale: 0.85, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                className="max-w-sm rounded-md border-2 border-[#b08d57] bg-gradient-to-b from-[#2f2416] to-[#17110b] px-8 py-6 text-center"
+                style={{ zoom: uiScale }}
+              >
                 <h2 className={`mb-2 font-serif text-4xl font-black ${ui.phase === 'won' ? 'text-[#ffd700]' : 'text-[#e05252]'}`}>
                   {ui.phase === 'won' ? 'ТРАКТ УДЕРЖАН!' : 'ОБОРОНА ПАЛА'}
                 </h2>
@@ -777,7 +808,7 @@ export default function GameShell() {
                 {mpRole !== 'guest' && (
                   <Button
                     onClick={doRestart}
-                    className="mt-4 h-10 border-2 border-[#b08d57] bg-[#3a2e1c] px-6 font-serif font-bold text-[#ffd700] hover:bg-[#4a3a24]"
+                    className="mt-4 h-10 border-2 border-[#d4a85a] bg-gradient-to-b from-[#5a4424] to-[#3a2e1c] px-6 font-serif font-bold text-[#ffd700]"
                   >
                     Играть снова
                   </Button>
@@ -786,49 +817,62 @@ export default function GameShell() {
             </div>
           )}
 
-          {/* баннер волны и уведомления — внутри поля, не перехватывают клики */}
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          {/* баннер волны — посередине поля, не перехватывает клики */}
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center" style={{ zoom: uiScale }}>
             <WaveBanner ui={ui} />
           </div>
           {!desktop && (
             <div className="pointer-events-none absolute inset-x-0 top-2 flex justify-center px-2">
-              <CenterNotices paused={ui.paused && canBuild} armedName={armed ? `${ALL_DEFS[armed]?.glyph} ${ALL_DEFS[armed]?.name}` : null} />
+              <CenterNotices paused={ui.paused && canBuild} armedName={armedName} />
             </div>
           )}
         </div>
-      </div>
 
-      {/* Десктоп: HUD поверх всего экрана — верх, середина (уведомления + панель башни), низ */}
-      {desktop && (
-        <div className="pointer-events-none absolute inset-0 z-10 grid grid-rows-[auto_minmax(0,1fr)_auto] gap-2 px-2 py-1">
-          <AnimatePresence>{hudOn && <motion.div key="top" className="flex flex-wrap items-start gap-2">{top}</motion.div>}</AnimatePresence>
-          <div className="relative flex min-h-0 items-start justify-center">
-            <CenterNotices paused={ui.paused && canBuild} armedName={armed ? `${ALL_DEFS[armed]?.glyph} ${ALL_DEFS[armed]?.name}` : null} />
-            {/* панель башни выезжает справа и ограничена средним рядом — не налезает на полосы */}
+        {/* Десктоп: верхняя полоса HUD над полем, уведомления и выезжающая панель башни */}
+        {desktop && (
+          <div className="pointer-events-none absolute inset-0 z-10">
+            <AnimatePresence>
+              {hudOn && (
+                <motion.div key="top" className="flex items-start gap-2 px-2 pt-1" style={{ zoom: topScale }}>
+                  {topBand}
+                </motion.div>
+              )}
+            </AnimatePresence>
+            <div className="absolute inset-x-0 flex justify-center" style={{ top: 56 * topScale }}>
+              <div style={{ zoom: uiScale }}>
+                <CenterNotices paused={ui.paused && canBuild} armedName={armedName} />
+              </div>
+            </div>
             <AnimatePresence>
               {hudOn && contextPanel && (
                 <motion.div
                   key={mergeFrom !== null ? 'merge' : `tower-${selectedTower}`}
-                  initial={{ x: 340, opacity: 0 }}
+                  initial={{ x: 340 * uiScale, opacity: 0 }}
                   animate={{ x: 0, opacity: 1 }}
-                  exit={{ x: 340, opacity: 0 }}
+                  exit={{ x: 340 * uiScale, opacity: 0 }}
                   transition={{ type: 'spring', stiffness: 320, damping: 32 }}
-                  className="pointer-events-auto absolute right-0 top-0 max-h-full w-[300px] overflow-y-auto rounded-lg shadow-[0_8px_24px_rgba(0,0,0,0.6)]"
+                  className="pointer-events-auto absolute right-2 overflow-y-auto rounded-md border-2 border-[#b08d57] shadow-[0_8px_24px_rgba(0,0,0,0.6)]"
+                  style={{ top: 56 * topScale, bottom: 8, width: 300 * uiScale, maxHeight: `calc(100% - ${56 * topScale + 8}px)` }}
                 >
-                  {contextPanel}
+                  <div style={{ zoom: uiScale }}>{contextPanel}</div>
                 </motion.div>
               )}
             </AnimatePresence>
           </div>
-          <AnimatePresence>{hudOn && <motion.div key="bottom" className="flex flex-wrap items-end gap-2">{bottom}</motion.div>}</AnimatePresence>
-        </div>
-      )}
+        )}
+      </div>
 
-      {/* телефон: нижняя полоса и панель башни под полем */}
-      {!desktop && hudOn && (
-        <div className="flex flex-col gap-2 p-2">
-          <div className="flex flex-wrap items-end justify-center gap-2">{bottom}</div>
-          <div ref={panelRef}>{contextPanel}</div>
+      {/* нижняя латунная панель — под полем, не перекрывает его */}
+      <AnimatePresence>
+        {hudOn && (
+          <motion.div key="bottom" className="flex shrink-0 justify-center px-3 pb-2 pt-3" style={{ zoom: uiScale }}>
+            {bottomPanel}
+          </motion.div>
+        )}
+      </AnimatePresence>
+      {!desktop && hudOn && contextPanel && (
+        <div ref={panelRef} className="p-2">
+          {contextPanel}
         </div>
       )}
 
@@ -836,6 +880,7 @@ export default function GameShell() {
     </div>
   )
 }
+
 
 
 function Stats({ ui }: { ui: UiState }) {

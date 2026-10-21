@@ -13,7 +13,7 @@ import {
 import type { Game } from './engine'
 import { pointAtLength } from './engine'
 import { getMap } from './map'
-import { LOW_H, LOW_W, PX, armorBody, buildPixelBackground, drawPixelTower, drawSprite } from './pixel'
+import { LOW_H, LOW_W, PX, armorBody, buildPixelBackground, drawMotes, drawPixelTower, drawPlants, drawSprite } from './pixel'
 import { drawLolProjectile, drawLolTower } from './render-lol'
 import type { Vec } from './types'
 
@@ -69,6 +69,8 @@ export function render(ctx: CanvasRenderingContext2D, game: Game, view: ViewStat
   L.imageSmoothingEnabled = false
   L.clearRect(0, 0, LOW_W, LOW_H)
   L.drawImage(bgCache, 0, 0)
+  // растения качаются по реальным часам — на паузе ветер не стихает
+  drawPlants(L, getMap(), performance.now() / 1000)
 
   // мир — в координатах поля, масштабом в LOW
   L.setTransform(PX, 0, 0, PX, 0, 0)
@@ -79,6 +81,8 @@ export function render(ctx: CanvasRenderingContext2D, game: Game, view: ViewStat
   drawProjectiles(L, game, view.skin)
   drawCreepBars(L, game)
   drawAvatar(L, game, view)
+  // пыль и угольки поверх мира — по реальным часам, как и ветер
+  pixelPass(L, () => drawMotes(L, performance.now() / 1000))
 
   // растягиваем пиксели без сглаживания
   ctx.clearRect(0, 0, MAP_W, MAP_H)
