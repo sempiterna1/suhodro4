@@ -593,7 +593,8 @@ export default function GameShell() {
             <canvas
               ref={canvasRef}
               className="block h-auto w-full select-none"
-              style={{ aspectRatio: `${MAP_W} / ${MAP_H}`, touchAction: 'manipulation' }}
+              // pixelated — браузер не размывает пиксели при растягивании под экран
+              style={{ aspectRatio: `${MAP_W} / ${MAP_H}`, touchAction: 'manipulation', imageRendering: 'pixelated' }}
               onPointerMove={handleMove}
               onPointerLeave={handleLeave}
               onPointerDown={handleTap}

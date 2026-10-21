@@ -1,18 +1,19 @@
-// Canvas-рендерер прототипа «Железный Разлом» — стимпанк-стиль
+// Canvas-рендерер прототипа «Железный Разлом» — пиксельный ретро-стиль.
+// Мир (фон, башни, враги, снаряды, эффекты) рисуется в маленький LOW-холст (pixel.ts) и
+// растягивается без сглаживания. Текст и подсказки (цифры, подписи, значки башен, призрак
+// постройки) рисуются поверх в полном разрешении, чтобы оставаться читаемыми.
 
 import {
   ALL_DEFS,
-  ARMOR_COLORS,
   CELL,
   MAP_H,
   MAP_W,
-  PATH_WIDTH,
   SPOT_RADIUS,
 } from './config'
 import type { Game } from './engine'
 import { pointAtLength } from './engine'
-import { getMap, pathLength } from './map'
-import { drawCreepBody } from './render-creeps'
+import { getMap } from './map'
+import { LOW_H, LOW_W, PX, armorBody, buildPixelBackground, drawPixelTower, drawSprite } from './pixel'
 import { drawLolProjectile, drawLolTower } from './render-lol'
 import type { Vec } from './types'
 
@@ -36,180 +37,92 @@ export interface ViewState {
   buildGhost: BuildGhost | null
 }
 
-// ─── Кэш статичного фона (перестраивается при смене карты) ──────────────
+// ─── Кэш пиксельного фона (перестраивается при смене карты) ─────────────
 let bgCache: HTMLCanvasElement | null = null
 let bgSeed = -1
+let low: HTMLCanvasElement | null = null
 
-function drawGear(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, teeth: number, color: string) {
-  ctx.save()
-  ctx.translate(x, y)
-  ctx.fillStyle = color
-  for (let i = 0; i < teeth; i++) {
-    const a = (i / teeth) * Math.PI * 2
-    ctx.save()
-    ctx.rotate(a)
-    ctx.fillRect(r * 0.75, -r * 0.14, r * 0.45, r * 0.28)
-    ctx.restore()
-  }
-  ctx.beginPath()
-  ctx.arc(0, 0, r * 0.78, 0, Math.PI * 2)
-  ctx.fill()
-  ctx.globalCompositeOperation = 'destination-out'
-  ctx.beginPath()
-  ctx.arc(0, 0, r * 0.3, 0, Math.PI * 2)
-  ctx.fill()
-  ctx.restore()
-}
+/** Куда смотрит враг: помним последнее горизонтальное направление (на вертикалях не дёргается) */
+const facingLeft = new Map<number, boolean>()
 
-function buildBackground(): HTMLCanvasElement {
-  const cv = document.createElement('canvas')
-  cv.width = MAP_W
-  cv.height = MAP_H
-  const ctx = cv.getContext('2d')!
-
-  // пол — тёмные стальные плиты
-  const grad = ctx.createLinearGradient(0, 0, MAP_W, MAP_H)
-  grad.addColorStop(0, '#261d12')
-  grad.addColorStop(0.5, '#2b2115')
-  grad.addColorStop(1, '#221a10')
-  ctx.fillStyle = grad
-  ctx.fillRect(0, 0, MAP_W, MAP_H)
-
-  // плиты = клетки сетки постройки
-  ctx.strokeStyle = 'rgba(0,0,0,0.3)'
-  ctx.lineWidth = 1.2
-  for (let x = 0; x <= MAP_W; x += CELL) {
-    ctx.beginPath()
-    ctx.moveTo(x, 0)
-    ctx.lineTo(x, MAP_H)
-    ctx.stroke()
-  }
-  for (let y = 0; y <= MAP_H; y += CELL) {
-    ctx.beginPath()
-    ctx.moveTo(0, y)
-    ctx.lineTo(MAP_W, y)
-    ctx.stroke()
-  }
-  // заклёпки на углах клеток
-  ctx.fillStyle = 'rgba(176,141,87,0.14)'
-  for (let x = CELL; x < MAP_W; x += CELL) {
-    for (let y = CELL; y < MAP_H; y += CELL) {
-      ctx.beginPath()
-      ctx.arc(x, y, 1.6, 0, Math.PI * 2)
-      ctx.fill()
-    }
-  }
-
-  // декоративные шестерни
-  drawGear(ctx, 80, 520, 42, 10, 'rgba(140,110,70,0.10)')
-  drawGear(ctx, 130, 560, 26, 8, 'rgba(140,110,70,0.13)')
-  drawGear(ctx, 900, 90, 52, 12, 'rgba(140,110,70,0.10)')
-  drawGear(ctx, 840, 60, 24, 8, 'rgba(140,110,70,0.13)')
-  drawGear(ctx, 480, 290, 66, 14, 'rgba(140,110,70,0.06)')
-
-  // клетки тропы — тёмная подложка, чтобы было видно, куда строить нельзя
-  ctx.fillStyle = 'rgba(10,7,4,0.35)'
-  for (const c of getMap().cells) ctx.fillRect(c.cx * CELL, c.cy * CELL, CELL, CELL)
-
-  // тропа — клёпаный металлический настил
-  const PATH = getMap().points
-  const trace = () => {
-    ctx.beginPath()
-    ctx.moveTo(PATH[0].x, PATH[0].y)
-    for (let i = 1; i < PATH.length; i++) ctx.lineTo(PATH[i].x, PATH[i].y)
-  }
-  ctx.lineJoin = 'round'
-  ctx.lineCap = 'butt'
-  trace()
-  ctx.strokeStyle = '#15100a'
-  ctx.lineWidth = PATH_WIDTH + 4 // кромка не вылезает за клетки тропы
-  ctx.stroke()
-  trace()
-  ctx.strokeStyle = '#3d3122'
-  ctx.lineWidth = PATH_WIDTH
-  ctx.stroke()
-  trace()
-  ctx.strokeStyle = 'rgba(90,72,48,0.55)'
-  ctx.lineWidth = PATH_WIDTH - 12
-  ctx.stroke()
-  // центральная пунктирная направляющая
-  trace()
-  ctx.setLineDash([14, 18])
-  ctx.strokeStyle = 'rgba(176,141,87,0.28)'
-  ctx.lineWidth = 3
-  ctx.stroke()
-  ctx.setLineDash([])
-
-  // заклёпки по краям тропы
-  const total = pathLength()
-  ctx.fillStyle = 'rgba(20,14,8,0.55)'
-  for (let d = 10; d < total; d += 30) {
-    const p = pointAtLength(d)
-    const n = normalAt(d)
-    for (const s of [-1, 1]) {
-      ctx.beginPath()
-      ctx.arc(p.x + n.x * (PATH_WIDTH / 2 - 4) * s, p.y + n.y * (PATH_WIDTH / 2 - 4) * s, 2.2, 0, Math.PI * 2)
-      ctx.fill()
-    }
-  }
-
-  // портал входа
-  const entry = pointAtLength(4)
-  ctx.beginPath()
-  ctx.arc(entry.x, entry.y, 26, 0, Math.PI * 2)
-  ctx.fillStyle = '#0d0a06'
-  ctx.fill()
-  ctx.lineWidth = 5
-  ctx.strokeStyle = '#8a6d3b'
-  ctx.stroke()
-  // портал выхода
-  const exitP = pointAtLength(total - 4)
-  ctx.beginPath()
-  ctx.arc(exitP.x, exitP.y, 26, 0, Math.PI * 2)
-  ctx.fillStyle = '#0d0a06'
-  ctx.fill()
-  ctx.lineWidth = 5
-  ctx.strokeStyle = '#a0522d'
-  ctx.stroke()
-
-  // подписи
-  ctx.font = 'bold 11px Georgia, serif'
-  ctx.fillStyle = 'rgba(232,193,112,0.75)'
-  ctx.textAlign = 'center'
-  ctx.fillText('ВХОД', entry.x + 2, entry.y - 32)
-  ctx.fillText('ВЫХОД', exitP.x - 4, exitP.y - 32)
-
-  return cv
-}
-
-function normalAt(d: number): Vec {
-  const eps = 2
-  const a = pointAtLength(Math.max(0, d - eps))
-  const b = pointAtLength(d + eps)
-  const dx = b.x - a.x
-  const dy = b.y - a.y
-  const len = Math.hypot(dx, dy) || 1
-  return { x: -dy / len, y: dx / len }
+/** Рисовать в LOW-пикселях напрямую (без масштаба мира) — для спрайтов и пиксельных полос */
+function pixelPass(L: CanvasRenderingContext2D, fn: () => void) {
+  L.save()
+  L.setTransform(1, 0, 0, 1, 0, 0)
+  fn()
+  L.restore()
 }
 
 // ─── Основной рендер ─────────────────────────────────────────────────────
 export function render(ctx: CanvasRenderingContext2D, game: Game, view: ViewState) {
   if (!bgCache || bgSeed !== game.mapSeed) {
-    bgCache = buildBackground()
+    bgCache = buildPixelBackground(getMap())
     bgSeed = game.mapSeed
   }
-  ctx.clearRect(0, 0, MAP_W, MAP_H)
-  ctx.drawImage(bgCache, 0, 0)
+  if (!low) {
+    low = document.createElement('canvas')
+    low.width = LOW_W
+    low.height = LOW_H
+  }
+  const L = low.getContext('2d')!
+  L.setTransform(1, 0, 0, 1, 0, 0)
+  L.imageSmoothingEnabled = false
+  L.clearRect(0, 0, LOW_W, LOW_H)
+  L.drawImage(bgCache, 0, 0)
 
-  drawMergeLinks(ctx, game, view)
+  // мир — в координатах поля, масштабом в LOW
+  L.setTransform(PX, 0, 0, PX, 0, 0)
+  drawMergeLinks(L, game, view)
+  drawTowers(L, game, view)
+  drawCreeps(L, game)
+  drawEffects(L, game)
+  drawProjectiles(L, game, view.skin)
+  drawCreepBars(L, game)
+  drawAvatar(L, game, view)
+
+  // растягиваем пиксели без сглаживания
+  ctx.clearRect(0, 0, MAP_W, MAP_H)
+  ctx.imageSmoothingEnabled = false
+  ctx.drawImage(low, 0, 0, MAP_W, MAP_H)
+
+  // чёткий слой поверх: подсказки и текст
   drawBuildGhost(ctx, view)
-  drawTowers(ctx, game, view)
-  drawCreeps(ctx, game)
-  drawEffects(ctx, game)
-  drawProjectiles(ctx, game, view.skin)
-  drawCreepBars(ctx, game)
-  drawAvatar(ctx, game, view)
+  drawOverlayLabels(ctx, game, view)
   drawFloats(ctx, game)
+}
+
+/** Подписи в полном разрешении: значки башен, ВХОД/ВЫХОД, Титан, уровень и имя Охотницы */
+function drawOverlayLabels(ctx: CanvasRenderingContext2D, game: Game, view: ViewState) {
+  const text = (s: string, x: number, y: number, color: string, size = 10) => {
+    ctx.font = `bold ${size}px "Courier New", monospace`
+    ctx.textAlign = 'center'
+    ctx.lineWidth = 3
+    ctx.strokeStyle = 'rgba(0,0,0,0.85)'
+    ctx.strokeText(s, x, y)
+    ctx.fillStyle = color
+    ctx.fillText(s, x, y)
+  }
+  // значок типа башни — маленькая бирка в углу клетки (форма башни общая для типа атаки)
+  if (view.skin === 'steam') {
+    ctx.font = '12px "Segoe UI Emoji","Noto Color Emoji",sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    for (const tw of game.towers) ctx.fillText(ALL_DEFS[tw.defId].glyph, tw.x + CELL / 2 - 7, tw.y - CELL / 2 + 6)
+    ctx.textBaseline = 'alphabetic'
+  }
+  const m = getMap()
+  const first = m.points[1]
+  const last = m.points[m.points.length - 2]
+  text('ВХОД', 26, first.y - 26, '#a6f095')
+  text('ВЫХОД', MAP_W - 30, last.y - 26, '#ff9a7a')
+  for (const c of game.creeps) {
+    if (!c.isBoss) continue
+    const p = pointAtLength(c.dist)
+    text('ТИТАН-ИИ', p.x, p.y - c.size - 18, '#ffb0a0')
+  }
+  const av = game.avatar
+  text('ОХОТНИЦА', av.x, av.y + 26, '#7fd0a0', 9)
+  text(`ур.${av.level}`, av.x + 16, av.y - 14, '#7fd0a0', 9)
 }
 
 function drawBuildGhost(ctx: CanvasRenderingContext2D, view: ViewState) {
@@ -304,48 +217,8 @@ function drawTowers(ctx: CanvasRenderingContext2D, game: Game, view: ViewState) 
       continue
     }
 
-    // шестигранная бронзовая платформа
-    ctx.save()
-    ctx.translate(tw.x, tw.y)
-    ctx.beginPath()
-    for (let k = 0; k < 6; k++) {
-      const a = (k / 6) * Math.PI * 2 + Math.PI / 6
-      const px = Math.cos(a) * (SPOT_RADIUS + 1)
-      const py = Math.sin(a) * (SPOT_RADIUS + 1)
-      if (k === 0) ctx.moveTo(px, py)
-      else ctx.lineTo(px, py)
-    }
-    ctx.closePath()
-    ctx.fillStyle = '#3a2e1c'
-    ctx.fill()
-    ctx.strokeStyle = hovered ? '#e8c170' : '#8a6d3b'
-    ctx.lineWidth = 2
-    ctx.stroke()
-
-    // глиф типа
-    ctx.font = '17px "Segoe UI Emoji","Noto Color Emoji",sans-serif'
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.fillText(def.glyph, 0, 1)
-
-    // пипсы уровня
-    for (let l = 0; l < tw.level; l++) {
-      ctx.beginPath()
-      ctx.arc((l - (tw.level - 1) / 2) * 7, SPOT_RADIUS + 7, 2.4, 0, Math.PI * 2)
-      ctx.fillStyle = tw.level >= 5 ? '#ffd700' : '#e8c170'
-      ctx.fill()
-    }
-
-    // уникальный облик 5 уровня — золотое свечение
-    if (tw.level >= 5) {
-      ctx.beginPath()
-      ctx.arc(0, 0, SPOT_RADIUS + 5, 0, Math.PI * 2)
-      ctx.strokeStyle = 'rgba(255,215,0,0.55)'
-      ctx.lineWidth = 2
-      ctx.stroke()
-    }
-    ctx.restore()
-    ctx.textBaseline = 'alphabetic'
+    // пиксельная башня: цоколь, колонна и навершие по типу атаки (pixel.ts)
+    pixelPass(ctx, () => drawPixelTower(ctx, tw, def, game.time, hovered))
   }
 }
 
@@ -383,9 +256,12 @@ function drawCreeps(ctx: CanvasRenderingContext2D, game: Game) {
       ctx.fill()
     }
 
-    // тело — свой стимпанк-облик у каждого вида врага (render-creeps.ts)
+    // тело — пиксельный спрайт вида (pixel.ts), смотрит по ходу движения
     const ahead = pointAtLength(c.dist + 3)
-    drawCreepBody(ctx, c, p, Math.atan2(ahead.y - p.y, ahead.x - p.x), game.time, game.time < c.stunnedUntil)
+    if (Math.abs(ahead.x - p.x) > 0.5) facingLeft.set(c.uid, ahead.x < p.x)
+    pixelPass(ctx, () =>
+      drawSprite(ctx, c.kind, p, game.time, c.uid, facingLeft.get(c.uid) ?? false, stunned, armorBody(c.armor))
+    )
 
     // замедление — ледяная кайма
     if (slowed) {
@@ -396,11 +272,18 @@ function drawCreeps(ctx: CanvasRenderingContext2D, game: Game) {
       ctx.stroke()
     }
 
-    // оглушение — звёздочки
+    // оглушение — пиксельные звёздочки кружатся над головой
     if (stunned) {
-      ctx.font = '10px "Noto Color Emoji",sans-serif'
-      ctx.textAlign = 'center'
-      ctx.fillText('✦', p.x + Math.sin(game.time * 7) * 8, p.y - c.size - 8)
+      pixelPass(ctx, () => {
+        for (let k = 0; k < 2; k++) {
+          const a = game.time * 6 + k * Math.PI
+          const sx = Math.round((p.x + Math.cos(a) * 8) * PX)
+          const sy = Math.round((p.y - c.size - 10 + Math.sin(a) * 2) * PX)
+          ctx.fillStyle = '#ffe36a'
+          ctx.fillRect(sx, sy - 1, 1, 3)
+          ctx.fillRect(sx - 1, sy, 3, 1)
+        }
+      })
     }
 
     // метка охотницы — прицел
@@ -424,32 +307,27 @@ function drawCreeps(ctx: CanvasRenderingContext2D, game: Game) {
  * легла бы на уже нарисованную (передний враг важнее). Босс — всегда, с подписью.
  */
 function drawCreepBars(ctx: CanvasRenderingContext2D, game: Game) {
-  const drawn: { x: number; y: number; w: number }[] = []
-  const BAR_H = 4
-  const order = [...game.creeps].sort((a, b) => Number(b.isBoss) - Number(a.isBoss) || b.dist - a.dist)
-  for (const c of order) {
-    if (!c.isBoss && c.hp >= c.maxHp) continue
-    const p = pointAtLength(c.dist)
-    const w = c.isBoss ? 56 : Math.max(c.size * 2, 18)
-    const x = p.x - w / 2
-    const y = p.y - c.size - 9
-    if (!c.isBoss && drawn.some((d) => x < d.x + d.w && x + w > d.x && Math.abs(y - d.y) < BAR_H + 2)) continue
-    drawn.push({ x, y, w })
-    const hpFrac = Math.max(0, c.hp / c.maxHp)
-    ctx.fillStyle = 'rgba(0,0,0,0.7)'
-    ctx.fillRect(x - 1, y - 1, w + 2, BAR_H + 2)
-    ctx.fillStyle = hpFrac > 0.5 ? '#7fd0a0' : hpFrac > 0.25 ? '#e8c170' : '#e05252'
-    ctx.fillRect(x, y, w * hpFrac, BAR_H)
-    if (c.isBoss) {
-      ctx.font = 'bold 10px Georgia, serif'
-      ctx.textAlign = 'center'
-      ctx.fillStyle = '#ffb0a0'
-      ctx.strokeStyle = 'rgba(0,0,0,0.8)'
-      ctx.lineWidth = 3
-      ctx.strokeText('ТИТАН-ИИ', p.x, y - 4)
-      ctx.fillText('ТИТАН-ИИ', p.x, y - 4)
+  // в LOW-пикселях: полоса 2 пикселя высотой с чёрной рамкой (подпись Титана — в чётком слое)
+  pixelPass(ctx, () => {
+    const drawn: { x: number; y: number; w: number }[] = []
+    const order = [...game.creeps].sort((a, b) => Number(b.isBoss) - Number(a.isBoss) || b.dist - a.dist)
+    for (const c of order) {
+      if (!c.isBoss && c.hp >= c.maxHp) continue
+      const p = pointAtLength(c.dist)
+      const w = c.isBoss ? 28 : Math.max(Math.round(c.size), 9)
+      const x = Math.round(p.x * PX - w / 2)
+      const y = Math.round((p.y - c.size) * PX) - 7
+      if (!c.isBoss && drawn.some((d) => x < d.x + d.w + 1 && x + w + 1 > d.x && Math.abs(y - d.y) < 4)) continue
+      drawn.push({ x, y, w })
+      const hpFrac = Math.max(0, c.hp / c.maxHp)
+      ctx.fillStyle = '#140d07'
+      ctx.fillRect(x - 1, y - 1, w + 2, 4)
+      ctx.fillStyle = '#3a1410'
+      ctx.fillRect(x, y, w, 2)
+      ctx.fillStyle = hpFrac > 0.5 ? '#7fd0a0' : hpFrac > 0.25 ? '#e8c170' : '#e05252'
+      ctx.fillRect(x, y, Math.max(1, Math.round(w * hpFrac)), 2)
     }
-  }
+  })
 }
 
 function drawProjectiles(ctx: CanvasRenderingContext2D, game: Game, skin: Skin) {
@@ -591,73 +469,21 @@ function drawAvatar(ctx: CanvasRenderingContext2D, game: Game, view: ViewState) 
     ctx.stroke()
   }
 
-  // тень под героем
+  // бирюзовое кольцо под ногами отличает героя от башен и врагов; пульсирует, когда способность готова
+  const ring = av.cooldown <= 0 ? 15 + Math.sin(t * 4) * 1.5 : 14
   ctx.beginPath()
-  ctx.ellipse(av.x, av.y + 13, 11, 4, 0, 0, Math.PI * 2)
-  ctx.fillStyle = 'rgba(0,0,0,0.45)'
-  ctx.fill()
-
-  // герой отличается от башен: бирюзовое живое кольцо + тёмный силуэт
-  // (башни — латунные шестигранники, герой — круглый тёмный с зелёным)
-
-  // мягкая пульсация, когда способность готова
-  if (av.cooldown <= 0) {
-    const glow = 20 + Math.sin(t * 4) * 2.5
-    ctx.beginPath()
-    ctx.arc(av.x, av.y, glow, 0, Math.PI * 2)
-    ctx.strokeStyle = 'rgba(127,208,160,0.35)'
-    ctx.lineWidth = 2
-    ctx.stroke()
-  }
-
-  // вращающееся пунктирное кольцо — «карточка» героя
-  ctx.save()
-  ctx.translate(av.x, av.y)
-  ctx.rotate(-t * 1.4)
-  ctx.beginPath()
-  ctx.arc(0, 0, 17, 0, Math.PI * 2)
-  ctx.setLineDash([9, 7])
-  ctx.strokeStyle = '#7fd0a0'
+  ctx.ellipse(av.x, av.y + 8, ring, ring * 0.45, 0, 0, Math.PI * 2)
+  ctx.strokeStyle = av.cooldown <= 0 ? 'rgba(127,208,160,0.9)' : 'rgba(127,208,160,0.45)'
   ctx.lineWidth = 2
   ctx.stroke()
-  ctx.setLineDash([])
-  ctx.restore()
 
-  // тело — тёмный диск с бирюзовой каймой
-  ctx.beginPath()
-  ctx.arc(av.x, av.y, 12, 0, Math.PI * 2)
-  ctx.fillStyle = '#1f2d24'
-  ctx.fill()
-  ctx.lineWidth = 2.2
-  ctx.strokeStyle = '#7fd0a0'
-  ctx.stroke()
-
-  // силуэт охотницы — эмодзи лука на тёмном диске
-  ctx.font = '15px "Segoe UI Emoji","Noto Color Emoji",sans-serif'
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.fillText('🏹', av.x, av.y + 1)
-  ctx.textBaseline = 'alphabetic'
-
-  // бейдж уровня (бирюзовый, в отличие от латунных пипсов башен)
-  ctx.beginPath()
-  ctx.arc(av.x + 11, av.y - 11, 7.5, 0, Math.PI * 2)
-  ctx.fillStyle = '#1f2d24'
-  ctx.fill()
-  ctx.strokeStyle = '#7fd0a0'
-  ctx.lineWidth = 1.2
-  ctx.stroke()
-  ctx.font = 'bold 9px Georgia, serif'
-  ctx.fillStyle = '#7fd0a0'
-  ctx.textAlign = 'center'
-  ctx.fillText(String(av.level), av.x + 11, av.y - 7.5)
-
-  // подпись героя
-  ctx.font = 'bold 8px Georgia, serif'
-  ctx.fillStyle = 'rgba(127,208,160,0.85)'
-  ctx.textAlign = 'center'
-  ctx.fillText('ОХОТНИЦА', av.x, av.y + 30)
+  // пиксельный спрайт: смотрит туда, куда идёт (уровень и подпись — в чётком слое)
+  if (av.target && Math.abs(av.target.x - av.x) > 2) hunterLeft = av.target.x < av.x
+  const moving = !!av.target
+  pixelPass(ctx, () => drawSprite(ctx, 'hunter', { x: av.x, y: av.y }, moving ? t : 0, 7, hunterLeft, !moving))
 }
+
+let hunterLeft = false
 
 function drawFloats(ctx: CanvasRenderingContext2D, game: Game) {
   for (const f of game.floats) {
