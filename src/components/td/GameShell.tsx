@@ -60,6 +60,19 @@ export default function GameShell() {
       window.removeEventListener('keydown', unlock)
     }
   }, [sfx])
+  // ─── Динамический свет: можно выключить на слабых устройствах, выбор запоминается ───
+  const [lighting, setLighting] = useState(true)
+  useEffect(() => {
+    let off = false
+    try {
+      off = window.localStorage.getItem('zr-light') === '0'
+    } catch {
+      // хранилище недоступно — свет включён
+    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage доступен только после монтирования
+    if (off) setLighting(false)
+  }, [])
+
   useEffect(() => {
     sfx.setMuted(muted)
     try {
@@ -90,6 +103,7 @@ export default function GameShell() {
 
   const viewRef = useRef<ViewState>({
     skin: 'steam',
+    lighting: true,
     hoverTower: null,
     selectedTower: null,
     mergeFrom: null,
@@ -133,6 +147,15 @@ export default function GameShell() {
       // не запомнили — не страшно
     }
   }, [skin])
+  // свет: эффект стоит после объявления viewRef — иначе React-компилятор запрещает его менять
+  useEffect(() => {
+    viewRef.current.lighting = lighting
+    try {
+      window.localStorage.setItem('zr-light', lighting ? '1' : '0')
+    } catch {
+      // не запомнили — не страшно
+    }
+  }, [lighting])
 
   // ─── Настройка canvas ( retina ) ───────────────────────────────────────
   useEffect(() => {
@@ -669,6 +692,8 @@ export default function GameShell() {
           skin={skin}
           fullscreen={fullscreen}
           muted={muted}
+          lighting={lighting}
+          onLighting={() => setLighting((l) => !l)}
           role={mpRole}
           mpStatus={mpStatus}
           onSpeed={doSpeed}

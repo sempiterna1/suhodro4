@@ -14,8 +14,9 @@ import type { Game } from './engine'
 import { pointAtLength } from './engine'
 import { getMap } from './map'
 import { LOW_H, LOW_W, PX, armorBody, buildPixelBackground, drawMotes, drawPixelTower, drawPlants, drawSprite } from './pixel'
+import { applyLighting, drawFog, drawSmoke } from './lighting'
 import { drawLolProjectile, drawLolTower } from './render-lol'
-import type { Vec } from './types'
+import type { Creep, Tower, Vec } from './types'
 
 export type Skin = 'steam' | 'lol'
 
@@ -30,6 +31,7 @@ export interface BuildGhost {
 
 export interface ViewState {
   skin: Skin // 'lol' — шуточный скин башен (render-lol.ts)
+  lighting: boolean // динамический свет и сумрак (lighting.ts); выключается кнопкой для слабых устройств
   hoverTower: number | null
   selectedTower: number | null
   mergeFrom: number | null
@@ -72,17 +74,24 @@ export function render(ctx: CanvasRenderingContext2D, game: Game, view: ViewStat
   // растения качаются по реальным часам — на паузе ветер не стихает
   drawPlants(L, getMap(), performance.now() / 1000)
 
+  const now = performance.now() / 1000
+  // дым из печей — до фигур, он стелется низко
+  pixelPass(L, () => drawSmoke(L, now))
+
   // мир — в координатах поля, масштабом в LOW
   L.setTransform(PX, 0, 0, PX, 0, 0)
   drawMergeLinks(L, game, view)
-  drawTowers(L, game, view)
-  drawCreeps(L, game)
+  drawTowers(L, game, view) // только кольца выделения и радиусы — под фигурами
+  drawEntities(L, game, view) // башни, враги, Охотница — с сортировкой по глубине
   drawEffects(L, game)
   drawProjectiles(L, game, view.skin)
+  // туман, затем свет (сумрак со светящимися пятнами) — до полос HP, чтобы они оставались яркими
+  drawFog(L, now)
+  if (view.lighting) applyLighting(L, game, now)
+  L.setTransform(PX, 0, 0, PX, 0, 0)
   drawCreepBars(L, game)
-  drawAvatar(L, game, view)
   // пыль и угольки поверх мира — по реальным часам, как и ветер
-  pixelPass(L, () => drawMotes(L, performance.now() / 1000))
+  pixelPass(L, () => drawMotes(L, now))
 
   // растягиваем пиксели без сглаживания
   ctx.clearRect(0, 0, MAP_W, MAP_H)
@@ -215,15 +224,36 @@ function drawTowers(ctx: CanvasRenderingContext2D, game: Game, view: ViewState) 
       ctx.setLineDash([])
     }
 
-    if (view.skin === 'lol') {
-      drawLolTower(ctx, tw, def, game.time, hovered)
-      drawLevelPips(ctx, tw.x, tw.y + 22, tw.level)
-      continue
-    }
-
-    // пиксельная башня: цоколь, колонна и навершие по типу атаки (pixel.ts)
-    pixelPass(ctx, () => drawPixelTower(ctx, tw, def, game.time, hovered))
   }
+}
+
+/** Одна башня (кольца выделения рисует drawTowers заранее, под всеми фигурами) */
+function drawTowerBody(ctx: CanvasRenderingContext2D, game: Game, view: ViewState, tw: Tower) {
+  const def = ALL_DEFS[tw.defId]
+  const hovered = view.hoverTower === tw.id || view.selectedTower === tw.id
+  if (view.skin === 'lol') {
+    drawLolTower(ctx, tw, def, game.time, hovered)
+    drawLevelPips(ctx, tw.x, tw.y + 22, tw.level)
+    return
+  }
+  // пиксельная башня: цоколь, колонна и навершие по типу атаки (pixel.ts)
+  pixelPass(ctx, () => drawPixelTower(ctx, tw, def, game.time, hovered))
+}
+
+/**
+ * Глубина: башни, враги и Охотница рисуются одним проходом от верха экрана к низу —
+ * кто ниже (ближе к зрителю), тот перекрывает стоящих выше.
+ */
+function drawEntities(ctx: CanvasRenderingContext2D, game: Game, view: ViewState) {
+  const items: { y: number; draw: () => void }[] = []
+  for (const tw of game.towers) items.push({ y: tw.y + 10, draw: () => drawTowerBody(ctx, game, view, tw) })
+  for (const c of game.creeps) {
+    const p = pointAtLength(c.dist)
+    items.push({ y: p.y, draw: () => drawCreep(ctx, game, c, p) })
+  }
+  items.push({ y: game.avatar.y + 6, draw: () => drawAvatar(ctx, game, view) })
+  items.sort((a, b) => a.y - b.y)
+  for (const it of items) it.draw()
 }
 
 function drawLevelPips(ctx: CanvasRenderingContext2D, x: number, y: number, level: number) {
@@ -235,9 +265,8 @@ function drawLevelPips(ctx: CanvasRenderingContext2D, x: number, y: number, leve
   }
 }
 
-function drawCreeps(ctx: CanvasRenderingContext2D, game: Game) {
-  for (const c of game.creeps) {
-    const p = pointAtLength(c.dist)
+function drawCreep(ctx: CanvasRenderingContext2D, game: Game, c: Creep, p: Vec) {
+  {
     const burning = game.time < c.burnUntil && c.burnDps > 0
     const stunned = game.time < c.stunnedUntil
     const marked = game.time < c.markedUntil
@@ -344,8 +373,24 @@ function drawProjectiles(ctx: CanvasRenderingContext2D, game: Game, skin: Skin) 
     const ux = dx / d
     const uy = dy / d
 
+    // высота полёта: ядра и сферы летят по дуге (парабола от точки вылета к цели), стрелы — почти прямо;
+    // по земле под снарядом бежит его тень — так видно, что он в воздухе
+    const total = pr.ox !== undefined && pr.oy !== undefined ? Math.hypot(tp.x - pr.ox, tp.y - pr.oy) : 0
+    const arc = pr.kind === 'rock' ? 0.35 : pr.kind === 'orb' ? 0.18 : 0.05
+    const prog = total > 0 ? Math.max(0, Math.min(1, 1 - d / total)) : 1
+    const lift = Math.min(60, total * arc) * 4 * prog * (1 - prog)
+    if (lift > 1) {
+      ctx.beginPath()
+      ctx.ellipse(pr.x, pr.y + 2, 4, 2, 0, 0, Math.PI * 2)
+      ctx.fillStyle = 'rgba(0,0,0,0.35)'
+      ctx.fill()
+    }
+    ctx.save()
+    ctx.translate(0, -lift)
+
     if (skin === 'lol') {
       drawLolProjectile(ctx, pr, Math.atan2(uy, ux))
+      ctx.restore()
       continue
     }
 
@@ -389,6 +434,7 @@ function drawProjectiles(ctx: CanvasRenderingContext2D, game: Game, skin: Skin) 
       ctx.fillStyle = pr.color
       ctx.fill()
     }
+    ctx.restore()
   }
 }
 

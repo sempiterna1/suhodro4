@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, useAnimationControls } from 'framer-motion'
 import {
   Coins, Dices, Heart, Maximize2, Minimize2, Pause, Play, RotateCcw, Swords, Users, Zap, HelpCircle, Volume2, VolumeX, Cog,
+  Lightbulb, LightbulbOff,
 } from 'lucide-react'
 import { ALL_DEFS, ARMOR_COLORS, ARMOR_NAMES, ATTACK_NAMES, AVATAR, TOWERS } from '@/game/config'
 import { towerThumb } from '@/game/pixel'
@@ -170,13 +171,15 @@ function RoundBrass({ onClick, title, active, disabled, children }: {
 }
 
 export function ControlBar({
-  ui, skin, fullscreen, muted, role, mpStatus,
-  onSpeed, onPause, onInvite, onInfiniteGold, onSkin, onMute, onHelp, onRestart, onFullscreen,
+  ui, skin, fullscreen, muted, lighting, role, mpStatus,
+  onSpeed, onPause, onInvite, onInfiniteGold, onSkin, onMute, onLighting, onHelp, onRestart, onFullscreen,
 }: {
   ui: UiState
   skin: 'steam' | 'lol'
   fullscreen: boolean
   muted: boolean
+  lighting: boolean
+  onLighting: () => void
   role: MpRole
   mpStatus: MpStatus
   onSpeed: () => void
@@ -208,6 +211,9 @@ export function ControlBar({
             <Users className="h-3.5 w-3.5" />
           </IconButton>
         )}
+        <IconButton onClick={onLighting} title={lighting ? 'Выключить свет и тени (для слабых устройств)' : 'Включить свет и тени'} active={lighting}>
+          {lighting ? <Lightbulb className="h-3.5 w-3.5" /> : <LightbulbOff className="h-3.5 w-3.5" />}
+        </IconButton>
         <IconButton onClick={onMute} title={muted ? 'Включить звук' : 'Выключить звук'} active={!muted}>
           {muted ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
         </IconButton>

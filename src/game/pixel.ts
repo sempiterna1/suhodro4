@@ -466,6 +466,36 @@ function sprite(id: keyof typeof SPRITES, frame: number, body: string, flip: boo
   return cv
 }
 
+/** Чёрный силуэт спрайта — для длинной тени (кэш рядом со спрайтом) */
+function silhouette(img: HTMLCanvasElement, key: string) {
+  let cv = spriteCache.get(key)
+  if (!cv) {
+    cv = document.createElement('canvas')
+    cv.width = img.width
+    cv.height = img.height
+    const c = cv.getContext('2d')!
+    c.drawImage(img, 0, 0)
+    c.globalCompositeOperation = 'source-in'
+    c.fillStyle = '#000'
+    c.fillRect(0, 0, cv.width, cv.height)
+    spriteCache.set(key, cv)
+  }
+  return cv
+}
+
+/**
+ * Длинная тень: силуэт «ложится» на землю вниз-вправо (свет сверху-слева).
+ * Матрица переворачивает силуэт вниз, сжимает по высоте и скашивает вправо; основание — у ног.
+ * lift — насколько фигура над землёй (парящие): тень отрывается от ног.
+ */
+function longShadow(L: CanvasRenderingContext2D, sil: HTMLCanvasElement, cx: number, by: number, lift = 0) {
+  L.save()
+  L.globalAlpha = lift ? 0.22 : 0.32
+  L.setTransform(1, 0, -0.75, -0.4, cx, by + 1 + lift)
+  L.drawImage(sil, -Math.floor(sil.width / 2), -sil.height)
+  L.restore()
+}
+
 /** Пиксельная тень-овал под фигурой (LOW-координаты) */
 function shadow(L: CanvasRenderingContext2D, cx: number, by: number, w: number) {
   L.fillStyle = 'rgba(0,0,0,0.35)'
@@ -487,6 +517,7 @@ export function drawSprite(
   const cx = Math.round(p.x * PX)
   const bob = def.bob ? Math.round(Math.sin(time * 3 + seed) * def.bob) : 0
   const by = Math.round(p.y * PX + img.height / 2 - 1)
+  longShadow(L, silhouette(img, `${id}|${frame}|${body}|${facingLeft ? 1 : 0}|sh`), cx, by, def.bob ? 4 : 0)
   shadow(L, cx, by + 1, Math.max(6, Math.round(img.width * 0.7)))
   L.drawImage(img, cx - Math.floor(img.width / 2), by - img.height + 1 - (def.bob ? 2 : 0) + bob)
 }
@@ -551,7 +582,19 @@ function pipe(L: CanvasRenderingContext2D, x: number, y: number, len: number, ve
   }
 }
 
+/** Светящийся декор карты: собирается при построении фона, освещение читает его каждый кадр */
+export interface MapLight {
+  x: number // LOW-пиксели
+  y: number
+  kind: 'lantern' | 'furnace' | 'crystal' | 'portal' | 'gate'
+  seed: number // для мерцания
+}
+export const mapLights: MapLight[] = []
+/** Номер вида в DECOR → какой свет он даёт (фонарь, печь, кристаллы) */
+const LIGHT_DECOR: Record<number, MapLight['kind']> = { 2: 'crystal', 6: 'lantern', 10: 'furnace' }
+
 export function buildPixelBackground(map: GameMap): HTMLCanvasElement {
+  mapLights.length = 0
   const cv = document.createElement('canvas')
   cv.width = LOW_W
   cv.height = LOW_H
@@ -615,6 +658,9 @@ export function buildPixelBackground(map: GameMap): HTMLCanvasElement {
       const ox = cx * LC + (corner % 2 ? LC - 9 : 1)
       const oy = cy * LC + (corner < 2 ? 1 : LC - 9)
       DECOR[kind](L, ox, oy, hash(cx, cy, seed + 404))
+      // светящийся декор становится источником света (lighting.ts)
+      const lightKind = LIGHT_DECOR[kind]
+      if (lightKind) mapLights.push({ x: ox + 4, y: oy + (lightKind === 'lantern' ? 1 : 4), kind: lightKind, seed: cx * 31 + cy })
     }
   }
 
@@ -666,6 +712,8 @@ export function buildPixelBackground(map: GameMap): HTMLCanvasElement {
   const last = map.cells[map.cells.length - 1]
   drawPortal(L, 0, first.cy * LC)
   drawGate(L, LOW_W - 7, last.cy * LC)
+  mapLights.push({ x: 3, y: first.cy * LC + LC / 2, kind: 'portal', seed: 1 })
+  mapLights.push({ x: LOW_W - 4, y: last.cy * LC + LC / 2, kind: 'gate', seed: 2 })
 
   // виньетка по краям
   for (let i = 0; i < 8; i++) {
@@ -836,6 +884,11 @@ export function drawPixelTower(
   const outline = hovered ? '#ffd700' : '#140d07'
   const recoil = time - tw.lastShotAt < 0.12 ? 1 : 0
 
+  // длинная тень башни вниз-вправо: ступенчатый пиксельный параллелограмм (свет сверху-слева)
+  for (let i = 0; i < 7; i++) {
+    L.fillStyle = `rgba(0,0,0,${0.3 - i * 0.025})`
+    L.fillRect(cx - 6 + Math.round(i * 1.6), cy + 8 + i, 14 - Math.round(i * 0.6), 1)
+  }
   shadow(L, cx, cy + 8, 16)
   // цоколь из камня
   px(L, cx - 8, cy + 2, outline, 16, 7)

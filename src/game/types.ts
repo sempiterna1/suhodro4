@@ -138,6 +138,8 @@ export interface Projectile {
   y: number
   targetUid: number
   targetPos: Vec | null // если цель умерла
+  ox?: number // точка вылета — для дуги полёта при отрисовке
+  oy?: number
   speed: number
   damage: number
   attacks: AttackType[] // один тип или гибрид из двух (слитые башни)
