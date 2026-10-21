@@ -3,18 +3,28 @@
 import {
   ALL_DEFS,
   ARMOR_COLORS,
+  CELL,
   MAP_H,
   MAP_W,
-  PATH,
   PATH_WIDTH,
   SPOT_RADIUS,
 } from './config'
 import type { Game } from './engine'
 import { pointAtLength } from './engine'
+import { getMap, pathLength } from './map'
 import { drawLolProjectile, drawLolTower } from './render-lol'
 import type { Vec } from './types'
 
 export type Skin = 'steam' | 'lol'
+
+/** Призрак постройки: выбранная в арсенале башня над клеткой (центр клетки) */
+export interface BuildGhost {
+  x: number
+  y: number
+  valid: boolean
+  range: number // радиус атаки выбранной башни
+  glyph: string
+}
 
 export interface ViewState {
   skin: Skin // 'lol' — шуточный скин башен (render-lol.ts)
@@ -22,12 +32,12 @@ export interface ViewState {
   selectedTower: number | null
   mergeFrom: number | null
   mouse: Vec | null
-  buildMode: boolean
-  buildGhost: { x: number; y: number; valid: boolean } | null
+  buildGhost: BuildGhost | null
 }
 
-// ─── Кэш статичного фона ─────────────────────────────────────────────────
+// ─── Кэш статичного фона (перестраивается при смене карты) ──────────────
 let bgCache: HTMLCanvasElement | null = null
+let bgSeed = -1
 
 function drawGear(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, teeth: number, color: string) {
   ctx.save()
@@ -64,27 +74,27 @@ function buildBackground(): HTMLCanvasElement {
   ctx.fillStyle = grad
   ctx.fillRect(0, 0, MAP_W, MAP_H)
 
-  // плиты
-  ctx.strokeStyle = 'rgba(0,0,0,0.28)'
-  ctx.lineWidth = 1.5
-  for (let x = 0; x <= MAP_W; x += 64) {
+  // плиты = клетки сетки постройки
+  ctx.strokeStyle = 'rgba(0,0,0,0.3)'
+  ctx.lineWidth = 1.2
+  for (let x = 0; x <= MAP_W; x += CELL) {
     ctx.beginPath()
     ctx.moveTo(x, 0)
     ctx.lineTo(x, MAP_H)
     ctx.stroke()
   }
-  for (let y = 0; y <= MAP_H; y += 64) {
+  for (let y = 0; y <= MAP_H; y += CELL) {
     ctx.beginPath()
     ctx.moveTo(0, y)
     ctx.lineTo(MAP_W, y)
     ctx.stroke()
   }
-  // заклёпки на стыках плит
-  ctx.fillStyle = 'rgba(176,141,87,0.16)'
-  for (let x = 32; x < MAP_W; x += 64) {
-    for (let y = 32; y < MAP_H; y += 64) {
+  // заклёпки на углах клеток
+  ctx.fillStyle = 'rgba(176,141,87,0.14)'
+  for (let x = CELL; x < MAP_W; x += CELL) {
+    for (let y = CELL; y < MAP_H; y += CELL) {
       ctx.beginPath()
-      ctx.arc(x, y, 2, 0, Math.PI * 2)
+      ctx.arc(x, y, 1.6, 0, Math.PI * 2)
       ctx.fill()
     }
   }
@@ -96,7 +106,12 @@ function buildBackground(): HTMLCanvasElement {
   drawGear(ctx, 840, 60, 24, 8, 'rgba(140,110,70,0.13)')
   drawGear(ctx, 480, 290, 66, 14, 'rgba(140,110,70,0.06)')
 
+  // клетки тропы — тёмная подложка, чтобы было видно, куда строить нельзя
+  ctx.fillStyle = 'rgba(10,7,4,0.35)'
+  for (const c of getMap().cells) ctx.fillRect(c.cx * CELL, c.cy * CELL, CELL, CELL)
+
   // тропа — клёпаный металлический настил
+  const PATH = getMap().points
   const trace = () => {
     ctx.beginPath()
     ctx.moveTo(PATH[0].x, PATH[0].y)
@@ -106,7 +121,7 @@ function buildBackground(): HTMLCanvasElement {
   ctx.lineCap = 'butt'
   trace()
   ctx.strokeStyle = '#15100a'
-  ctx.lineWidth = PATH_WIDTH + 12
+  ctx.lineWidth = PATH_WIDTH + 4 // кромка не вылезает за клетки тропы
   ctx.stroke()
   trace()
   ctx.strokeStyle = '#3d3122'
@@ -125,7 +140,7 @@ function buildBackground(): HTMLCanvasElement {
   ctx.setLineDash([])
 
   // заклёпки по краям тропы
-  const total = ctxPathLength()
+  const total = pathLength()
   ctx.fillStyle = 'rgba(20,14,8,0.55)'
   for (let d = 10; d < total; d += 30) {
     const p = pointAtLength(d)
@@ -166,14 +181,6 @@ function buildBackground(): HTMLCanvasElement {
   return cv
 }
 
-function ctxPathLength() {
-  let len = 0
-  for (let i = 0; i < PATH.length - 1; i++) {
-    len += Math.hypot(PATH[i + 1].x - PATH[i].x, PATH[i + 1].y - PATH[i].y)
-  }
-  return len
-}
-
 function normalAt(d: number): Vec {
   const eps = 2
   const a = pointAtLength(Math.max(0, d - eps))
@@ -186,7 +193,10 @@ function normalAt(d: number): Vec {
 
 // ─── Основной рендер ─────────────────────────────────────────────────────
 export function render(ctx: CanvasRenderingContext2D, game: Game, view: ViewState) {
-  if (!bgCache) bgCache = buildBackground()
+  if (!bgCache || bgSeed !== game.mapSeed) {
+    bgCache = buildBackground()
+    bgSeed = game.mapSeed
+  }
   ctx.clearRect(0, 0, MAP_W, MAP_H)
   ctx.drawImage(bgCache, 0, 0)
 
@@ -201,59 +211,47 @@ export function render(ctx: CanvasRenderingContext2D, game: Game, view: ViewStat
 }
 
 function drawBuildGhost(ctx: CanvasRenderingContext2D, view: ViewState) {
-  if (!view.buildMode || !view.buildGhost) return
-  const { x, y, valid } = view.buildGhost
+  if (!view.buildGhost) return
+  const { x, y, valid, range, glyph } = view.buildGhost
   const color = valid ? '#e8c170' : '#e05252'
 
-  // подсказка радиуса атаки (средний радиус арсенала)
+  // радиус атаки выбранной башни
   ctx.beginPath()
-  ctx.arc(x, y, 125, 0, Math.PI * 2)
-  ctx.fillStyle = valid ? 'rgba(232,193,112,0.05)' : 'rgba(224,82,82,0.05)'
+  ctx.arc(x, y, range, 0, Math.PI * 2)
+  ctx.fillStyle = valid ? 'rgba(232,193,112,0.07)' : 'rgba(224,82,82,0.06)'
   ctx.fill()
-  ctx.strokeStyle = valid ? 'rgba(232,193,112,0.3)' : 'rgba(224,82,82,0.35)'
-  ctx.lineWidth = 1.2
-  ctx.setLineDash([4, 6])
+  ctx.strokeStyle = valid ? 'rgba(232,193,112,0.55)' : 'rgba(224,82,82,0.45)'
+  ctx.lineWidth = 1.5
+  ctx.setLineDash([5, 5])
   ctx.stroke()
   ctx.setLineDash([])
 
-  // платформа-призрак
-  ctx.save()
-  ctx.translate(x, y)
-  ctx.beginPath()
-  for (let k = 0; k < 6; k++) {
-    const a = (k / 6) * Math.PI * 2 + Math.PI / 6
-    const px = Math.cos(a) * (SPOT_RADIUS + 1)
-    const py = Math.sin(a) * (SPOT_RADIUS + 1)
-    if (k === 0) ctx.moveTo(px, py)
-    else ctx.lineTo(px, py)
-  }
-  ctx.closePath()
-  ctx.fillStyle = 'rgba(46,36,22,0.75)'
-  ctx.fill()
+  // подсветка клетки
+  ctx.fillStyle = valid ? 'rgba(232,193,112,0.18)' : 'rgba(224,82,82,0.2)'
+  ctx.fillRect(x - CELL / 2, y - CELL / 2, CELL, CELL)
   ctx.strokeStyle = color
   ctx.lineWidth = 2
   if (!valid) ctx.setLineDash([5, 4])
-  ctx.stroke()
+  ctx.strokeRect(x - CELL / 2 + 1, y - CELL / 2 + 1, CELL - 2, CELL - 2)
   ctx.setLineDash([])
-  // плюс/крест
-  ctx.strokeStyle = color
-  ctx.lineWidth = 2
-  ctx.beginPath()
-  ctx.moveTo(-7, 0)
-  ctx.lineTo(7, 0)
-  ctx.moveTo(0, -7)
-  ctx.lineTo(0, 7)
-  ctx.stroke()
+
+  // полупрозрачный значок башни
+  ctx.globalAlpha = valid ? 0.85 : 0.45
+  ctx.font = '18px "Segoe UI Emoji","Noto Color Emoji",sans-serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(glyph, x, y + 1)
+  ctx.textBaseline = 'alphabetic'
+  ctx.globalAlpha = 1
   if (!valid) {
     // перечёркивание — нельзя
     ctx.beginPath()
-    ctx.moveTo(-SPOT_RADIUS + 4, -SPOT_RADIUS + 4)
-    ctx.lineTo(SPOT_RADIUS - 4, SPOT_RADIUS - 4)
+    ctx.moveTo(x - SPOT_RADIUS + 4, y - SPOT_RADIUS + 4)
+    ctx.lineTo(x + SPOT_RADIUS - 4, y + SPOT_RADIUS - 4)
     ctx.strokeStyle = '#e05252'
     ctx.lineWidth = 2.5
     ctx.stroke()
   }
-  ctx.restore()
 }
 
 function drawTowers(ctx: CanvasRenderingContext2D, game: Game, view: ViewState) {

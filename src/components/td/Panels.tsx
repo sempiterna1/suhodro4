@@ -272,74 +272,7 @@ function RollButton({ gold, cost, onRoll }: { gold: number; cost: number; onRoll
   )
 }
 
-// ─── Меню постройки ──────────────────────────────────────────────────────
-export function BuildMenu({
-  pos,
-  gold,
-  shop,
-  rollCost,
-  onBuild,
-  onRoll,
-  onClose,
-}: {
-  pos: Vec
-  gold: number
-  shop: string[]
-  rollCost: number
-  onBuild: (defId: string) => void
-  onRoll: () => void
-  onClose: () => void
-}) {
-  const pool = shop.map((id) => ALL_DEFS[id]).filter((d): d is TowerDef => !!d && !d.merged)
-  return (
-    <div className="rounded-lg border-2 border-[#8a6d3b] bg-[#241b12] p-3">
-      <div className="mb-2 flex items-center justify-between">
-        <span className="font-serif text-sm font-bold text-[#e8c170]">
-          Постройка · {Math.round(pos.x)}:{Math.round(pos.y)}
-        </span>
-        <button onClick={onClose} className="text-[#8a6d3b] hover:text-[#e8c170]" aria-label="Закрыть">
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        {pool.map((t) => {
-          const affordable = gold >= t.price
-          return (
-            <button
-              key={t.id}
-              disabled={!affordable}
-              onClick={() => onBuild(t.id)}
-              className={`flex items-start gap-2 rounded-md border p-2 text-left transition-colors ${
-                affordable
-                  ? 'border-[#8a6d3b] bg-[#2b2115] hover:border-[#e8c170] hover:bg-[#3a2e1c]'
-                  : 'cursor-not-allowed border-[#8a6d3b33] bg-[#221a10] opacity-50'
-              }`}
-            >
-              <span className="text-xl leading-none">{t.glyph}</span>
-              <span className="min-w-0">
-                <span className="block truncate text-xs font-bold text-[#e8c170]">{t.name}</span>
-                <span className="block text-[10px] leading-tight text-[#a89a80]">{t.role}</span>
-                <span className="mt-1 flex items-center gap-1">
-                  <BrassTag color={ATTACK_COLORS[t.attack]}>{ATTACK_NAMES[t.attack]}</BrassTag>
-                  <span className={`font-mono text-[10px] ${affordable ? 'text-[#e8c170]' : 'text-[#e05252]'}`}>
-                    {t.price}⚡
-                  </span>
-                </span>
-              </span>
-            </button>
-          )
-        })}
-      </div>
-      <div className="mt-2">
-        <RollButton gold={gold} cost={rollCost} onRoll={onRoll} />
-      </div>
-      <p className="mt-2 text-[10px] leading-snug text-[#8a6d3b]">
-        В арсенале {pool.length} случайных башен из {TOWERS.length}. Улучшать уже построенные можно всегда.
-        Продажа возвращает {SELL_RATIO * 100}%.
-      </p>
-    </div>
-  )
-}
+
 
 // ─── Панель башни ────────────────────────────────────────────────────────
 export function TowerPanel({
@@ -581,18 +514,22 @@ export function AvatarPanel({
   )
 }
 
-// ─── Список башен (когда ничего не выбрано) ──────────────────────────────
+// ─── Арсенал (когда ничего не выбрано): карточки перетаскиваются на клетку ─
 export function ShopList({
   gold,
-  buildMode,
   shop,
   rollCost,
+  armed,
+  canBuild,
+  onPick,
   onRoll,
 }: {
   gold: number
-  buildMode: boolean
   shop: string[]
   rollCost: number
+  armed: string | null
+  canBuild: boolean
+  onPick: (defId: string, e: React.PointerEvent) => void
   onRoll: () => void
 }) {
   const pool = shop.map((id) => ALL_DEFS[id]).filter((d): d is TowerDef => !!d && !d.merged)
@@ -602,20 +539,35 @@ export function ShopList({
         Арсенал <span className="font-sans text-[10px] font-normal text-[#8a6d3b]">· {pool.length} из {TOWERS.length}</span>
       </p>
       <div className="grid grid-cols-2 gap-1.5">
-        {pool.map((t) => (
-          <div
-            key={t.id}
-            className={`flex items-center gap-1.5 rounded border border-[#8a6d3b44] bg-[#2b2115] px-2 py-1 ${
-              gold < t.price ? 'opacity-50' : ''
-            }`}
-          >
-            <span className="text-base leading-none">{t.glyph}</span>
-            <span className="min-w-0 flex-1 truncate text-[10px] text-[#d8cbb0]">{t.name}</span>
-            <span className={`font-mono text-[10px] ${gold >= t.price ? 'text-[#e8c170]' : 'text-[#e05252]'}`}>
-              {t.price}
-            </span>
-          </div>
-        ))}
+        {pool.map((t) => {
+          const affordable = gold >= t.price
+          const usable = canBuild && affordable
+          const picked = armed === t.id
+          return (
+            <button
+              key={t.id}
+              type="button"
+              disabled={!usable}
+              onPointerDown={(e) => usable && onPick(t.id, e)}
+              // перетаскивание пальцем не должно прокручивать страницу
+              style={{ touchAction: 'none' }}
+              className={`flex items-center gap-1.5 rounded border px-2 py-1 text-left transition-colors ${
+                picked
+                  ? 'border-[#ffd700] bg-[#3a2e1c] ring-1 ring-[#ffd700]'
+                  : usable
+                    ? 'cursor-grab border-[#8a6d3b66] bg-[#2b2115] hover:border-[#e8c170] active:cursor-grabbing'
+                    : 'cursor-not-allowed border-[#8a6d3b33] bg-[#221a10] opacity-50'
+              }`}
+              title={`${t.name} — ${t.role}. Радиус ${t.range}. Перетащите на клетку или нажмите и выберите клетку`}
+            >
+              <span className="text-base leading-none">{t.glyph}</span>
+              <span className="min-w-0 flex-1 truncate text-[10px] text-[#d8cbb0]">{t.name}</span>
+              <span className={`font-mono text-[10px] ${affordable ? 'text-[#e8c170]' : 'text-[#e05252]'}`}>
+                {t.price}
+              </span>
+            </button>
+          )
+        })}
         {pool.length === 0 && (
           <p className="col-span-2 text-center text-[10px] text-[#8a6d3b]">Арсенал выпадет с началом игры</p>
         )}
@@ -624,9 +576,8 @@ export function ShopList({
         <RollButton gold={gold} cost={rollCost} onRoll={onRoll} />
       </div>
       <p className="mt-2 text-[10px] text-[#8a6d3b]">
-        {buildMode
-          ? 'Коснитесь свободной земли на карте, чтобы построить башню. Строить можно почти везде, кроме тракта.'
-          : 'Включите режим «строить» (кнопка слева внизу карты), чтобы выбрать место для башни.'}
+        Перетащите башню на свободную клетку — пока тянете, видно радиус атаки. Или нажмите башню, потом клетку.
+        Повышать уровень и сливать — кликом по башне на поле. Продажа возвращает {SELL_RATIO * 100}%.
       </p>
     </div>
   )
@@ -651,9 +602,10 @@ export function HelpDialog({ open, onOpenChange }: { open: boolean; onOpenChange
             <b className="text-[#e8c170]">Жизни:</b> 20. Обычная машина при прорыве отнимает 1, босс — 10.
           </p>
           <p>
-            <b className="text-[#e8c170]">Управление:</b> режим 🏗 «строить» — клик по земле выбирает место для
-            башни (нельзя на тракте, у краёв и вплотную к другим башням); клик по башне — улучшить, слить,
-            продать; кнопка «идти» — клик по земле двигает Охотницу.
+            <b className="text-[#e8c170]">Управление:</b> поле разбито на клетки, одна башня — одна клетка.
+            Перетащите башню из арсенала на свободную клетку (не на тракт) — пока тянете, видно радиус атаки.
+            Можно и иначе: нажать башню в арсенале, потом клетку; Esc — отмена. Клик по башне — улучшить, слить,
+            продать; клик по пустой земле — Охотница идёт туда.
           </p>
           <p>
             <b className="text-[#e8c170]">Арсенал:</b> строить можно только башни из текущего пула — 5 случайных
@@ -670,6 +622,9 @@ export function HelpDialog({ open, onOpenChange }: { open: boolean; onOpenChange
           <p>
             <b className="text-[#e8c170]">Слияние:</b> две РАЗНЫЕ башни 3+ ур. на расстоянии до 140 px →
             уникальная башня с гибридной атакой (лучший множитель из двух типов против каждой цели).
+          </p>
+          <p>
+            <b className="text-[#e8c170]">Карта:</b> тракт генерируется заново в каждой игре.
           </p>
           <p>
             <b className="text-[#e8c170]">Волны:</b> тип брони виден заранее — стройте контр-башни. Волна 9 —

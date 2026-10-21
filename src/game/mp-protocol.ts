@@ -18,6 +18,7 @@ export interface Snap {
   paused: boolean
   infiniteGold: boolean
   shop: string[]
+  mapSeed: number // гость генерирует ту же тропу по зерну (map.ts)
   time: number
   previewRemaining: number
   waveSpawned: number

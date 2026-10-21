@@ -6,13 +6,11 @@ import {
   ARMOR_HP_MULT,
   ARMOR_SPEED,
   AVATAR,
-  AVATAR_BUILD_CLEAR,
   BOSS_ESCORTS,
   BOSS_GOLD_MULT,
   BOSS_HP_MULT,
   BOSS_LIVES_COST,
   BOSS_SPEED,
-  BUILD_PATH_CLEAR,
   CHAIN_FALLOFF,
   CHAIN_RANGE,
   COOP_HP_MULT,
@@ -28,17 +26,14 @@ import {
   MERGE_MIN_LEVEL,
   MERGED_TOWERS,
   MIN_INTERVAL,
-  PATH,
   PREVIEW_TIME,
   ROLL_COST,
   SELL_RATIO,
   SHOP_SIZE,
   SLAM_STUN,
-  SPOT_RADIUS,
   START_GOLD,
   START_LIVES,
   TOTAL_WAVES,
-  TOWER_GAP,
   TOWERS,
   WAVES,
   goldForKill,
@@ -49,6 +44,19 @@ import {
   markBonusForLevel,
   waveBonus,
 } from './config'
+import {
+  type GameMap,
+  cellOf,
+  distToPath,
+  generateMap,
+  getMap,
+  isPathCell,
+  pathLength,
+  pointAtLength,
+  randomSeed,
+  setMap,
+  snapToCell,
+} from './map'
 import type { GuestCmd, Snap } from './mp-protocol'
 import type {
   ArmorType,
@@ -65,43 +73,9 @@ import type {
   Vec,
 } from './types'
 
-// ─── Утилиты пути ────────────────────────────────────────────────────────
-const segLen: number[] = []
-const segStart: number[] = []
-let pathLength = 0
-{
-  let acc = 0
-  for (let i = 0; i < PATH.length - 1; i++) {
-    const dx = PATH[i + 1].x - PATH[i].x
-    const dy = PATH[i + 1].y - PATH[i].y
-    const len = Math.hypot(dx, dy)
-    segLen.push(len)
-    segStart.push(acc)
-    acc += len
-  }
-  pathLength = acc
-}
+// ─── Путь и сетка — в map.ts (тропа генерируется по зерну) ──────────────
+export { distToPath, pointAtLength }
 
-export function pointAtLength(d: number): Vec {
-  if (d <= 0) return { x: PATH[0].x, y: PATH[0].y }
-  if (d >= pathLength) {
-    const last = PATH[PATH.length - 1]
-    return { x: last.x, y: last.y }
-  }
-  for (let i = 0; i < segLen.length; i++) {
-    if (d <= segStart[i] + segLen[i]) {
-      const t = (d - segStart[i]) / segLen[i]
-      return {
-        x: PATH[i].x + (PATH[i + 1].x - PATH[i].x) * t,
-        y: PATH[i].y + (PATH[i + 1].y - PATH[i].y) * t,
-      }
-    }
-  }
-  const last = PATH[PATH.length - 1]
-  return { x: last.x, y: last.y }
-}
-
-// ─── Свободная постройка: геометрия и проверки места ────────────────────
 /** Расстояние от точки p до отрезка a–b */
 export function distToSegment(p: Vec, a: Vec, b: Vec): number {
   const bx = b.x - a.x
@@ -111,47 +85,20 @@ export function distToSegment(p: Vec, a: Vec, b: Vec): number {
   return Math.hypot(p.x - (a.x + bx * t), p.y - (a.y + by * t))
 }
 
-/** Расстояние от точки до ломаной тропы (по сегментам) */
-export function distToPath(x: number, y: number): number {
-  let best = Infinity
-  for (let i = 0; i < PATH.length - 1; i++) {
-    const ax = PATH[i].x
-    const ay = PATH[i].y
-    const bx = PATH[i + 1].x - ax
-    const by = PATH[i + 1].y - ay
-    const len2 = bx * bx + by * by || 1
-    const t = Math.max(0, Math.min(1, ((x - ax) * bx + (y - ay) * by) / len2))
-    const d = Math.hypot(x - (ax + bx * t), y - (ay + by * t))
-    if (d < best) best = d
-  }
-  return best
-}
-
 /**
- * Проверка места для башни при свободной постройке.
+ * Проверка клетки под башню (координаты — любая точка внутри клетки).
  * null — строить можно, иначе строка с причиной запрета.
  */
-export function placementError(
-  x: number,
-  y: number,
-  towers: Tower[],
-  avatar: Vec
-): string | null {
-  if (
-    x < SPOT_RADIUS + 2 || x > MAP_W - SPOT_RADIUS - 2 ||
-    y < SPOT_RADIUS + 2 || y > MAP_H - SPOT_RADIUS - 2
-  ) {
-    return 'Слишком близко к краю карты'
-  }
-  if (distToPath(x, y) < BUILD_PATH_CLEAR) {
-    return 'Нельзя строить на тракте'
-  }
+export function placementError(x: number, y: number, towers: Tower[], avatar: Vec): string | null {
+  if (x < 0 || y < 0 || x >= MAP_W || y >= MAP_H) return 'За краем карты'
+  const c = cellOf(x, y)
+  if (isPathCell(c)) return 'Нельзя строить на тракте'
   for (const tw of towers) {
-    if (Math.hypot(tw.x - x, tw.y - y) < TOWER_GAP) return 'Слишком близко к другой башне'
+    const tc = cellOf(tw.x, tw.y)
+    if (tc.cx === c.cx && tc.cy === c.cy) return 'Клетка занята башней'
   }
-  if (Math.hypot(avatar.x - x, avatar.y - y) < AVATAR_BUILD_CLEAR) {
-    return 'Охотница стоит на этом месте'
-  }
+  const ac = cellOf(avatar.x, avatar.y)
+  if (ac.cx === c.cx && ac.cy === c.cy) return 'Охотница стоит на этой клетке'
   return null
 }
 
@@ -236,6 +183,10 @@ export class Game {
 
   stats = { kills: 0, leaked: 0, goldEarned: 0, merges: 0, bossKills: 0 }
 
+  /** Зерно текущей карты (0 — классическая змейка). Хост передаёт его гостю в снапшоте */
+  mapSeed = 0
+  private mapLocked = false // useMap(): карта не меняется при рестарте (тесты)
+
   private uid = 1
   private spawnQueue: SpawnOrder[] = []
   private waveSpawned = 0
@@ -272,6 +223,23 @@ export class Game {
       this.goldBeforeCheat = this.gold
       this.refillGold()
     }
+    // каждая новая игра — новая тропа
+    if (!this.mapLocked) this.loadMap(generateMap(randomSeed()))
+  }
+
+  private loadMap(m: GameMap) {
+    setMap(m)
+    this.mapSeed = m.seed
+  }
+
+  /** Зафиксировать карту (не меняется при рестарте) — для тестов и выбора конкретной карты */
+  useMap(m: GameMap) {
+    this.mapLocked = true
+    this.loadMap(m)
+  }
+
+  get map(): GameMap {
+    return getMap()
   }
 
   /** Чит «бесконечное золото»: при выключении возвращается золото, что было до включения */
@@ -365,10 +333,11 @@ export class Game {
     if (this.gold < def.price) return { ok: false, error: 'Не хватает золота' }
     this.gold -= def.price
     this.refillGold()
+    const at = snapToCell(x, y) // башня всегда в центре клетки
     const tower: Tower = {
       id: this.uid++,
-      x,
-      y,
+      x: at.x,
+      y: at.y,
       defId,
       level: 1,
       invested: def.price,
@@ -566,11 +535,11 @@ export class Game {
       if (this.time >= c.stunnedUntil) {
         c.dist += c.speed * this.slowFactor(c) * dt
       }
-      if (c.dist >= pathLength) {
+      if (c.dist >= pathLength()) {
         // прорвался
         this.lives -= c.livesCost
         this.stats.leaked++
-        const exit = pointAtLength(pathLength - 30)
+        const exit = pointAtLength(pathLength() - 30)
         this.addFloat(exit.x, exit.y - 20, `−${c.livesCost} ♥`, '#e05252')
         if (this.lives <= 0) {
           this.lives = 0
@@ -1093,6 +1062,7 @@ export class Game {
       paused: this.paused,
       infiniteGold: this.infiniteGold,
       shop: [...this.shop],
+      mapSeed: this.mapSeed,
       time: this.time,
       previewRemaining: Math.max(0, this.previewRemaining),
       waveSpawned: this.waveSpawned,
@@ -1142,6 +1112,8 @@ export class Game {
     this.paused = s.paused
     this.infiniteGold = s.infiniteGold
     this.shop = [...s.shop]
+    // карта гостя — та же, что у хоста: генерируем по его зерну
+    if (s.mapSeed !== this.mapSeed) this.loadMap(generateMap(s.mapSeed))
     this.time = s.time
     this.previewRemaining = s.previewRemaining
     this.waveSpawned = s.waveSpawned
@@ -1163,7 +1135,7 @@ export class Game {
     this.effects = s.effects.map((e) => ({ ...e }))
     this.floats = s.floats.map((f) => ({ ...f }))
     if (s.lastReject) {
-      this.addFloat(pointAtLength(pathLength - 120).x, 60, s.lastReject, '#e05252')
+      this.addFloat(pointAtLength(pathLength() - 120).x, 60, s.lastReject, '#e05252')
       this.lastReject = undefined
     }
   }

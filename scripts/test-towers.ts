@@ -3,6 +3,7 @@
 // Для механик — точечные проверки: замедление, цепь, линия, уязвимость, аура, разгон, фокус.
 
 import { Game } from '../src/game/engine'
+import { CLASSIC_MAP } from '../src/game/map'
 import { ALL_DEFS, MERGED_TOWERS, TOWERS } from '../src/game/config'
 import type { Creep } from '../src/game/types'
 
@@ -18,6 +19,7 @@ const SPOT = { x: 300, y: 200 }
 function setup(defId: string, level: number): Game {
   const g = new Game()
   g.unlockAllTowers() // арсенал случаен — тестам нужны все башни
+  g.useMap(CLASSIC_MAP) // карта случайна — тестам нужна классическая
   g.shop.push(defId) // слитые башни в арсенале не продаются — для теста ставим напрямую
   g.beginPreview()
   g.gold = 1e6
@@ -112,6 +114,7 @@ function firstCreep(g: Game): Creep | undefined {
   // аура Бастиона: урон соседа растёт на 10%
   const g = new Game()
   g.unlockAllTowers() // арсенал случаен — тестам нужны все башни
+  g.useMap(CLASSIC_MAP) // карта случайна — тестам нужна классическая
   g.beginPreview()
   g.gold = 1e6
   const a = g.build(300, 200, 'archer').towerId!
@@ -128,6 +131,7 @@ function firstCreep(g: Game): Creep | undefined {
   for (const m of MERGED_TOWERS) {
     const g = new Game()
     g.unlockAllTowers() // арсенал случаен — тестам нужны все башни
+    g.useMap(CLASSIC_MAP) // карта случайна — тестам нужна классическая
     g.beginPreview()
     g.gold = 1e6
     const a = g.build(300, 200, m.parents[0]).towerId!

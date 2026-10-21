@@ -1,11 +1,14 @@
 // Тест кооп-множителя HP (GDD: 2 игрока → ×1.85)
 
 import { Game } from '../src/game/engine'
+import { CLASSIC_MAP } from '../src/game/map'
 import { hpForWave, ARMOR_HP_MULT, HP_PLAYTEST_MULT, COOP_HP_MULT } from '../src/game/config'
 
 const g = new Game()
 
 g.unlockAllTowers() // арсенал случаен — тестам нужны все башни
+
+g.useMap(CLASSIC_MAP) // карта случайна — тестам нужна классическая
 g.beginPreview()
 g.startWave()
 
@@ -37,6 +40,7 @@ console.log(`снапшот: ${size} байт (${(size / 1024).toFixed(1)} КБ)
 // applySnap на втором экземпляре (гость) — состояние совпадает
 const guest = new Game()
 guest.unlockAllTowers() // арсенал случаен — тестам нужны все башни
+guest.useMap(CLASSIC_MAP) // карта случайна — тестам нужна классическая
 guest.applySnap(snap)
 if (guest.creeps.length !== snap.creeps.length || guest.gold !== snap.gold || guest.phase !== snap.phase) {
   console.error('✗ РЕГРЕССИЯ applySnap')
@@ -47,6 +51,7 @@ console.log('✓ applySnap: крипы/золото/фаза восстанов�
 // ─── Команды гостя (applyGuestCmd) ───
 const h = new Game()
 h.unlockAllTowers() // арсенал случаен — тестам нужны все башни
+h.useMap(CLASSIC_MAP) // карта случайна — тестам нужна классическая
 h.beginPreview()
 if (h.phase !== 'preview') { console.error('✗ нет preview'); process.exit(1) }
 const err = h.applyGuestCmd({ t: 'startWave' })

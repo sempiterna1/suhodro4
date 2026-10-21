@@ -3,10 +3,13 @@
 // mergeTargetsFor() возвращает id, которые UI обязан резолвить через towerById().
 
 import { Game } from '../src/game/engine'
+import { CLASSIC_MAP } from '../src/game/map'
 
 const g = new Game()
 
 g.unlockAllTowers() // арсенал случаен — тестам нужны все башни
+
+g.useMap(CLASSIC_MAP) // карта случайна — тестам нужна классическая
 g.beginPreview()
 g.gold = 99999
 

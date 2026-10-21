@@ -7,13 +7,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Game } from '@/game/engine'
 import { render, type Skin, type ViewState } from '@/game/render'
-import { MAP_H, MAP_W } from '@/game/config'
+import { ALL_DEFS, MAP_H, MAP_W } from '@/game/config'
+import { snapToCell } from '@/game/map'
 import type { GuestCmd } from '@/game/mp-protocol'
 import type { UiState, Vec } from '@/game/types'
 import { closeLobby, createLobby, getMpSocket, joinLobby, sendCmd, sendSnap } from '@/lib/mp-client'
 import {
   AvatarPanel,
-  BuildMenu,
   HelpDialog,
   MergePanel,
   MpGuestWait,
@@ -27,7 +27,7 @@ import {
 } from './Panels'
 import { useToast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
-import { Zap, Hammer, Footprints } from 'lucide-react'
+import { Zap } from 'lucide-react'
 
 export default function GameShell() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -35,8 +35,8 @@ export default function GameShell() {
 
   const [ui, setUi] = useState<UiState>(() => game.getUiState())
   const [selectedTower, setSelectedTower] = useState<number | null>(null)
-  const [pendingPos, setPendingPos] = useState<Vec | null>(null)
-  const [buildMode, setBuildMode] = useState(true) // клик по земле — постройка
+  // башня, выбранная в арсенале для постройки (перетаскиванием или нажатием)
+  const [armed, setArmed] = useState<string | null>(null)
   const [mergeFrom, setMergeFrom] = useState<number | null>(null)
   const [helpOpen, setHelpOpen] = useState(false)
   const [skin, setSkin] = useState<Skin>('steam')
@@ -67,13 +67,12 @@ export default function GameShell() {
     selectedTower: null,
     mergeFrom: null,
     mouse: null,
-    buildMode: true,
     buildGhost: null,
   })
   const panelRef = useRef<HTMLDivElement>(null)
   const selRef = useRef(selectedTower)
   const mergeRef = useRef(mergeFrom)
-  const buildModeRef = useRef(buildMode)
+  const armedRef = useRef(armed)
 
   useEffect(() => {
     selRef.current = selectedTower
@@ -82,8 +81,9 @@ export default function GameShell() {
     mergeRef.current = mergeFrom
   }, [mergeFrom])
   useEffect(() => {
-    buildModeRef.current = buildMode
-  }, [buildMode])
+    armedRef.current = armed
+    if (!armed) viewRef.current.buildGhost = null
+  }, [armed])
 
   // ─── Скин башен: ?skin=lol|steam в ссылке, иначе — последний выбор в этом браузере ───
   useEffect(() => {
@@ -226,7 +226,6 @@ export default function GameShell() {
       last = now
       viewRef.current.selectedTower = selRef.current
       viewRef.current.mergeFrom = mergeRef.current
-      viewRef.current.buildMode = buildModeRef.current
       if (roleRef.current === 'guest') game.guestTick(dt)
       else game.update(dt)
       render(ctx, game, viewRef.current)
@@ -248,10 +247,10 @@ export default function GameShell() {
 
   // ─── Скролл к панели на мобильных ──────────────────────────────────────
   useEffect(() => {
-    if (window.innerWidth < 1024 && (selectedTower !== null || mergeFrom !== null || pendingPos !== null)) {
+    if (window.innerWidth < 1024 && (selectedTower !== null || mergeFrom !== null)) {
       panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
     }
-  }, [selectedTower, mergeFrom, pendingPos])
+  }, [selectedTower, mergeFrom])
 
   // ─── Ввод ──────────────────────────────────────────────────────────────
   const toMap = useCallback((e: React.PointerEvent<HTMLCanvasElement>): Vec => {
@@ -269,27 +268,117 @@ export default function GameShell() {
     return null
   }
 
+  /** Экранные координаты → точка карты; null — вне поля */
+  const clientToMap = (clientX: number, clientY: number): Vec | null => {
+    const canvas = canvasRef.current
+    if (!canvas) return null
+    const r = canvas.getBoundingClientRect()
+    if (clientX < r.left || clientX > r.right || clientY < r.top || clientY > r.bottom) return null
+    return { x: ((clientX - r.left) / r.width) * MAP_W, y: ((clientY - r.top) / r.height) * MAP_H }
+  }
+
+  /** Призрак выбранной башни над клеткой: клетка, можно ли строить, радиус атаки */
+  const updateGhost = (p: Vec | null) => {
+    const defId = armedRef.current
+    const def = defId ? ALL_DEFS[defId] : undefined
+    if (!def || !p) {
+      viewRef.current.buildGhost = null
+      return
+    }
+    const at = snapToCell(p.x, p.y)
+    viewRef.current.buildGhost = {
+      x: at.x,
+      y: at.y,
+      valid: game.canPlace(p.x, p.y) === null && game.gold >= def.price,
+      range: def.range,
+      glyph: def.glyph,
+    }
+  }
+
   const handleMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const p = toMap(e)
     viewRef.current.mouse = p
-    const tid = towerAt(p)
-    viewRef.current.hoverTower = tid
-    // призрак постройки в режиме стройки (когда не наведены на башню)
-    if (buildModeRef.current && tid === null && ui.phase !== 'intro') {
-      viewRef.current.buildGhost = { x: p.x, y: p.y, valid: game.canPlace(p.x, p.y) === null }
-    } else {
-      viewRef.current.buildGhost = null
-    }
+    viewRef.current.hoverTower = armedRef.current ? null : towerAt(p)
+    updateGhost(p)
   }
 
   const handleLeave = () => {
     viewRef.current.mouse = null
     viewRef.current.hoverTower = null
-    viewRef.current.buildGhost = null
+    if (!dragRef.current) viewRef.current.buildGhost = null
   }
+
+  // ─── Постройка: перетащить башню из арсенала на клетку (или нажать башню, потом клетку) ───
+  const dragRef = useRef<{ defId: string; x: number; y: number; moved: boolean; wasArmed: boolean } | null>(null)
+
+  const buildAt = (p: Vec, defId: string) => {
+    if (asGuest && codeRef.current) {
+      sendCmd(codeRef.current, { t: 'build', x: p.x, y: p.y, defId })
+      return
+    }
+    const res = game.build(p.x, p.y, defId)
+    if (!res.ok && res.error) errToast('Не построено', res.error)
+    setUi(game.getUiState())
+  }
+
+  const startArm = (defId: string, e: React.PointerEvent) => {
+    if (ui.phase === 'intro' || ui.phase === 'over' || ui.phase === 'won') return
+    e.preventDefault()
+    setSelectedTower(null)
+    setMergeFrom(null)
+    const wasArmed = armedRef.current === defId
+    armedRef.current = defId
+    setArmed(defId)
+    dragRef.current = { defId, x: e.clientX, y: e.clientY, moved: false, wasArmed }
+    const move = (ev: PointerEvent) => {
+      const d = dragRef.current
+      if (!d) return
+      if (Math.hypot(ev.clientX - d.x, ev.clientY - d.y) > 6) d.moved = true
+      updateGhost(clientToMap(ev.clientX, ev.clientY))
+    }
+    const up = (ev: PointerEvent) => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
+      const d = dragRef.current
+      dragRef.current = null
+      if (!d) return
+      if (d.moved) {
+        // перетащили: отпустили над полем — строим, в любом случае снимаем выбор
+        const p = clientToMap(ev.clientX, ev.clientY)
+        if (p && ev.type === 'pointerup') buildAt(p, d.defId)
+        setArmed(null)
+      } else if (d.wasArmed) {
+        setArmed(null) // повторное нажатие на ту же карточку — отмена
+      }
+      // простое нажатие — башня остаётся выбранной до клика по клетке
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
+  }
+
+  // Esc — отменить выбор башни
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code === 'Escape') setArmed(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   const handleTap = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const p = toMap(e)
+    // выбрана башня из арсенала — клик по клетке строит её
+    if (armedRef.current) {
+      if (e.button === 2) {
+        setArmed(null) // правая кнопка — отмена
+        return
+      }
+      buildAt(p, armedRef.current)
+      setArmed(null)
+      return
+    }
     const tid = towerAt(p)
 
     if (tid !== null) {
@@ -325,37 +414,29 @@ export default function GameShell() {
         }
         return
       }
-      setPendingPos(null)
       setSelectedTower((prev) => (prev === tid ? null : tid))
       return
     }
 
-    // пустая земля
+    // пустая земля: снять выделение и отправить туда Охотницу
     if (mergeFrom !== null) {
       setMergeFrom(null)
       return
     }
     if (ui.phase === 'intro') return
-    if (buildMode) {
-      const err = game.canPlace(p.x, p.y)
-      if (err) {
-        toast({ title: 'Здесь нельзя строить', description: err, variant: 'destructive' })
-        return
-      }
+    if (selectedTower !== null) {
       setSelectedTower(null)
-      setPendingPos({ x: p.x, y: p.y })
-    } else {
-      // режим движения — только хост (аватар один)
-      if (roleRef.current === 'guest') {
-        if (!movedHintShown.current) {
-          movedHintShown.current = true
-          toast({ title: 'Охотницей управляет хост', description: 'Стройте башни — это тоже важно!' })
-        }
-        return
-      }
-      setPendingPos(null)
-      game.moveAvatar(p)
+      return
     }
+    // Охотница одна — ею управляет только хост
+    if (roleRef.current === 'guest') {
+      if (!movedHintShown.current) {
+        movedHintShown.current = true
+        toast({ title: 'Охотницей управляет хост', description: 'Стройте башни — это тоже важно!' })
+      }
+      return
+    }
+    game.moveAvatar(p)
   }
 
   // ─── Действия панелей ──────────────────────────────────────────────────
@@ -364,19 +445,6 @@ export default function GameShell() {
 
   const asGuest = roleRef.current === 'guest'
 
-  const doBuild = (defId: string) => {
-    if (pendingPos === null) return
-    if (asGuest && codeRef.current) {
-      sendCmd(codeRef.current, { t: 'build', x: pendingPos.x, y: pendingPos.y, defId })
-      setPendingPos(null)
-      return
-    }
-    const res = game.build(pendingPos.x, pendingPos.y, defId)
-    if (res.ok && res.towerId !== undefined) {
-      setPendingPos(null)
-      setSelectedTower(res.towerId) // откроется панель новой башни
-    } else if (res.error) errToast('Не построено', res.error)
-  }
 
   const doUpgrade = () => {
     if (selectedTower === null) return
@@ -474,7 +542,7 @@ export default function GameShell() {
   const doRestart = () => {
     game.reset()
     setSelectedTower(null)
-    setPendingPos(null)
+    setArmed(null)
     setMergeFrom(null)
     toast({ title: 'Новая попытка', description: 'Пограничный тракт снова под атакой.' })
   }
@@ -548,22 +616,16 @@ export default function GameShell() {
               </div>
             )}
 
-            {/* Плавающие кнопки: режим стройки/движения + способность */}
-            {ui.phase !== 'intro' && (
-              <button
-                onClick={() => setBuildMode((v) => !v)}
-                className={`absolute bottom-3 left-3 flex h-14 w-14 flex-col items-center justify-center rounded-full border-2 shadow-lg transition-transform active:scale-95 ${
-                  buildMode
-                    ? 'border-[#ffd700] bg-[#3a2e1c]/95 text-[#ffd700]'
-                    : 'border-[#7fd0a0] bg-[#1f2d24]/95 text-[#7fd0a0]'
-                }`}
-                title={buildMode ? 'Режим: ПОСТРОЙКА — клик по земле откроет меню башен' : 'Режим: ДВИЖЕНИЕ — клик по земле двигает Охотницу'}
-              >
-                {buildMode ? <Hammer className="h-5 w-5" /> : <Footprints className="h-5 w-5" />}
-                <span className="text-[8px] font-bold uppercase">{buildMode ? 'строить' : 'идти'}</span>
-              </button>
+            {/* Подсказка, пока башня выбрана для постройки */}
+            {armed && (
+              <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
+                <span className="rounded-md border border-[#e8c170] bg-[#241b12]/90 px-3 py-1 text-xs text-[#e8c170] shadow-lg">
+                  {ALL_DEFS[armed]?.glyph} {ALL_DEFS[armed]?.name}: нажмите на клетку · Esc или правая кнопка — отмена
+                </span>
+              </div>
             )}
 
+            {/* Плавающая кнопка способности */}
             {ui.phase !== 'intro' && mpRole !== 'guest' && (
               <button
                 onClick={doAbility}
@@ -697,7 +759,7 @@ export default function GameShell() {
             )}
           </div>
           <p className="mt-2 text-center text-[10px] text-[#8a6d3b]">
-            🏗 Клик по земле — постройка (нельзя на тракте и вплотную к башням) · клик по башне — улучшение/слияние/продажа · кнопка «идти» — движение Охотницы
+            🏗 Перетащите башню из арсенала на свободную клетку (или нажмите башню, потом клетку) · клик по башне — улучшение/слияние/продажа · клик по земле — движение Охотницы
           </p>
         </section>
 
@@ -721,18 +783,16 @@ export default function GameShell() {
                 }}
                 onClose={() => setSelectedTower(null)}
               />
-            ) : pendingPos ? (
-              <BuildMenu
-                pos={pendingPos}
+            ) : (
+              <ShopList
                 gold={ui.gold}
                 shop={ui.shop}
                 rollCost={ui.rollCost}
-                onBuild={doBuild}
+                armed={armed}
+                canBuild={ui.phase !== 'intro' && ui.phase !== 'over' && ui.phase !== 'won'}
+                onPick={startArm}
                 onRoll={doRoll}
-                onClose={() => setPendingPos(null)}
               />
-            ) : (
-              <ShopList gold={ui.gold} buildMode={buildMode} shop={ui.shop} rollCost={ui.rollCost} onRoll={doRoll} />
             )}
           </div>
           <AvatarPanel ui={ui} onAbility={doAbility} role={mpRole} />

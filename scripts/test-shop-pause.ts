@@ -3,6 +3,7 @@
 // Пауза: время стоит, крипы не двигаются; строить и роллить на паузе можно; кооп-команды работают.
 
 import { Game } from '../src/game/engine'
+import { CLASSIC_MAP } from '../src/game/map'
 import { ROLL_COST, SHOP_SIZE, TOWERS } from '../src/game/config'
 
 let failed = 0
@@ -14,6 +15,7 @@ function check(name: string, ok: boolean, info = '') {
 // ─── Арсенал ───
 {
   const g = new Game()
+  g.useMap(CLASSIC_MAP) // координаты построек — под классическую змейку
   // до старта пул пуст: Game создаётся и при SSR, случайный пул сломал бы гидратацию
   check('до старта игры пул пуст', g.shop.length === 0)
   g.beginPreview()
@@ -56,6 +58,7 @@ function check(name: string, ok: boolean, info = '') {
 
   // тестовый «полный арсенал» не затирается стартом игры
   const u = new Game()
+  u.useMap(CLASSIC_MAP) // координаты построек — под классическую змейку
   u.unlockAllTowers()
   u.beginPreview()
   check('unlockAllTowers переживает старт игры', u.shop.length === TOWERS.length)
@@ -64,6 +67,7 @@ function check(name: string, ok: boolean, info = '') {
 // ─── Пауза ───
 {
   const g = new Game()
+  g.useMap(CLASSIC_MAP) // координаты построек — под классическую змейку
   g.beginPreview()
   g.startWave()
   for (let i = 0; i < 40; i++) g.update(0.05)
@@ -86,6 +90,7 @@ function check(name: string, ok: boolean, info = '') {
 
   // пауза в превью тоже останавливает таймер до волны
   const p = new Game()
+  p.useMap(CLASSIC_MAP) // координаты построек — под классическую змейку
   p.beginPreview()
   const left = p.previewRemaining
   p.setPaused(true)
@@ -99,6 +104,7 @@ function check(name: string, ok: boolean, info = '') {
 // ─── Бесконечное золото (чит для тестов) ───
 {
   const g = new Game()
+  g.useMap(CLASSIC_MAP) // координаты построек — под классическую змейку
   g.beginPreview()
   g.gold = 123
   g.setInfiniteGold(true)
@@ -114,6 +120,8 @@ function check(name: string, ok: boolean, info = '') {
   check('выключение возвращает обычное золото', g.gold === 150, String(g.gold))
 
   const h = new Game()
+
+  h.useMap(CLASSIC_MAP) // координаты построек — под классическую змейку
   h.beginPreview()
   h.gold = 77
   h.setInfiniteGold(true)
@@ -121,6 +129,7 @@ function check(name: string, ok: boolean, info = '') {
   check('выключение без рестарта — золото как до включения', h.gold === 77, String(h.gold))
   check('гость: бесконечное золото', h.applyGuestCmd({ t: 'setInfiniteGold', on: true }) === null && h.infiniteGold)
   const gg = new Game()
+  gg.useMap(CLASSIC_MAP) // координаты построек — под классическую змейку
   gg.applySnap(h.serialize())
   check('снапшот переносит чит', gg.infiniteGold)
 }
@@ -128,12 +137,15 @@ function check(name: string, ok: boolean, info = '') {
 // ─── Кооп: команды гостя и снапшот ───
 {
   const host = new Game()
+  host.useMap(CLASSIC_MAP) // координаты построек — под классическую змейку
   host.beginPreview()
   const gold0 = host.gold
   check('гость: ролл', host.applyGuestCmd({ t: 'roll' }) === null && host.gold === gold0 - ROLL_COST)
   check('гость: пауза', host.applyGuestCmd({ t: 'setPaused', paused: true }) === null && host.paused)
 
   const guest = new Game()
+
+  guest.useMap(CLASSIC_MAP) // координаты построек — под классическую змейку
   guest.applySnap(host.serialize())
   check('снапшот переносит пул и паузу', guest.paused && guest.shop.join() === host.shop.join())
   const t0 = guest.time
