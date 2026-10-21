@@ -13,19 +13,24 @@ import {
   BOSS_LIVES_COST,
   BOSS_SPEED,
   BUILD_PATH_CLEAR,
+  CHAIN_FALLOFF,
+  CHAIN_RANGE,
   COOP_HP_MULT,
   DAMAGE_MATRIX,
   FIRST_PREVIEW_TIME,
   HP_PLAYTEST_MULT,
   LEVEL_MULT,
+  LINE_WIDTH,
   MAP_H,
   MAP_W,
   MERGE_DIST,
   MERGE_MIN_LEVEL,
   MERGED_TOWERS,
+  MIN_INTERVAL,
   PATH,
   PREVIEW_TIME,
   SELL_RATIO,
+  SLAM_STUN,
   SPOT_RADIUS,
   START_GOLD,
   START_LIVES,
@@ -93,6 +98,15 @@ export function pointAtLength(d: number): Vec {
 }
 
 // ─── Свободная постройка: геометрия и проверки места ────────────────────
+/** Расстояние от точки p до отрезка a–b */
+export function distToSegment(p: Vec, a: Vec, b: Vec): number {
+  const bx = b.x - a.x
+  const by = b.y - a.y
+  const len2 = bx * bx + by * by || 1
+  const t = Math.max(0, Math.min(1, ((p.x - a.x) * bx + (p.y - a.y) * by) / len2))
+  return Math.hypot(p.x - (a.x + bx * t), p.y - (a.y + by * t))
+}
+
 /** Расстояние от точки до ломаной тропы (по сегментам) */
 export function distToPath(x: number, y: number): number {
   let best = Infinity
@@ -297,6 +311,9 @@ export class Game {
       cooldown: 0,
       shotCount: 0,
       hammerCd: 0,
+      rampMult: 1,
+      focusUid: 0,
+      focusStacks: 0,
     }
     this.towers.push(tower)
     return { ok: true, towerId: tower.id }
@@ -349,6 +366,9 @@ export class Game {
     tb.cooldown = 0
     tb.shotCount = 0
     tb.hammerCd = 0
+    tb.rampMult = 1
+    tb.focusUid = 0
+    tb.focusStacks = 0
     this.towers = this.towers.filter((t) => t.id !== a)
     this.stats.merges++
     this.addFloat(tb.x, tb.y - 30, recipe.glyph + ' ' + recipe.name, '#f0a44a')
@@ -457,6 +477,10 @@ export class Game {
         markedUntil: 0,
         markedBonus: 0,
         goldMult: 1,
+        slowPct: 0,
+        slowUntil: 0,
+        vulnBonus: 0,
+        vulnUntil: 0,
       })
       this.waveSpawned++
     }
@@ -471,7 +495,7 @@ export class Game {
         if (c.hp <= 0) continue
       }
       if (this.time >= c.stunnedUntil) {
-        c.dist += c.speed * dt
+        c.dist += c.speed * this.slowFactor(c) * dt
       }
       if (c.dist >= pathLength) {
         // прорвался
@@ -501,6 +525,7 @@ export class Game {
       dmg = amount * mult
     }
     if (this.time < c.markedUntil) dmg *= 1 + c.markedBonus
+    if (this.time < c.vulnUntil) dmg *= 1 + c.vulnBonus
     c.hp -= dmg
     if (c.hp <= 0) this.killCreep(c)
   }
@@ -528,65 +553,91 @@ export class Game {
     this.creeps = this.creeps.filter((x) => x !== c)
   }
 
+  private creepsInRange(x: number, y: number, range: number): Creep[] {
+    return this.creeps.filter((c) => {
+      const p = pointAtLength(c.dist)
+      return Math.hypot(p.x - x, p.y - y) <= range + c.size
+    })
+  }
+
+  /** Периодическая способность 5 ур.: оглушить/заморозить всех подходящих в радиусе */
+  private groupStun(
+    tw: Tower, range: number, dur: number, cd: number, color: string,
+    filter: (c: Creep) => boolean = () => true, slowAfter?: { pct: number; dur: number }
+  ) {
+    tw.hammerCd -= this.lastDt
+    if (tw.hammerCd > 0) return
+    const hit = this.creepsInRange(tw.x, tw.y, range).filter(filter)
+    if (hit.length === 0) return
+    for (const c of hit) {
+      c.stunnedUntil = Math.max(c.stunnedUntil, this.time + dur)
+      if (slowAfter) this.applySlow(c, slowAfter.pct, c.stunnedUntil + slowAfter.dur - this.time)
+    }
+    tw.hammerCd = cd
+    this.effects.push({ x: tw.x, y: tw.y, r: range, born: this.time, dur: 0.5, color, kind: 'stun' })
+  }
+
+  private lastDt = 0
+
   private updateTowers(dt: number) {
+    this.lastDt = dt
     for (const tw of this.towers) {
       const def = ALL_DEFS[tw.defId]
-      const spot = { x: tw.x, y: tw.y }
       tw.cooldown -= dt
+      const range = def.range * levelRangeMult(tw.level)
 
-      // Пассивка Молотобойца 5 ур.: оглушение группы раз в 8 с
-      if (def.id === 'mauler' && tw.level >= 5) {
-        tw.hammerCd -= dt
-        if (tw.hammerCd <= 0) {
-          const range = def.range * levelRangeMult(tw.level)
-          const inRange = this.creeps.filter(
-            (c) => {
-              const p = pointAtLength(c.dist)
-              return Math.hypot(p.x - spot.x, p.y - spot.y) <= range
-            }
-          )
-          if (inRange.length > 0) {
-            for (const c of inRange) c.stunnedUntil = Math.max(c.stunnedUntil, this.time + 1.2)
-            tw.hammerCd = 8
-            this.effects.push({ x: spot.x, y: spot.y, r: range, born: this.time, dur: 0.5, color: '#d09a4e', kind: 'stun' })
-          }
-        }
+      // Периодические способности 5 уровня
+      if (tw.level >= 5) {
+        if (def.id === 'mauler') this.groupStun(tw, range, 1.2, 8, '#d09a4e')
+        if (def.id === 'time_guardian') this.groupStun(tw, range, 1.2, 8, '#c49ad0', undefined, def.stunSlow)
+        if (def.id === 'frost') this.groupStun(tw, range, 1, 6, '#7cc4e0')
+        if (def.id === 'chrono') this.groupStun(tw, range, 1, 8, '#b48ad8', (c) => c.isBoss)
       }
 
       if (tw.cooldown > 0) continue
-      const range = def.range * levelRangeMult(tw.level)
-      // цель: крип, дальше всех по тропе в радиусе
-      let target: Creep | null = null
-      for (const c of this.creeps) {
-        const p = pointAtLength(c.dist)
-        if (Math.hypot(p.x - spot.x, p.y - spot.y) <= range) {
-          if (!target || c.dist > target.dist) target = c
-        }
-      }
-      if (!target) continue
+      // цели: крипы в радиусе, первым — тот, кто дальше всех по тропе
+      const inRange = this.creepsInRange(tw.x, tw.y, range).sort((a, b) => b.dist - a.dist)
+      if (inRange.length === 0) continue
 
-      tw.cooldown = def.interval * levelIntervalMult(tw.level)
+      tw.cooldown = Math.max(MIN_INTERVAL, (def.interval * levelIntervalMult(tw.level)) / tw.rampMult)
       tw.shotCount++
-      this.fireTower(tw, def, target, range)
+      if (def.ramp) tw.rampMult += def.ramp * (tw.level >= 5 ? 2 : 1)
+      this.fireTower(tw, def, inRange, range)
     }
   }
 
-  private fireTower(tw: Tower, def: TowerDefinition, target: Creep, range: number) {
+  /** Аура Бастиона: +урон башням рядом. Одинаковые ауры не складываются — берём сильнейшую */
+  private auraMult(tw: Tower): number {
+    let best = 0
+    for (const o of this.towers) {
+      if (o.id === tw.id) continue
+      const od = ALL_DEFS[o.defId]
+      if (!od.aura || Math.hypot(o.x - tw.x, o.y - tw.y) > MERGE_DIST) continue
+      best = Math.max(best, od.aura * (o.level >= 5 ? 2 : 1))
+    }
+    return 1 + best
+  }
+
+  private fireTower(tw: Tower, def: TowerDefinition, inRange: Creep[], range: number) {
+    const target = inRange[0]
     const spot = { x: tw.x, y: tw.y }
-    const dmg = def.damage * levelDamageMult(tw.level)
+    const l5 = tw.level >= 5
+    const attacks: AttackType[] = def.merged ? [...def.attacks] : [def.attack]
+    let dmg = def.damage * levelDamageMult(tw.level) * this.auraMult(tw)
+    if (def.waveGrowth) dmg *= 1 + def.waveGrowth * (this.wave - 1)
+
     let burn = def.burn ? { ...def.burn } : undefined
     let splash = def.splash
+    let slow = def.slow
+    let freeze = def.freeze
+    let vuln = def.vuln
+    let chain = def.chain
+    let crit = !!def.critEvery && tw.shotCount % def.critEvery === 0
 
-    // Способности 5 уровня
-    let crit = false
-    let shots = 1
-    if (!def.merged) {
-      if (def.id === 'sentry' && tw.level >= 5 && target.isBoss) {
-        // +20% урона по боссам — учтём множителем
-      }
-      if (def.id === 'archer' && tw.level >= 5) shots = 2
-      if (def.id === 'crossbow' && tw.level >= 5 && tw.shotCount % 5 === 0) crit = true
-      if (def.id === 'pyro' && tw.level >= 5) {
+    // Способности 5 уровня, меняющие параметры выстрела
+    if (l5) {
+      if (def.id === 'crossbow' && tw.shotCount % 5 === 0) crit = true
+      if (def.id === 'pyro') {
         // огонь перекидывается — подожжём ещё одного крипа рядом с целью
         const tp = pointAtLength(target.dist)
         const near = this.creeps.find(
@@ -594,14 +645,85 @@ export class Game {
         )
         if (near) this.applyBurn(near, burn, def.id)
       }
-    } else {
-      if (def.id === 'flame_archer' && tw.level >= 5 && burn) burn = { dps: burn.dps * 2, dur: burn.dur }
-      if (def.id === 'volcano' && tw.level >= 5 && splash) splash = splash * 1.3
+      if (def.id === 'flame_archer' && burn) burn = { dps: burn.dps * 2, dur: burn.dur }
+      if (def.id === 'volcano' && splash) splash = splash * 1.3
+      if (def.id === 'hunter') slow = { pct: 0.3, dur: 2 }
+      if (def.id === 'lightning') chain = 7
+      if (def.id === 'frost_hunter') freeze = 1
+      if (def.id === 'steam_boiler') vuln = { bonus: 0.35, dur: 3 }
     }
 
-    const fire = (c: Creep, dmgMult = 1) => {
-      let d = dmg * dmgMult
-      if (def.id === 'sentry' && tw.level >= 5 && c.isBoss) d *= 1.2
+    const base = {
+      damage: dmg, attacks, burn, slow, freeze, vuln,
+      stunChance: def.stunChance, stunSlow: def.stunSlow, sourceDefId: def.id,
+    }
+
+    // ── Мгновенные атаки (без снаряда) ──
+    if (def.line) {
+      // болт насквозь по линии; на 5 ур. — через всю карту
+      const tp = pointAtLength(target.dist)
+      const len = l5 ? 2000 : range
+      const d = Math.hypot(tp.x - spot.x, tp.y - spot.y) || 1
+      const end = { x: spot.x + ((tp.x - spot.x) / d) * len, y: spot.y + ((tp.y - spot.y) / d) * len }
+      for (const c of [...this.creeps]) {
+        const p = pointAtLength(c.dist)
+        if (distToSegment(p, spot, end) <= LINE_WIDTH + c.size) this.applyHit(c, { ...base, heavyBonus: def.heavyBonus })
+      }
+      this.effects.push({ x: spot.x, y: spot.y, r: 0, born: this.time, dur: 0.25, color: def.color, kind: 'beam', points: [spot, end] })
+      return
+    }
+    if (def.slam) {
+      for (const c of inRange) {
+        this.applyHit(c, base)
+        if (l5 && c.hp > 0) c.stunnedUntil = Math.max(c.stunnedUntil, this.time + SLAM_STUN)
+      }
+      this.effects.push({ x: spot.x, y: spot.y, r: range, born: this.time, dur: 0.4, color: def.color, kind: 'blast' })
+      return
+    }
+    if (def.projSpeed === 0) {
+      // молния (цепь) или луч призмы — попадание сразу
+      const targets = def.id === 'prism' && l5 ? inRange.slice(0, 5) : [target]
+      let mult = 1
+      if (def.focus) {
+        tw.focusStacks = tw.focusUid === target.uid ? tw.focusStacks + 1 : 0
+        tw.focusUid = target.uid
+        mult = Math.min(l5 ? 5 : def.focus.max, 1 + def.focus.perHit * tw.focusStacks)
+      }
+      for (const c of targets) {
+        const p = pointAtLength(c.dist)
+        this.applyHit(c, { ...base, damage: dmg * mult })
+        if (chain) this.chainFrom(c, chain, dmg, attacks, spot, def.color)
+        else this.effects.push({ x: spot.x, y: spot.y, r: 0, born: this.time, dur: 0.15, color: def.color, kind: 'beam', points: [spot, p] })
+      }
+      return
+    }
+
+    // ── Снаряды ──
+    let targets: Creep[] = [target]
+    let dmgEach = dmg
+    if (def.targets) targets = inRange.slice(0, def.targets)
+    if (l5) {
+      if (def.id === 'archer') targets = [target, inRange[1] ?? target] // двойной выстрел
+      if (def.id === 'mortar') targets = [0, 1, 2].map((i) => inRange[i] ?? target) // залп из 3
+      if (def.id === 'storm_mortar') targets = [0, 1].map((i) => inRange[i] ?? target)
+      if (def.id === 'mech_guard') {
+        targets = [target, target, target] // пулемётная очередь
+        dmgEach = dmg * 0.6
+      }
+      if (def.id === 'golem') {
+        // удар по 3 целям в линию: цель и ближайшие к ней по тропе
+        targets = [...this.creeps]
+          .filter((c) => Math.abs(c.dist - target.dist) <= 80)
+          .sort((a, b) => Math.abs(a.dist - target.dist) - Math.abs(b.dist - target.dist))
+          .slice(0, 3)
+      }
+    }
+    // крит Громового арбалета вызывает цепную молнию от цели
+    const critChain = def.id === 'thunder_crossbow' && crit ? (l5 ? 7 : 3) : undefined
+
+    for (const c of targets) {
+      let d = dmgEach
+      if (def.id === 'sentry' && l5 && c.isBoss) d *= 1.2
       if (crit) d *= 3
       this.projectiles.push({
         uid: this.uid++,
@@ -611,33 +733,91 @@ export class Game {
         targetPos: pointAtLength(c.dist),
         speed: def.projSpeed,
         damage: d,
-        attacks: def.merged ? [...def.attacks] : [def.attack],
-        splash: splash,
-        burn: burn,
+        attacks,
+        splash,
+        burn,
+        slow,
+        freeze,
+        vuln,
+        stunChance: def.stunChance,
+        stunSlow: def.stunSlow,
+        chain: splash ? chain : critChain,
         sourceDefId: def.id,
         sourceLevel: tw.level,
         color: def.color,
-        kind:
-          def.id === 'catapult' || def.id === 'volcano'
-            ? 'rock'
-            : def.id === 'crossbow'
-              ? 'bolt'
-              : def.id === 'pyro'
-                ? 'orb'
-                : def.id === 'mauler'
-                  ? 'hammer'
-                  : 'arrow',
+        kind: def.proj ?? 'arrow',
         crit,
       })
     }
+  }
 
-    if (shots === 2) {
-      fire(target)
-      const second = this.creeps.find((c) => c !== target) ?? target
-      fire(second)
-    } else {
-      fire(target)
+  /** Попадание по одному крипу: урон + все эффекты */
+  private applyHit(
+    c: Creep,
+    h: {
+      damage: number
+      attacks: AttackType[]
+      burn?: { dps: number; dur: number }
+      slow?: { pct: number; dur: number }
+      freeze?: number
+      vuln?: { bonus: number; dur: number }
+      stunChance?: number
+      stunSlow?: { pct: number; dur: number }
+      heavyBonus?: number
+      sourceDefId: string
     }
+  ) {
+    const amount = h.heavyBonus && c.armor === 'heavy' ? h.damage * h.heavyBonus : h.damage
+    this.damageCreep(c, amount, h.attacks)
+    if (c.hp <= 0) return
+    if (h.burn) this.applyBurn(c, h.burn, h.sourceDefId)
+    if (h.slow) this.applySlow(c, h.slow.pct, h.slow.dur)
+    if (h.vuln && (this.time >= c.vulnUntil || h.vuln.bonus >= c.vulnBonus)) {
+      c.vulnBonus = h.vuln.bonus
+      c.vulnUntil = this.time + h.vuln.dur
+    }
+    if (h.freeze) c.stunnedUntil = Math.max(c.stunnedUntil, this.time + h.freeze)
+    if (h.stunChance && Math.random() < h.stunChance) {
+      c.stunnedUntil = Math.max(c.stunnedUntil, this.time + 1)
+      if (h.stunSlow) this.applySlow(c, h.stunSlow.pct, c.stunnedUntil + h.stunSlow.dur - this.time)
+    }
+  }
+
+  private applySlow(c: Creep, pct: number, dur: number) {
+    if (this.time >= c.slowUntil || pct >= c.slowPct) c.slowPct = pct
+    c.slowUntil = Math.max(c.slowUntil, this.time + dur)
+  }
+
+  private slowFactor(c: Creep): number {
+    return this.time < c.slowUntil ? 1 - c.slowPct : 1
+  }
+
+  /** Цепная молния: от крипа `from` прыгает к ближайшим ещё не задетым */
+  private chainFrom(from: Creep, jumps: number, dmg: number, attacks: AttackType[], start: Vec, color: string) {
+    const hit = new Set([from.uid])
+    const points: Vec[] = [start, pointAtLength(from.dist)]
+    let cur = points[1]
+    let d = dmg
+    for (let i = 0; i < jumps; i++) {
+      let next: Creep | null = null
+      let best = CHAIN_RANGE
+      for (const c of this.creeps) {
+        if (hit.has(c.uid)) continue
+        const p = pointAtLength(c.dist)
+        const dd = Math.hypot(p.x - cur.x, p.y - cur.y)
+        if (dd <= best) {
+          best = dd
+          next = c
+        }
+      }
+      if (!next) break
+      d *= CHAIN_FALLOFF
+      hit.add(next.uid)
+      cur = pointAtLength(next.dist)
+      points.push(cur)
+      this.damageCreep(next, d, attacks)
+    }
+    this.effects.push({ x: start.x, y: start.y, r: 0, born: this.time, dur: 0.25, color, kind: 'chain', points })
   }
 
   private applyBurn(c: Creep, burn: { dps: number; dur: number } | undefined, sourceDefId: string) {
@@ -664,19 +844,30 @@ export class Game {
         // попадание
         pr.x = tp.x
         pr.y = tp.y
+        const hit = { ...pr }
         if (pr.splash) {
           const r = pr.splash
           for (const c of [...this.creeps]) {
             const p = pointAtLength(c.dist)
-            if (Math.hypot(p.x - pr.x, p.y - pr.y) <= r + c.size) {
-              this.damageCreep(c, pr.damage, pr.attacks)
-              if (pr.burn) this.applyBurn(c, pr.burn, pr.sourceDefId)
-            }
+            if (Math.hypot(p.x - pr.x, p.y - pr.y) <= r + c.size) this.applyHit(c, hit)
           }
           this.effects.push({ x: pr.x, y: pr.y, r: r, born: this.time, dur: 0.35, color: pr.color, kind: 'blast' })
+          // Грозовая мортира: молния от взрыва по N ближайшим
+          if (pr.chain) {
+            const near = [...this.creeps]
+              .map((c) => ({ c, p: pointAtLength(c.dist) }))
+              .map((o) => ({ ...o, d: Math.hypot(o.p.x - pr.x, o.p.y - pr.y) }))
+              .filter((o) => o.d <= CHAIN_RANGE * 1.6)
+              .sort((a, b) => a.d - b.d)
+              .slice(0, pr.chain)
+            for (const o of near) {
+              this.damageCreep(o.c, pr.damage * 0.5, pr.attacks)
+              this.effects.push({ x: pr.x, y: pr.y, r: 0, born: this.time, dur: 0.25, color: '#c9b8ff', kind: 'chain', points: [{ x: pr.x, y: pr.y }, o.p] })
+            }
+          }
         } else if (target) {
-          this.damageCreep(target, pr.damage, pr.attacks)
-          if (pr.burn) this.applyBurn(target, pr.burn, pr.sourceDefId)
+          this.applyHit(target, hit)
+          if (pr.chain) this.chainFrom(target, pr.chain, pr.damage, pr.attacks, { x: pr.x, y: pr.y }, '#c9b8ff')
           // способность Камнемёта 5 ур.: осколки после удара
           if (pr.kind === 'rock' && pr.sourceDefId === 'catapult' && pr.sourceLevel >= 5) {
             for (const c of [...this.creeps]) {
@@ -754,6 +945,8 @@ export class Game {
     this.gold += bonus
     this.stats.goldEarned += bonus
     this.addFloat(MAP_W / 2, 60, `Волна ${def.n} пройдена! +${bonus} золота`, '#e8c170')
+    // разгон Автоматического арсенала действует только до конца волны
+    for (const tw of this.towers) tw.rampMult = 1
     this.wave++
     if (this.wave > TOTAL_WAVES) {
       this.phase = 'won'
@@ -836,12 +1029,14 @@ export class Game {
         id: t.id, x: t.x, y: t.y, defId: t.defId, level: t.level,
         invested: t.invested, cooldown: t.cooldown,
         shotCount: t.shotCount, hammerCd: t.hammerCd,
+        rampMult: t.rampMult, focusUid: t.focusUid, focusStacks: t.focusStacks,
       })),
       creeps: this.creeps.map((c) => ({
         uid: c.uid, armor: c.armor, hp: c.hp, maxHp: c.maxHp, speed: c.speed,
         dist: c.dist, size: c.size, isBoss: c.isBoss,
         burnDps: c.burnDps, burnUntil: c.burnUntil,
         stunnedUntil: c.stunnedUntil, markedUntil: c.markedUntil, markedBonus: c.markedBonus,
+        slowPct: c.slowPct, slowUntil: c.slowUntil, vulnBonus: c.vulnBonus, vulnUntil: c.vulnUntil,
       })),
       projectiles: this.projectiles.map((p) => ({ ...p })),
       effects: this.effects.map((e) => ({ ...e })),
@@ -879,6 +1074,7 @@ export class Game {
       burnDps: c.burnDps, burnUntil: c.burnUntil,
       stunnedUntil: c.stunnedUntil, markedUntil: c.markedUntil, markedBonus: c.markedBonus,
       goldMult: 1,
+      slowPct: c.slowPct, slowUntil: c.slowUntil, vulnBonus: c.vulnBonus, vulnUntil: c.vulnUntil,
     }))
     this.projectiles = s.projectiles.map((p) => ({ ...p }))
     this.effects = s.effects.map((e) => ({ ...e }))
@@ -900,7 +1096,7 @@ export class Game {
     this.time += dt
     if (this.phase === 'preview') this.previewRemaining = Math.max(0, this.previewRemaining - dt)
     for (const c of this.creeps) {
-      if (this.time >= c.stunnedUntil) c.dist += c.speed * dt
+      if (this.time >= c.stunnedUntil) c.dist += c.speed * this.slowFactor(c) * dt
     }
     for (const pr of this.projectiles) {
       const tp = pr.targetPos

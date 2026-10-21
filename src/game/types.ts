@@ -10,8 +10,35 @@ export interface Vec {
   y: number
 }
 
+export type ProjectileKind = 'arrow' | 'bolt' | 'rock' | 'orb' | 'hammer'
+
+/**
+ * Механики атаки, общие для боевых и слитых башен (все поля необязательны).
+ * Способности 5 уровня, которые не сводятся к числам, — в engine.ts по id башни.
+ */
+export interface AttackFx {
+  proj?: ProjectileKind // вид снаряда (по умолчанию стрела)
+  splash?: number // радиус урона по площади
+  burn?: { dps: number; dur: number }
+  stunChance?: number // шанс оглушить на 1 с
+  targets?: number // сколько целей за выстрел (Ловчий — 3 стрелы)
+  slow?: { pct: number; dur: number } // замедление при попадании
+  freeze?: number // заморозка (остановка) при попадании, с
+  chain?: number // цепная молния: сколько доп. целей
+  line?: boolean // мгновенный болт насквозь по линии (Баллиста)
+  slam?: boolean // удар по всем врагам в радиусе (Каменный титан)
+  waveGrowth?: number // +доля урона за каждую волну после первой (Призма)
+  vuln?: { bonus: number; dur: number } // цель получает +bonus урона от всех башен (Пар)
+  heavyBonus?: number // множитель урона по тяжёлой броне (Осадная машина)
+  aura?: number // +доля урона башням в радиусе слияния (Бастион)
+  ramp?: number // +доля скорости атаки за выстрел до конца волны (Арсенал)
+  focus?: { perHit: number; max: number } // луч усиливается, пока держит цель (Призма вечности)
+  stunSlow?: { pct: number; dur: number } // оглушённые дополнительно замедляются (Страж времени)
+  critEvery?: number // крит ×3 каждый N-й выстрел
+}
+
 /** Описание боевой башни (уровень 1) */
-export interface TowerDef {
+export interface TowerDef extends AttackFx {
   id: string
   name: string
   attack: AttackType
@@ -20,9 +47,6 @@ export interface TowerDef {
   interval: number // сек между выстрелами
   range: number
   projSpeed: number
-  splash?: number // радиус урона по площади
-  burn?: { dps: number; dur: number }
-  stunChance?: number
   color: string
   glyph: string
   role: string
@@ -31,18 +55,17 @@ export interface TowerDef {
 }
 
 /** Слитая (уникальная) башня */
-export interface MergeDef {
+export interface MergeDef extends AttackFx {
   id: string
   name: string
   parents: [string, string]
   price: number // справочная цена (средняя цен родителей)
+  // одинаковые типы = рецепт одного типа атаки (Паровой котёл, Бастион, Каменный титан)
   attacks: [AttackType, AttackType]
   damage: number
   interval: number
   range: number
   projSpeed: number
-  splash?: number
-  burn?: { dps: number; dur: number }
   color: string
   glyph: string
   desc: string
@@ -77,6 +100,10 @@ export interface Creep {
   markedUntil: number
   markedBonus: number // доп. % урона по помеченной цели
   goldMult: number
+  slowPct: number // текущее замедление 0..1
+  slowUntil: number
+  vulnBonus: number // доп. % получаемого урона (Паровой котёл)
+  vulnUntil: number
 }
 
 export interface Tower {
@@ -88,7 +115,10 @@ export interface Tower {
   invested: number
   cooldown: number
   shotCount: number
-  hammerCd: number // для молотобойца 5 ур.
+  hammerCd: number // таймер периодических способностей 5 ур. (молот, заморозка, остановка времени)
+  rampMult: number // разгон скорости атаки в волне (Автоматический арсенал), 1 = без разгона
+  focusUid: number // кого держит луч (Призма вечности)
+  focusStacks: number
 }
 
 export interface Projectile {
@@ -102,8 +132,14 @@ export interface Projectile {
   attacks: AttackType[] // один тип или гибрид из двух (слитые башни)
   splash?: number
   burn?: { dps: number; dur: number }
+  slow?: { pct: number; dur: number }
+  freeze?: number
+  stunChance?: number
+  stunSlow?: { pct: number; dur: number }
+  vuln?: { bonus: number; dur: number }
+  chain?: number // со splash — молния по N ближайшим к взрыву, без splash — N прыжков от цели
   color: string
-  kind: 'arrow' | 'bolt' | 'rock' | 'orb' | 'hammer'
+  kind: ProjectileKind
   crit?: boolean
   fromAvatar?: boolean
   sourceDefId: string
@@ -125,7 +161,8 @@ export interface Effect {
   born: number
   dur: number
   color: string
-  kind: 'blast' | 'stun' | 'mark' | 'spark'
+  kind: 'blast' | 'stun' | 'mark' | 'spark' | 'chain' | 'beam'
+  points?: Vec[] // ломаная для 'chain' (молния) и 'beam' (болт/луч)
 }
 
 export interface AvatarState {

@@ -231,7 +231,8 @@ export function BuildMenu({
           <X className="h-4 w-4" />
         </button>
       </div>
-      <div className="grid grid-cols-2 gap-2">
+      {/* 15 башен не помещаются по высоте — список прокручивается внутри панели */}
+      <div className="grid max-h-[55vh] grid-cols-2 gap-2 overflow-y-auto pr-1">
         {TOWERS.map((t) => {
           const affordable = gold >= t.price
           return (
@@ -640,7 +641,7 @@ export function HelpDialog({ open, onOpenChange }: { open: boolean; onOpenChange
             })}
           </ul>
           <p className="mt-1 text-[10px] text-[#8a6d3b]">
-            В полной версии — 12 рецептов. Пробуйте комбинации!
+            Все {MERGED_TOWERS.length} рецептов открыты сразу. Обе башни — 3+ уровня и рядом.
           </p>
         </section>
       </DialogContent>

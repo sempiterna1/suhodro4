@@ -22,10 +22,12 @@ export interface Snap {
   coop: boolean
   stats: { kills: number; leaked: number; goldEarned: number; merges: number; bossKills: number }
   avatar: Pick<AvatarState, 'x' | 'y' | 'target' | 'level' | 'xp' | 'cooldown' | 'attackCd'>
-  towers: Array<Pick<Tower, 'id' | 'x' | 'y' | 'defId' | 'level' | 'invested' | 'cooldown' | 'shotCount' | 'hammerCd'>>
+  towers: Array<Pick<Tower, 'id' | 'x' | 'y' | 'defId' | 'level' | 'invested' | 'cooldown' | 'shotCount' | 'hammerCd'
+    | 'rampMult' | 'focusUid' | 'focusStacks'>>
   creeps: Array<
     Pick<Creep, 'uid' | 'armor' | 'hp' | 'maxHp' | 'speed' | 'dist' | 'size' | 'isBoss'
-      | 'burnDps' | 'burnUntil' | 'stunnedUntil' | 'markedUntil' | 'markedBonus'>
+      | 'burnDps' | 'burnUntil' | 'stunnedUntil' | 'markedUntil' | 'markedBonus'
+      | 'slowPct' | 'slowUntil' | 'vulnBonus' | 'vulnUntil'>
   >
   projectiles: Projectile[]
   effects: Effect[]

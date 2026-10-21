@@ -345,6 +345,16 @@ function drawCreeps(ctx: CanvasRenderingContext2D, game: Game) {
     const burning = game.time < c.burnUntil && c.burnDps > 0
     const stunned = game.time < c.stunnedUntil
     const marked = game.time < c.markedUntil
+    const slowed = game.time < c.slowUntil && c.slowPct > 0
+    const steamed = game.time < c.vulnUntil
+
+    // пар (уязвимость) — светлое облако
+    if (steamed) {
+      ctx.beginPath()
+      ctx.arc(p.x, p.y, c.size + 8, 0, Math.PI * 2)
+      ctx.fillStyle = 'rgba(230,225,210,0.22)'
+      ctx.fill()
+    }
 
     // горение — ореол
     if (burning) {
@@ -362,6 +372,15 @@ function drawCreeps(ctx: CanvasRenderingContext2D, game: Game) {
     ctx.lineWidth = 2
     ctx.strokeStyle = c.isBoss ? '#3a1010' : 'rgba(0,0,0,0.5)'
     ctx.stroke()
+
+    // замедление — ледяная кайма
+    if (slowed) {
+      ctx.beginPath()
+      ctx.arc(p.x, p.y, c.size + 2, 0, Math.PI * 2)
+      ctx.strokeStyle = '#7cc4e0'
+      ctx.lineWidth = 2
+      ctx.stroke()
+    }
 
     // «глаз» ИИ
     ctx.beginPath()
@@ -450,8 +469,10 @@ function drawProjectiles(ctx: CanvasRenderingContext2D, game: Game) {
       ctx.fill()
       ctx.beginPath()
       ctx.arc(pr.x, pr.y, 7, 0, Math.PI * 2)
-      ctx.fillStyle = 'rgba(212,105,79,0.25)'
+      ctx.fillStyle = pr.color
+      ctx.globalAlpha = 0.25
       ctx.fill()
+      ctx.globalAlpha = 1
     } else {
       // hammer
       ctx.beginPath()
@@ -466,6 +487,28 @@ function drawEffects(ctx: CanvasRenderingContext2D, game: Game) {
   for (const e of game.effects) {
     const t = (game.time - e.born) / e.dur
     if (t < 0 || t > 1) continue
+    // молния и болт/луч — ломаная по точкам
+    if ((e.kind === 'chain' || e.kind === 'beam') && e.points && e.points.length > 1) {
+      ctx.globalAlpha = 1 - t
+      ctx.strokeStyle = e.color
+      ctx.lineWidth = e.kind === 'beam' ? 3 : 2
+      ctx.beginPath()
+      ctx.moveTo(e.points[0].x, e.points[0].y)
+      for (let k = 1; k < e.points.length; k++) {
+        const a = e.points[k - 1]
+        const b = e.points[k]
+        if (e.kind === 'chain') {
+          // зигзаг между точками
+          const mx = (a.x + b.x) / 2 + Math.sin(e.born * 97 + k) * 8
+          const my = (a.y + b.y) / 2 + Math.cos(e.born * 89 + k) * 8
+          ctx.lineTo(mx, my)
+        }
+        ctx.lineTo(b.x, b.y)
+      }
+      ctx.stroke()
+      ctx.globalAlpha = 1
+      continue
+    }
     ctx.beginPath()
     ctx.arc(e.x, e.y, e.r * (0.35 + 0.65 * t), 0, Math.PI * 2)
     ctx.strokeStyle = e.color
