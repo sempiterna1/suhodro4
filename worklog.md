@@ -120,3 +120,16 @@ Stage Summary:
 - download/zhelezny-razlom-sources.zip — 218 КБ, 97 файлов, корневая папка zhelezny-razlom/
 - Запуск у пользователя: npm install (или bun install) -> npm run dev (:3000); мультиплеер требует mp-service (bun install + bun run dev, порт 3003)
 - Скрипт package-source.sh остаётся в scripts/ для повторной упаковки
+
+---
+Task ID: 6-r
+Agent: main (Z.ai)
+Task: Повторная упаковка исходников по запросу пользователя («скинуть все исходники файлом»)
+
+Work Log:
+- Повторный запуск scripts/package-source.sh — архив пересобран с нуля из текущего состояния src/ (фикс слияний + кооп-мультиплеер гарантированно внутри)
+- Проверка состава: engine/config/render/types/mp-protocol, td/GameShell+Panels, lib/mp-client, mini-services/mp-service, все 3 теста + build-static.sh — на месте
+- Итог: download/zhelezny-razlom-sources.zip — 218 КБ, 97 файлов
+
+Stage Summary:
+- Свежий архив исходников в download/, готов к передаче пользователю
