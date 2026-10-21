@@ -104,3 +104,19 @@ Stage Summary:
 - Мультиплеер работает: пригласительная ссылка из панели лобби ведёт друга в то же лобби; общий строй, общий счёт, кооп-баланс ×1.85 из GDD
 - mp-service должен быть запущен (bun run dev в mini-services/mp-service, порт 3003) — сейчас работает
 - Ограничения MVP: один аватар (у хоста), без пинга/чат-команд; статики мультиплеер не касается (zip остаётся одиночным)
+
+---
+Task ID: 6
+Agent: main (Z.ai)
+Task: Выгрузка всех исходников проекта одним zip-файлом для пользователя
+
+Work Log:
+- Создан scripts/package-source.sh (повторяемая упаковка; staging-папка -> zip с корнем zhelezny-razlom/)
+- Включено: src/ (engine/render/config/types/mp-protocol, components/td, app, lib/mp-client), public/, prisma/schema.prisma, scripts/ (build-static.sh + 3 теста, без PNG), mini-services/mp-service (index.ts, package.json, bun.lock — без node_modules), корневые конфиги (package.json, bun.lock, tsconfig, next/tailwind/postcss/eslint, components.json)
+- Исключено: node_modules, .next*, download/ (готовые билды), upload/ (доки GDD), db/, examples/, tests/ (служебное окружение), скриншоты
+- Проверка состава: engine.ts/config.ts/GameShell/Panels/mp-client/mp-service/тесты — все на месте
+
+Stage Summary:
+- download/zhelezny-razlom-sources.zip — 218 КБ, 97 файлов, корневая папка zhelezny-razlom/
+- Запуск у пользователя: npm install (или bun install) -> npm run dev (:3000); мультиплеер требует mp-service (bun install + bun run dev, порт 3003)
+- Скрипт package-source.sh остаётся в scripts/ для повторной упаковки
