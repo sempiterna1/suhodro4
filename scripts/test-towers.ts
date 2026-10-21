@@ -141,6 +141,31 @@ function firstCreep(g: Game): Creep | undefined {
     check(`слияние → ${m.name}`, r.ok && g.towerById(b)?.defId === m.id)
   }
 }
+{
+  // причины отказа в слиянии — по одной на каждую проверку
+  const g = new Game()
+  g.unlockAllTowers()
+  g.useMap(CLASSIC_MAP)
+  g.beginPreview()
+  g.gold = 1e6
+  const at = (x: number, y: number, id: string, level: number) => {
+    const t = g.build(x, y, id).towerId!
+    g.towerById(t)!.level = level
+    return t
+  }
+  const archer = at(300, 220, 'archer', 3)
+  const crossbow = at(340, 220, 'crossbow', 3)
+  const pyroLow = at(300, 260, 'pyro', 2)
+  const pyroFar = at(860, 60, 'pyro', 3)
+  const archer2 = at(380, 220, 'archer', 3)
+  const noRecipe = g.mergeError(archer, crossbow) ?? ''
+  check('нет рецепта — так и сказано, с подсказкой партнёров', noRecipe.includes('Нет рецепта') && noRecipe.includes('Пиромант'), noRecipe)
+  check('низкий уровень — названы уровни', (g.mergeError(archer, pyroLow) ?? '').includes('сейчас 3 и 2'))
+  check('далеко — названо расстояние', (g.mergeError(archer, pyroFar) ?? '').includes('Слишком далеко'))
+  check('одинаковые башни — отдельная причина', (g.mergeError(archer, archer2) ?? '').includes('разные'))
+  g.towerById(pyroLow)!.level = 3
+  check('подходящая пара — без ошибки', g.mergeError(archer, pyroLow) === null && g.merge(archer, pyroLow).ok)
+}
 void firstCreep
 
 console.log(failed ? `\n✗ провалено проверок: ${failed}` : '\n✓✓ Все башни и рецепты работают')

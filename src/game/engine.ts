@@ -14,10 +14,12 @@ import {
   CHAIN_FALLOFF,
   CHAIN_RANGE,
   COOP_HP_MULT,
+  CREEP_KINDS,
   DAMAGE_MATRIX,
   FIRST_PREVIEW_TIME,
   HP_PLAYTEST_MULT,
   INFINITE_GOLD,
+  KINDS_BY_ARMOR,
   LEVEL_MULT,
   LINE_WIDTH,
   MAP_H,
@@ -62,6 +64,7 @@ import type {
   ArmorType,
   AttackType,
   Creep,
+  CreepKind,
   Effect,
   FloatText,
   MergeDef,
@@ -112,6 +115,15 @@ export function findRecipe(a: string, b: string): MergeDef | null {
   )
 }
 
+/** С какими башнями сливается эта и что получится: «Пиромант → Огненная лучница, …» */
+export function mergePartnersText(defId: string): string {
+  const list = MERGED_TOWERS.filter((m) => m.parents.includes(defId)).map((m) => {
+    const other = ALL_DEFS[m.parents[0] === defId ? m.parents[1] : m.parents[0]]
+    return `${other.name} → ${m.name}`
+  })
+  return list.length ? list.join(', ') : 'ни с кем'
+}
+
 export function upgradeCost(def: TowerDefinition): number {
   if (def.merged) {
     const pa = ALL_DEFS[def.parents[0]]
@@ -150,6 +162,13 @@ interface SpawnOrder {
   t: number
   isBoss: boolean
   armor: ArmorType
+  kind: CreepKind
+}
+
+/** Случайный вид врага для брони волны */
+function kindFor(armor: ArmorType): CreepKind {
+  const list = KINDS_BY_ARMOR[armor]
+  return list[Math.floor(Math.random() * list.length)]
 }
 
 // ─── Игровое состояние ──────────────────────────────────────────────────
@@ -274,13 +293,13 @@ export class Game {
     this.waveSpawned = 0
 
     if (def.kind === 'boss') {
-      this.spawnQueue.push({ t: 0, isBoss: true, armor: 'heavy' })
+      this.spawnQueue.push({ t: 0, isBoss: true, armor: 'heavy', kind: 'titan' })
       for (let i = 0; i < BOSS_ESCORTS; i++) {
-        this.spawnQueue.push({ t: 3 + i * 1.2, isBoss: false, armor: 'medium' })
+        this.spawnQueue.push({ t: 3 + i * 1.2, isBoss: false, armor: 'medium', kind: kindFor('medium') })
       }
     } else {
       for (let i = 0; i < def.count; i++) {
-        this.spawnQueue.push({ t: i * def.spawnInterval, isBoss: false, armor: def.armor })
+        this.spawnQueue.push({ t: i * def.spawnInterval, isBoss: false, armor: def.armor, kind: kindFor(def.armor) })
       }
     }
     this.waveTotal = this.spawnQueue.length
@@ -389,9 +408,30 @@ export class Game {
     return findRecipe(ta.defId, tb.defId)
   }
 
+  /** Почему две башни нельзя слить (null — можно). Причины — в порядке проверки, первая найденная */
+  mergeError(a: number, b: number): string | null {
+    const ta = this.towerById(a)
+    const tb = this.towerById(b)
+    if (!ta || !tb) return 'Башни нет'
+    if (a === b) return 'Выберите другую башню'
+    const da = ALL_DEFS[ta.defId]
+    const db = ALL_DEFS[tb.defId]
+    if (da.merged || db.merged) return 'Уникальные (слитые) башни больше не сливаются'
+    if (ta.defId === tb.defId) return 'Сливаются только разные башни'
+    if (!findRecipe(ta.defId, tb.defId)) {
+      return `Нет рецепта «${da.name} + ${db.name}». ${da.name} сливается с: ${mergePartnersText(ta.defId)}`
+    }
+    if (ta.level < MERGE_MIN_LEVEL || tb.level < MERGE_MIN_LEVEL) {
+      return `Обе башни должны быть ${MERGE_MIN_LEVEL}+ уровня (сейчас ${ta.level} и ${tb.level})`
+    }
+    const d = Math.round(Math.hypot(ta.x - tb.x, ta.y - tb.y))
+    if (d > MERGE_DIST) return `Слишком далеко: ${d} px, нужно не больше ${MERGE_DIST}`
+    return null
+  }
+
   merge(a: number, b: number): ActionResult {
     const recipe = this.canMerge(a, b)
-    if (!recipe) return { ok: false, error: 'Слияние невозможно' }
+    if (!recipe) return { ok: false, error: this.mergeError(a, b) ?? 'Слияние невозможно' }
     const ta = this.towerById(a)!
     const tb = this.towerById(b)!
     const level = Math.min(ta.level, tb.level)
@@ -440,6 +480,19 @@ export class Game {
   }
 
   addFloat(x: number, y: number, text: string, color: string) {
+    // «+3», «+5» от убийств пачкой не наслаиваются: числа рядом складываются в одно («+8»)
+    const num = /^([+−])(\d+)(.*)$/.exec(text)
+    for (const f of this.floats) {
+      if (this.time - f.born > 0.45 || Math.hypot(f.x - x, f.y - y) > 48) continue
+      const fn = /^([+−])(\d+)(.*)$/.exec(f.text)
+      if (num && fn && f.color === color && fn[1] === num[1] && fn[3] === num[3]) {
+        f.text = `${num[1]}${Number(fn[2]) + Number(num[2])}${num[3]}`
+        f.born = this.time
+        return
+      }
+    }
+    // прочие подписи рядом сдвигаем выше, чтобы не легли друг на друга
+    while (this.floats.some((f) => this.time - f.born < 0.6 && Math.abs(f.x - x) < 40 && Math.abs(f.y - y) < 13)) y -= 14
     this.floats.push({ x, y, text, color, born: this.time })
     if (this.floats.length > 40) this.floats.shift()
   }
@@ -491,14 +544,16 @@ export class Game {
         gold = goldForKill(def.n) * BOSS_GOLD_MULT
         livesCost = BOSS_LIVES_COST
       } else {
-        hp = hpForWave(def.n) * ARMOR_HP_MULT[o.armor] * def.hpMult * HP_PLAYTEST_MULT * this.coopMult()
-        speed = ARMOR_SPEED[o.armor]
-        size = o.armor === 'light' ? 11 : o.armor === 'medium' ? 13 : 15
+        const kd = CREEP_KINDS[o.kind]
+        hp = hpForWave(def.n) * ARMOR_HP_MULT[o.armor] * def.hpMult * kd.hpMult * HP_PLAYTEST_MULT * this.coopMult()
+        speed = ARMOR_SPEED[o.armor] * kd.speedMult
+        size = kd.size
         gold = goldForKill(def.n) * def.goldMult
         livesCost = 1
       }
       this.creeps.push({
         uid: this.uid++,
+        kind: o.kind,
         armor: o.armor,
         hp,
         maxHp: hp,
@@ -1082,7 +1137,7 @@ export class Game {
         lastShotAt: t.lastShotAt, aim: t.aim,
       })),
       creeps: this.creeps.map((c) => ({
-        uid: c.uid, armor: c.armor, hp: c.hp, maxHp: c.maxHp, speed: c.speed,
+        uid: c.uid, kind: c.kind, armor: c.armor, hp: c.hp, maxHp: c.maxHp, speed: c.speed,
         dist: c.dist, size: c.size, isBoss: c.isBoss,
         burnDps: c.burnDps, burnUntil: c.burnUntil,
         stunnedUntil: c.stunnedUntil, markedUntil: c.markedUntil, markedBonus: c.markedBonus,
@@ -1123,7 +1178,7 @@ export class Game {
     this.avatar = { ...s.avatar }
     this.towers = s.towers.map((t) => ({ ...t }))
     this.creeps = s.creeps.map((c) => ({
-      uid: c.uid, armor: c.armor, hp: c.hp, maxHp: c.maxHp, speed: c.speed,
+      uid: c.uid, kind: c.kind, armor: c.armor, hp: c.hp, maxHp: c.maxHp, speed: c.speed,
       dist: c.dist, size: c.size, isBoss: c.isBoss,
       gold: 0, livesCost: 1, burnSource: '',
       burnDps: c.burnDps, burnUntil: c.burnUntil,

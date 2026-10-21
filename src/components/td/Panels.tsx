@@ -4,7 +4,7 @@
 
 import { useState } from 'react'
 import { ARMOR_COLORS, ARMOR_NAMES, ATTACK_NAMES, AVATAR, MERGED_TOWERS, TOWERS, DAMAGE_MATRIX, LEVEL_MULT, SELL_RATIO, ALL_DEFS } from '@/game/config'
-import { upgradeCost } from '@/game/engine'
+import { mergePartnersText, upgradeCost } from '@/game/engine'
 import type { Game } from '@/game/engine'
 import type { ArmorType, AttackType, TowerDef, UiState, Vec } from '@/game/types'
 import { Button } from '@/components/ui/button'
@@ -45,6 +45,66 @@ function BrassTag({ color, children }: { color: string; children: React.ReactNod
   )
 }
 
+// ─── Общие элементы интерфейса: один вид для всех панелей ─────────────────
+
+/** Цена в золоте — везде одинаково: монета + число (красное, если не хватает) */
+export function Price({ value, ok = true, className = '' }: { value: number; ok?: boolean; className?: string }) {
+  return (
+    <span className={`inline-flex shrink-0 items-center gap-0.5 font-mono tabular-nums ${ok ? 'text-[#e8c170]' : 'text-[#e05252]'} ${className}`}>
+      <Coins className="h-3 w-3" />
+      {value}
+    </span>
+  )
+}
+
+/** Показатель в верхней панели: значок + значение */
+function StatChip({ title, color, children }: { title: string; color: string; children: React.ReactNode }) {
+  return (
+    <span
+      className="flex h-8 items-center gap-1 rounded border border-[#8a6d3b55] bg-[#1a140e] px-2 font-mono text-sm tabular-nums"
+      style={{ color }}
+      title={title}
+    >
+      {children}
+    </span>
+  )
+}
+
+/** Кнопка-инструмент верхней панели. active — включённый режим (золотая рамка) */
+function ToolButton({
+  onClick, title, active = false, disabled = false, quiet = false, children,
+}: {
+  onClick: () => void
+  title: string
+  active?: boolean
+  disabled?: boolean
+  quiet?: boolean // второстепенная (рестарт, читы)
+  children: React.ReactNode
+}) {
+  return (
+    <Button
+      onClick={onClick}
+      disabled={disabled}
+      variant="outline"
+      size="sm"
+      title={title}
+      className={`h-8 gap-1 px-2 text-xs ${
+        active
+          ? 'border-[#ffd700] bg-[#3a2e1c] text-[#ffd700] hover:bg-[#4a3a24] hover:text-[#ffd700]'
+          : quiet
+            ? 'border-[#8a6d3b55] bg-transparent text-[#a08a64] hover:bg-[#3a2e1c] hover:text-[#e8c170]'
+            : 'border-[#8a6d3b] bg-[#2b2115] text-[#e8c170] hover:bg-[#3a2e1c] hover:text-[#ffd700]'
+      }`}
+    >
+      {children}
+    </Button>
+  )
+}
+
+function Divider() {
+  return <span className="hidden h-6 w-px bg-[#8a6d3b55] sm:block" />
+}
+
 // ─── Верхняя панель ──────────────────────────────────────────────────────
 export function TopBar({
   ui,
@@ -71,6 +131,7 @@ export function TopBar({
   mpStatus?: MpStatus
   onInvite?: () => void
 }) {
+  const playing = ui.phase !== 'intro' && ui.phase !== 'over' && ui.phase !== 'won'
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2">
       <div className="flex items-center gap-2">
@@ -78,115 +139,72 @@ export function TopBar({
         <span className="font-serif text-sm font-bold tracking-wide text-[#e8c170] sm:text-base">
           ЖЕЛЕЗНЫЙ РАЗЛОМ
         </span>
-        <span className="hidden text-[10px] uppercase tracking-widest text-[#8a6d3b] md:inline">
+        <span className="hidden text-[10px] uppercase tracking-widest text-[#8a6d3b] xl:inline">
           прототип · Пограничный тракт
         </span>
-        {ui.coop && (
-          <span
-            className="rounded border border-[#e05252aa] bg-[#3a1c14] px-1.5 py-0.5 font-mono text-[10px] font-bold text-[#ff9a7a]"
-            title="Кооп: HP волн ×1.85 (GDD)"
-          >
-            КООП ×1.85
-          </span>
-        )}
       </div>
-      <div className="ml-auto flex flex-wrap items-center gap-2 sm:gap-3">
-        {role !== 'single' && (
-          <span
-            className={`flex items-center gap-1 rounded border px-2 py-1 font-mono text-[10px] ${
-              mpStatus === 'linked'
-                ? 'border-[#7fd0a088] bg-[#1f2d24] text-[#7fd0a0]'
-                : 'border-[#8a6d3b66] bg-[#241b12] text-[#b08d57]'
-            }`}
-            title={mpStatus === 'linked' ? 'Оба игрока на связи' : 'Второй игрок не подключился'}
-          >
-            <Users className="h-3 w-3" />
-            {mpStatus === 'linked' ? '2/2' : '1/2'}
-          </span>
-        )}
-        {role === 'host' && onInvite && (
-          <Button
-            onClick={onInvite}
-            variant="outline"
-            size="sm"
-            className="h-8 border-[#b08d57] bg-[#2b2115] px-2 text-xs text-[#e8c170] hover:bg-[#3a2e1c]"
-            title="Показать пригласительную ссылку"
-          >
-            Пригласить
-          </Button>
-        )}
-        <span className="flex items-center gap-1 rounded border border-[#8a6d3b55] bg-[#1a140e] px-2 py-1 font-mono text-sm text-[#e05252]" title="Жизни">
+      <div className="ml-auto flex flex-wrap items-center gap-2">
+        {/* показатели */}
+        <StatChip title="Жизни" color="#e05252">
           <Heart className="h-3.5 w-3.5 fill-[#e05252]" /> {ui.lives}
-        </span>
-        <span className="flex items-center gap-1 rounded border border-[#8a6d3b55] bg-[#1a140e] px-2 py-1 font-mono text-sm text-[#e8c170]" title="Золото">
-          <Coins className="h-3.5 w-3.5 text-[#e8c170]" /> {ui.infiniteGold ? '∞' : ui.gold}
-        </span>
-        <Button
-          onClick={onInfiniteGold}
-          variant="outline"
-          size="sm"
-          className={`h-8 px-2 text-xs hover:bg-[#3a2e1c] ${
-            ui.infiniteGold ? 'border-[#ffd700] bg-[#3a2e1c] text-[#ffd700]' : 'border-[#8a6d3b55] bg-transparent text-[#8a6d3b]'
-          }`}
-          title={ui.infiniteGold ? 'Выключить бесконечное золото (вернётся прежнее)' : 'Бесконечное золото — для тестов'}
-        >
-          {ui.infiniteGold ? '∞ золото: вкл' : '∞ золото'}
-        </Button>
-        <span className="flex items-center gap-1 rounded border border-[#8a6d3b55] bg-[#1a140e] px-2 py-1 font-mono text-sm text-[#d8cbb0]" title="Волна">
+        </StatChip>
+        <StatChip title="Золото" color="#e8c170">
+          <Coins className="h-3.5 w-3.5" /> {ui.infiniteGold ? '∞' : ui.gold}
+        </StatChip>
+        <StatChip title="Волна" color="#d8cbb0">
           <Swords className="h-3.5 w-3.5 text-[#b08d57]" /> {Math.min(ui.wave, ui.totalWaves)}/{ui.totalWaves}
-        </span>
-        <Button
-          onClick={onSpeed}
-          variant="outline"
-          size="sm"
-          className="h-8 border-[#8a6d3b] bg-[#2b2115] px-2 font-mono text-xs text-[#e8c170] hover:bg-[#3a2e1c] hover:text-[#ffd700]"
-          title="Скорость игры"
-        >
-          ×{ui.speed}
-        </Button>
-        <Button
-          onClick={onPause}
-          disabled={ui.phase === 'intro' || ui.phase === 'over' || ui.phase === 'won'}
-          variant="outline"
-          size="sm"
-          className={`h-8 px-2 text-xs hover:bg-[#3a2e1c] ${
-            ui.paused
-              ? 'border-[#ffd700] bg-[#3a2e1c] text-[#ffd700]'
-              : 'border-[#8a6d3b] bg-[#2b2115] text-[#e8c170] hover:text-[#ffd700]'
-          }`}
-          title={ui.paused ? 'Продолжить (P)' : 'Пауза (P)'}
-        >
+        </StatChip>
+        {ui.coop && (
+          <StatChip title="Кооп: HP волн ×1.85 (GDD)" color="#ff9a7a">
+            КООП ×1.85
+          </StatChip>
+        )}
+        {role !== 'single' && (
+          <StatChip
+            title={mpStatus === 'linked' ? 'Оба игрока на связи' : 'Второй игрок не подключился'}
+            color={mpStatus === 'linked' ? '#7fd0a0' : '#b08d57'}
+          >
+            <Users className="h-3.5 w-3.5" /> {mpStatus === 'linked' ? '2/2' : '1/2'}
+          </StatChip>
+        )}
+        <Divider />
+        {/* управление игрой */}
+        <ToolButton onClick={onSpeed} title="Скорость игры">
+          <span className="font-mono">×{ui.speed}</span>
+        </ToolButton>
+        <ToolButton onClick={onPause} disabled={!playing} active={ui.paused} title={ui.paused ? 'Продолжить (P)' : 'Пауза (P)'}>
           {ui.paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
           {ui.paused ? 'Дальше' : 'Пауза'}
-        </Button>
-        <Button
+        </ToolButton>
+        {role === 'host' && onInvite && (
+          <ToolButton onClick={onInvite} title="Показать пригласительную ссылку">
+            <Users className="h-3.5 w-3.5" /> Пригласить
+          </ToolButton>
+        )}
+        <Divider />
+        {/* инструменты */}
+        <ToolButton
+          onClick={onInfiniteGold}
+          active={ui.infiniteGold}
+          quiet
+          title={ui.infiniteGold ? 'Выключить бесконечное золото (вернётся прежнее)' : 'Бесконечное золото — для тестов'}
+        >
+          <Coins className="h-3.5 w-3.5" /> ∞
+        </ToolButton>
+        <ToolButton
           onClick={onSkin}
-          variant="outline"
-          size="sm"
-          className={`h-8 px-2 text-xs hover:bg-[#3a2e1c] ${
-            skin === 'lol' ? 'border-[#e9b896] bg-[#3a2e1c] text-[#e9b896]' : 'border-[#8a6d3b] bg-[#2b2115] text-[#d8cbb0]'
-          }`}
+          active={skin === 'lol'}
+          quiet
           title={skin === 'lol' ? 'Вернуть стимпанк-башни' : 'Шуточный скин башен'}
         >
-          {skin === 'lol' ? '⚙ Стимпанк' : '🍆 Скин'}
-        </Button>
-        <Button
-          onClick={onHelp}
-          variant="outline"
-          size="sm"
-          className="h-8 border-[#8a6d3b] bg-[#2b2115] px-2 text-xs text-[#d8cbb0] hover:bg-[#3a2e1c]"
-        >
+          🍆
+        </ToolButton>
+        <ToolButton onClick={onHelp} quiet title="Правила и книга слияний">
           Как играть
-        </Button>
-        <Button
-          onClick={onRestart}
-          variant="outline"
-          size="sm"
-          className="h-8 border-[#8a6d3b55] bg-transparent px-2 text-xs text-[#8a6d3b] hover:bg-[#3a2e1c] hover:text-[#e05252]"
-          title="Начать заново"
-        >
+        </ToolButton>
+        <ToolButton onClick={onRestart} quiet title="Начать заново (новая карта)">
           Заново
-        </Button>
+        </ToolButton>
       </div>
     </div>
   )
@@ -266,8 +284,8 @@ function RollButton({ gold, cost, onRoll }: { gold: number; cost: number; onRoll
       className="h-8 w-full border-[#b08d57] bg-[#2b2115] text-xs font-bold text-[#e8c170] hover:bg-[#3a2e1c] hover:text-[#ffd700]"
       title="Заменить все башни арсенала на новые случайные"
     >
-      <Dices className="h-3.5 w-3.5" /> Ролл арсенала ·{' '}
-      <span className={affordable ? '' : 'text-[#e05252]'}>{cost} золота</span>
+      <Dices className="h-3.5 w-3.5" /> Ролл арсенала
+      <Price value={cost} ok={affordable} className="ml-1" />
     </Button>
   )
 }
@@ -357,10 +375,11 @@ export function TowerPanel({
           onClick={onUpgrade}
           disabled={tw.level >= 5 || gold < cost}
           size="sm"
-          className="h-8 border border-[#b08d57] bg-[#3a2e1c] px-1 text-[11px] text-[#ffd700] hover:bg-[#4a3a24] disabled:opacity-40"
+          className="h-8 gap-0.5 border border-[#b08d57] bg-[#3a2e1c] px-1 text-[11px] text-[#ffd700] hover:bg-[#4a3a24] disabled:opacity-40"
+          title="Повысить уровень"
         >
-          <ChevronUp className="mr-0.5 h-3 w-3" />
-          {tw.level >= 5 ? 'макс.' : `${cost}⚡`}
+          <ChevronUp className="h-3 w-3" />
+          {tw.level >= 5 ? 'макс.' : <Price value={cost} ok={gold >= cost} />}
         </Button>
         <Button
           onClick={onMergeStart}
@@ -374,20 +393,16 @@ export function TowerPanel({
         <Button
           onClick={onSell}
           size="sm"
-          className="h-8 border border-[#e0525288] bg-[#33241c] px-1 text-[11px] text-[#e08870] hover:bg-[#42291f]"
+          className="h-8 gap-0.5 border border-[#e0525288] bg-[#33241c] px-1 text-[11px] text-[#e08870] hover:bg-[#42291f]"
+          title={`Продать: вернётся ${refund} золота`}
         >
-          <Trash2 className="mr-0.5 h-3 w-3" />
-          {refund}⚡
+          <Trash2 className="mr-0.5 h-3 w-3" />+{refund}
         </Button>
       </div>
       {!def.merged && (
         <p className="mt-1.5 text-[10px] leading-snug text-[#8a6d3b]">
-          {canMerge
-            ? `Слияние: выберите башню 3+ ур. в пределах 140 px. Рецепты с «${def.name}»: ` +
-              MERGED_TOWERS.filter((m) => m.parents.includes(def.id))
-                .map((m) => m.name)
-                .join(', ')
-            : 'Слияние доступно с 3 уровня для двух разных башен на расстоянии до 140 px.'}
+          {canMerge ? 'Слияние: выберите башню 3+ ур. в пределах 140 px. ' : 'Слияние — с 3 уровня, вторая башня в пределах 140 px. '}
+          Сливается с: {mergePartnersText(def.id)}.
         </p>
       )}
     </div>
@@ -450,7 +465,8 @@ export function MergePanel({
         </>
       ) : (
         <p className="text-xs text-[#c8d8c0]">
-          Рядом нет подходящих башен: нужны разные башни 3+ уровня в пределах 140 px.
+          Рядом нет подходящей пары. {def.name} сливается только с: {mergePartnersText(def.id)}. Вторая башня
+          тоже должна быть 3+ уровня и стоять в пределах 140 px.
         </p>
       )}
     </div>
@@ -562,9 +578,7 @@ export function ShopList({
             >
               <span className="text-base leading-none">{t.glyph}</span>
               <span className="min-w-0 flex-1 truncate text-[10px] text-[#d8cbb0]">{t.name}</span>
-              <span className={`font-mono text-[10px] ${affordable ? 'text-[#e8c170]' : 'text-[#e05252]'}`}>
-                {t.price}
-              </span>
+              <Price value={t.price} ok={affordable} className="text-[10px]" />
             </button>
           )
         })}

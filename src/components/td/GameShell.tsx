@@ -400,15 +400,9 @@ export default function GameShell() {
           setMergeFrom(null)
           setSelectedTower(null)
         } else {
-          const other = game.towerById(tid)
-          const near = other && game.towerById(from)
-            ? Math.hypot(other.x - game.towerById(from)!.x, other.y - game.towerById(from)!.y) <= 140
-            : false
           toast({
             title: 'Слияние невозможно',
-            description: near
-              ? 'Нужны разные башни 3+ ур. в пределах 140 px.'
-              : 'Башня слишком далеко — постройте вторую в пределах 140 px от первой.',
+            description: game.mergeError(from, tid) ?? 'Эти башни не сливаются',
             variant: 'destructive',
           })
         }

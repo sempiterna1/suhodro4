@@ -12,6 +12,7 @@ import {
 import type { Game } from './engine'
 import { pointAtLength } from './engine'
 import { getMap, pathLength } from './map'
+import { drawCreepBody } from './render-creeps'
 import { drawLolProjectile, drawLolTower } from './render-lol'
 import type { Vec } from './types'
 
@@ -206,6 +207,7 @@ export function render(ctx: CanvasRenderingContext2D, game: Game, view: ViewStat
   drawCreeps(ctx, game)
   drawEffects(ctx, game)
   drawProjectiles(ctx, game, view.skin)
+  drawCreepBars(ctx, game)
   drawAvatar(ctx, game, view)
   drawFloats(ctx, game)
 }
@@ -381,14 +383,9 @@ function drawCreeps(ctx: CanvasRenderingContext2D, game: Game) {
       ctx.fill()
     }
 
-    // тело
-    ctx.beginPath()
-    ctx.arc(p.x, p.y, c.size, 0, Math.PI * 2)
-    ctx.fillStyle = ARMOR_COLORS[c.armor]
-    ctx.fill()
-    ctx.lineWidth = 2
-    ctx.strokeStyle = c.isBoss ? '#3a1010' : 'rgba(0,0,0,0.5)'
-    ctx.stroke()
+    // тело — свой стимпанк-облик у каждого вида врага (render-creeps.ts)
+    const ahead = pointAtLength(c.dist + 3)
+    drawCreepBody(ctx, c, p, Math.atan2(ahead.y - p.y, ahead.x - p.x), game.time, game.time < c.stunnedUntil)
 
     // замедление — ледяная кайма
     if (slowed) {
@@ -397,18 +394,6 @@ function drawCreeps(ctx: CanvasRenderingContext2D, game: Game) {
       ctx.strokeStyle = '#7cc4e0'
       ctx.lineWidth = 2
       ctx.stroke()
-    }
-
-    // «глаз» ИИ
-    ctx.beginPath()
-    ctx.arc(p.x, p.y, c.size * 0.32, 0, Math.PI * 2)
-    ctx.fillStyle = c.isBoss ? '#ff5040' : '#1a140e'
-    ctx.fill()
-    if (c.isBoss) {
-      ctx.beginPath()
-      ctx.arc(p.x, p.y, c.size * 0.15, 0, Math.PI * 2)
-      ctx.fillStyle = '#ffd0c0'
-      ctx.fill()
     }
 
     // оглушение — звёздочки
@@ -430,19 +415,39 @@ function drawCreeps(ctx: CanvasRenderingContext2D, game: Game) {
       }
     }
 
-    // полоса HP
-    const w = Math.max(c.size * 2.4, 22)
-    const hpFrac = Math.max(0, c.hp / c.maxHp)
-    ctx.fillStyle = 'rgba(0,0,0,0.6)'
-    ctx.fillRect(p.x - w / 2, p.y - c.size - 9, w, 4)
-    ctx.fillStyle = hpFrac > 0.5 ? '#7fd0a0' : hpFrac > 0.25 ? '#e8c170' : '#e05252'
-    ctx.fillRect(p.x - w / 2 + 0.5, p.y - c.size - 8.5, (w - 1) * hpFrac, 3)
+  }
+}
 
+/**
+ * Полосы HP — отдельным проходом поверх всего. Чтобы в плотной колонне полосы не наслаивались:
+ * у целых врагов полосы нет; рисуем от головы колонны к хвосту и пропускаем полосу, которая
+ * легла бы на уже нарисованную (передний враг важнее). Босс — всегда, с подписью.
+ */
+function drawCreepBars(ctx: CanvasRenderingContext2D, game: Game) {
+  const drawn: { x: number; y: number; w: number }[] = []
+  const BAR_H = 4
+  const order = [...game.creeps].sort((a, b) => Number(b.isBoss) - Number(a.isBoss) || b.dist - a.dist)
+  for (const c of order) {
+    if (!c.isBoss && c.hp >= c.maxHp) continue
+    const p = pointAtLength(c.dist)
+    const w = c.isBoss ? 56 : Math.max(c.size * 2, 18)
+    const x = p.x - w / 2
+    const y = p.y - c.size - 9
+    if (!c.isBoss && drawn.some((d) => x < d.x + d.w && x + w > d.x && Math.abs(y - d.y) < BAR_H + 2)) continue
+    drawn.push({ x, y, w })
+    const hpFrac = Math.max(0, c.hp / c.maxHp)
+    ctx.fillStyle = 'rgba(0,0,0,0.7)'
+    ctx.fillRect(x - 1, y - 1, w + 2, BAR_H + 2)
+    ctx.fillStyle = hpFrac > 0.5 ? '#7fd0a0' : hpFrac > 0.25 ? '#e8c170' : '#e05252'
+    ctx.fillRect(x, y, w * hpFrac, BAR_H)
     if (c.isBoss) {
       ctx.font = 'bold 10px Georgia, serif'
       ctx.textAlign = 'center'
       ctx.fillStyle = '#ffb0a0'
-      ctx.fillText('ТИТАН-ИИ', p.x, p.y - c.size - 14)
+      ctx.strokeStyle = 'rgba(0,0,0,0.8)'
+      ctx.lineWidth = 3
+      ctx.strokeText('ТИТАН-ИИ', p.x, y - 4)
+      ctx.fillText('ТИТАН-ИИ', p.x, y - 4)
     }
   }
 }

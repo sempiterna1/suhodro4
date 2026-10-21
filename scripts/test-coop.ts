@@ -2,7 +2,7 @@
 
 import { Game } from '../src/game/engine'
 import { CLASSIC_MAP } from '../src/game/map'
-import { hpForWave, ARMOR_HP_MULT, HP_PLAYTEST_MULT, COOP_HP_MULT } from '../src/game/config'
+import { hpForWave, ARMOR_HP_MULT, HP_PLAYTEST_MULT, COOP_HP_MULT, CREEP_KINDS } from '../src/game/config'
 
 const g = new Game()
 
@@ -16,7 +16,8 @@ g.startWave()
 for (let i = 0; i < 60; i++) g.update(0.05)
 
 const solo = g.creeps[0]
-const expectedSolo = hpForWave(1) * ARMOR_HP_MULT.light * HP_PLAYTEST_MULT
+// вид врага (паук/жук) случаен — HP сверяем с учётом его множителя
+const expectedSolo = hpForWave(1) * ARMOR_HP_MULT.light * HP_PLAYTEST_MULT * CREEP_KINDS[solo.kind].hpMult
 console.log(`соло: hp=${solo.hp.toFixed(1)} ожид=${expectedSolo.toFixed(1)} | ${Math.abs(solo.hp - expectedSolo) < 0.01 ? '✓' : '✗ РЕГРЕССИЯ'}`)
 
 // Включаем кооп — новые волны должны спавниться с ×1.85
@@ -28,8 +29,9 @@ g.startWave()
 for (let i = 0; i < 60; i++) g.update(0.05)
 
 const coop = g.creeps[0]
-const expectedCoop = expectedSolo * COOP_HP_MULT
-console.log(`кооп: hp=${coop.hp.toFixed(1)} ожид=${expectedCoop.toFixed(1)} | соотношение=${(coop.hp / expectedSolo).toFixed(2)} (надо 1.85)`)
+const baseCoop = hpForWave(1) * ARMOR_HP_MULT.light * HP_PLAYTEST_MULT * CREEP_KINDS[coop.kind].hpMult
+const expectedCoop = baseCoop * COOP_HP_MULT
+console.log(`кооп: hp=${coop.hp.toFixed(1)} ожид=${expectedCoop.toFixed(1)} | соотношение=${(coop.hp / baseCoop).toFixed(2)} (надо 1.85)`)
 console.log(Math.abs(coop.hp - expectedCoop) < 0.1 ? '✓ Кооп-множитель работает' : '✗ РЕГРЕССИЯ коопа')
 
 // Сериализация снапшота — размер и состав

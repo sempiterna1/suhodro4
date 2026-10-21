@@ -81,9 +81,18 @@ export interface BuildPos {
   y: number
 }
 
+/** Вид врага: облик и небольшие отличия скорости/HP внутри типа брони (config.ts CREEP_KINDS) */
+export type CreepKind =
+  | 'scuttler' | 'swarm' // лёгкие
+  | 'trooper' | 'rider' // средние
+  | 'juggernaut' | 'golem' // тяжёлые
+  | 'rift' | 'wisp' // универсальные
+  | 'titan' // босс
+
 /** Крип на поле */
 export interface Creep {
   uid: number
+  kind: CreepKind
   armor: ArmorType
   hp: number
   maxHp: number

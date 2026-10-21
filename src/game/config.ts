@@ -4,6 +4,7 @@
 import type {
   ArmorType,
   AttackType,
+  CreepKind,
   MergeDef,
   TowerDef,
   Vec,
@@ -32,6 +33,36 @@ export const ARMOR_SPEED: Record<ArmorType, number> = {
   medium: 34,
   heavy: 28,
   universal: 34,
+}
+
+// ─── Виды врагов (GDD «Враги и броня»: бегуны и рои, пехота и наездники, латники и големы,
+// порождения Разлома). Внутри типа брони два вида, множители парные — среднее по волне ≈ 1.
+export interface CreepKindDef {
+  name: string
+  armor: ArmorType
+  hpMult: number
+  speedMult: number
+  size: number // радиус, px
+}
+
+export const CREEP_KINDS: Record<CreepKind, CreepKindDef> = {
+  scuttler: { name: 'Паровой паук', armor: 'light', hpMult: 1.15, speedMult: 0.95, size: 11 },
+  swarm: { name: 'Заводной жук', armor: 'light', hpMult: 0.85, speedMult: 1.1, size: 9 },
+  trooper: { name: 'Заводной пехотинец', armor: 'medium', hpMult: 1.1, speedMult: 0.95, size: 13 },
+  rider: { name: 'Паровой наездник', armor: 'medium', hpMult: 0.9, speedMult: 1.1, size: 13 },
+  juggernaut: { name: 'Котельный латник', armor: 'heavy', hpMult: 0.9, speedMult: 1.05, size: 15 },
+  golem: { name: 'Клёпаный голем', armor: 'heavy', hpMult: 1.15, speedMult: 0.9, size: 16 },
+  rift: { name: 'Кристалл Разлома', armor: 'universal', hpMult: 1.1, speedMult: 0.95, size: 13 },
+  wisp: { name: 'Искра Разлома', armor: 'universal', hpMult: 0.9, speedMult: 1.1, size: 11 },
+  titan: { name: 'Титан-ИИ', armor: 'heavy', hpMult: 1, speedMult: 1, size: 26 },
+}
+
+/** Виды врагов для брони волны (кроме босса) */
+export const KINDS_BY_ARMOR: Record<ArmorType, CreepKind[]> = {
+  light: ['scuttler', 'swarm'],
+  medium: ['trooper', 'rider'],
+  heavy: ['juggernaut', 'golem'],
+  universal: ['rift', 'wisp'],
 }
 
 export const ARMOR_NAMES: Record<ArmorType, string> = {
