@@ -1,0 +1,9 @@
+{
+  "name": "zr-preview",
+  "private": true,
+  "type": "commonjs",
+  "description": "Рендер сцен игры в PNG и замеры кадра вне браузера",
+  "dependencies": {
+    "@napi-rs/canvas": "^0.1.65"
+  }
+}
