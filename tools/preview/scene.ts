@@ -1,8 +1,8 @@
 // Превью целой сцены в пиксельном стиле: карта с декором, башни всех типов атаки, все виды врагов
-import { createCanvas } from '@napi-rs/canvas'
+import { createCanvas, loadImage } from '@napi-rs/canvas'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { writeFileSync } from 'node:fs'
+import { readdirSync, writeFileSync } from 'node:fs'
 
 // рендерер создаёт холсты через document.createElement('canvas') — подставляем napi-canvas
 ;(globalThis as unknown as { document: unknown }).document = {
@@ -20,6 +20,10 @@ const load = async (p: string) => {
 async function main() {
   const { Game } = await load('engine.ts')
   const { render } = await load('render.ts')
+  // спрайты из public/assets — в браузере их грузит assets.ts, здесь подкладываем сами
+  const { registerAsset } = await load('assets.ts')
+  const dir = resolve(process.argv[1], '../../../public/assets')
+  for (const f of readdirSync(dir).filter((f) => f.endsWith('.png'))) registerAsset(f.replace('.png', ''), await loadImage(resolve(dir, f)))
   const { pointAtLength } = await load('map.ts')
   const seed = Number(process.argv[3] ?? 12345)
   const { generateMap } = await load('map.ts')
@@ -68,7 +72,7 @@ async function main() {
   })
   const cv = createCanvas(960, 600)
   const ctx = cv.getContext('2d')
-  render(ctx, g, { skin: 'steam', lighting: true, hoverTower: null, selectedTower: null, mergeFrom: null, mouse: null, buildGhost: null })
+  render(ctx, g, { cam: { z: 1, x: 0, y: 0 }, vw: 960, vh: 600, skin: 'steam', lighting: true, hoverTower: null, selectedTower: null, mergeFrom: null, mouse: null, buildGhost: null })
   writeFileSync(process.argv[2], cv.toBuffer('image/png'))
   console.log('saved; towers', g.towers.length, 'creeps', g.creeps.length)
 }

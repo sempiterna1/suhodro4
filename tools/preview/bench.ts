@@ -1,5 +1,6 @@
 // Замер стоимости кадра: render() со светом и без, на сцене с башнями и врагами
-import { createCanvas } from '@napi-rs/canvas'
+import { createCanvas, loadImage } from '@napi-rs/canvas'
+import { readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
@@ -13,6 +14,9 @@ const load = async (p: string) => {
 async function main() {
   const { Game } = await load('engine.ts')
   const { render } = await load('render.ts')
+  const { registerAsset } = await load('assets.ts')
+  const dir = resolve(process.argv[1], '../../../public/assets')
+  for (const f of readdirSync(dir).filter((f) => f.endsWith('.png'))) registerAsset(f.replace('.png', ''), await loadImage(resolve(dir, f)))
   const { generateMap } = await load('map.ts')
   const g = new Game()
   g.useMap(generateMap(1987654321))
@@ -31,7 +35,7 @@ async function main() {
   for (let i = 0; i < 200; i++) g.update(0.05)
   const cv = createCanvas(960, 600)
   const ctx = cv.getContext('2d')
-  const view = (lighting: boolean) => ({ skin: 'steam', lighting, hoverTower: null, selectedTower: null, mergeFrom: null, mouse: null, buildGhost: null })
+  const view = (lighting: boolean) => ({ cam: { z: 1, x: 0, y: 0 }, vw: 960, vh: 600, skin: 'steam', lighting, hoverTower: null, selectedTower: null, mergeFrom: null, mouse: null, buildGhost: null })
   for (const lighting of [false, true]) {
     for (let i = 0; i < 20; i++) render(ctx, g, view(lighting)) // прогрев
     const t0 = performance.now()

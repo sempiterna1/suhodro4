@@ -46,16 +46,33 @@ export interface CreepKindDef {
 }
 
 export const CREEP_KINDS: Record<CreepKind, CreepKindDef> = {
-  scuttler: { name: 'Паровой паук', armor: 'light', hpMult: 1.15, speedMult: 0.95, size: 11 },
-  swarm: { name: 'Заводной жук', armor: 'light', hpMult: 0.85, speedMult: 1.1, size: 9 },
-  trooper: { name: 'Заводной пехотинец', armor: 'medium', hpMult: 1.1, speedMult: 0.95, size: 13 },
-  rider: { name: 'Паровой наездник', armor: 'medium', hpMult: 0.9, speedMult: 1.1, size: 13 },
-  juggernaut: { name: 'Котельный латник', armor: 'heavy', hpMult: 0.9, speedMult: 1.05, size: 15 },
-  golem: { name: 'Клёпаный голем', armor: 'heavy', hpMult: 1.15, speedMult: 0.9, size: 16 },
-  rift: { name: 'Кристалл Разлома', armor: 'universal', hpMult: 1.1, speedMult: 0.95, size: 13 },
-  wisp: { name: 'Искра Разлома', armor: 'universal', hpMult: 0.9, speedMult: 1.1, size: 11 },
-  titan: { name: 'Титан-ИИ', armor: 'heavy', hpMult: 1, speedMult: 1, size: 26 },
+  scuttler: { name: 'Носитель', armor: 'light', hpMult: 1.15, speedMult: 0.95, size: 11 },
+  swarm: { name: 'Бегун', armor: 'light', hpMult: 0.85, speedMult: 1.1, size: 9 },
+  trooper: { name: 'Узловой организм', armor: 'medium', hpMult: 1.1, speedMult: 0.95, size: 13 },
+  rider: { name: 'Заражённый волк', armor: 'medium', hpMult: 0.9, speedMult: 1.1, size: 13 },
+  juggernaut: { name: 'Панцирник', armor: 'heavy', hpMult: 0.9, speedMult: 1.05, size: 15 },
+  golem: { name: 'Заражённый автоматон', armor: 'heavy', hpMult: 1.15, speedMult: 0.9, size: 16 },
+  rift: { name: 'Адаптант', armor: 'universal', hpMult: 1.1, speedMult: 0.95, size: 13 },
+  wisp: { name: 'Искра минерала', armor: 'universal', hpMult: 0.9, speedMult: 1.1, size: 11 },
+  titan: { name: 'Колосс Разлома', armor: 'heavy', hpMult: 1, speedMult: 1, size: 26 },
 }
+
+/**
+ * Сигналы ИИ в начале волн (лор GDD): ИИ — загадочная сила, выходит на связь и помогает,
+ * но мотивов не объясняет и об убежище говорит уклончиво. Индекс — номер волны минус 1.
+ */
+export const AI_SIGNALS: string[] = [
+  '…приём. Вы живы. Это хорошо. Держите тракт.',
+  'Минерал учится. Не стройте одно и то же.',
+  'Они не злые. Они просто больше не те, кем были.',
+  'Убежище существует. Дорогу я знаю.',
+  'Ваш генератор слышно за много миль. Не только мне.',
+  'Сливайте башни. Вдвоём сильнее — вы это уже поняли.',
+  'Не спрашивайте, откуда я это знаю. Стреляйте.',
+  'Они идут толпой. Им больше нечего терять.',
+  'Сейчас придёт большое. Готовьтесь.',
+  'Это не конец. Но если выстоите — у лагеря будет время.',
+]
 
 /** Виды врагов для брони волны (кроме босса) */
 export const KINDS_BY_ARMOR: Record<ArmorType, CreepKind[]> = {

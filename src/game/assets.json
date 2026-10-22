@@ -1,0 +1,232 @@
+{
+ "bld-barracks": {
+  "w": 116,
+  "h": 81,
+  "ax": 54
+ },
+ "bld-depot": {
+  "w": 119,
+  "h": 104,
+  "ax": 57
+ },
+ "bld-generator": {
+  "w": 129,
+  "h": 102,
+  "ax": 62
+ },
+ "bld-heater": {
+  "w": 105,
+  "h": 82,
+  "ax": 59
+ },
+ "bld-medical": {
+  "w": 120,
+  "h": 84,
+  "ax": 57
+ },
+ "bld-power": {
+  "w": 128,
+  "h": 100,
+  "ax": 63
+ },
+ "bld-wall": {
+  "w": 91,
+  "h": 73,
+  "ax": 70
+ },
+ "bld-workshop": {
+  "w": 114,
+  "h": 99,
+  "ax": 54
+ },
+ "creep-boss": {
+  "w": 105,
+  "h": 69,
+  "ax": 47
+ },
+ "creep-bruiser": {
+  "w": 59,
+  "h": 59,
+  "ax": 23
+ },
+ "creep-runner": {
+  "w": 45,
+  "h": 55,
+  "ax": 23
+ },
+ "creep-scout": {
+  "w": 48,
+  "h": 57,
+  "ax": 24
+ },
+ "creep-shield": {
+  "w": 63,
+  "h": 63,
+  "ax": 27
+ },
+ "creep-wolf": {
+  "w": 90,
+  "h": 51,
+  "ax": 48
+ },
+ "prop-barrel": {
+  "w": 32,
+  "h": 52,
+  "ax": 16
+ },
+ "prop-box": {
+  "w": 40,
+  "h": 45,
+  "ax": 24
+ },
+ "prop-cabin": {
+  "w": 122,
+  "h": 88,
+  "ax": 55
+ },
+ "prop-cliff": {
+  "w": 102,
+  "h": 95,
+  "ax": 60
+ },
+ "prop-crate": {
+  "w": 48,
+  "h": 47,
+  "ax": 21
+ },
+ "prop-crates": {
+  "w": 63,
+  "h": 52,
+  "ax": 39
+ },
+ "prop-crates2": {
+  "w": 59,
+  "h": 63,
+  "ax": 41
+ },
+ "prop-deadtree": {
+  "w": 68,
+  "h": 78,
+  "ax": 27
+ },
+ "prop-fence": {
+  "w": 76,
+  "h": 74,
+  "ax": 17
+ },
+ "prop-fence2": {
+  "w": 98,
+  "h": 55,
+  "ax": 46
+ },
+ "prop-fence3": {
+  "w": 54,
+  "h": 63,
+  "ax": 40
+ },
+ "prop-flag": {
+  "w": 42,
+  "h": 112,
+  "ax": 19
+ },
+ "prop-gate": {
+  "w": 54,
+  "h": 64,
+  "ax": 15
+ },
+ "prop-lamp": {
+  "w": 31,
+  "h": 73,
+  "ax": 15
+ },
+ "prop-lamp2": {
+  "w": 23,
+  "h": 80,
+  "ax": 11
+ },
+ "prop-lamptower": {
+  "w": 42,
+  "h": 118,
+  "ax": 22
+ },
+ "prop-pine": {
+  "w": 60,
+  "h": 87,
+  "ax": 30
+ },
+ "prop-pines": {
+  "w": 91,
+  "h": 119,
+  "ax": 38
+ },
+ "prop-rock": {
+  "w": 101,
+  "h": 64,
+  "ax": 54
+ },
+ "prop-rubble": {
+  "w": 116,
+  "h": 75,
+  "ax": 73
+ },
+ "prop-shed": {
+  "w": 64,
+  "h": 72,
+  "ax": 39
+ },
+ "prop-sign": {
+  "w": 33,
+  "h": 65,
+  "ax": 15
+ },
+ "prop-sled": {
+  "w": 85,
+  "h": 55,
+  "ax": 23
+ },
+ "prop-tent": {
+  "w": 144,
+  "h": 84,
+  "ax": 63
+ },
+ "tile-ice": {
+  "w": 114,
+  "h": 75,
+  "ax": 63
+ },
+ "tile-snow": {
+  "w": 107,
+  "h": 70,
+  "ax": 52
+ },
+ "tower-cannon": {
+  "w": 102,
+  "h": 138,
+  "ax": 50
+ },
+ "tower-coal": {
+  "w": 104,
+  "h": 135,
+  "ax": 52
+ },
+ "tower-flame": {
+  "w": 141,
+  "h": 127,
+  "ax": 58
+ },
+ "tower-frost": {
+  "w": 96,
+  "h": 137,
+  "ax": 49
+ },
+ "tower-sniper": {
+  "w": 99,
+  "h": 137,
+  "ax": 51
+ },
+ "tower-tesla": {
+  "w": 97,
+  "h": 133,
+  "ax": 50
+ }
+}

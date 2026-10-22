@@ -14,9 +14,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Железный Разлом — прототип кооперативного Tower Defense",
+  title: "Последний горизонт — прототип кооперативного Tower Defense",
   description:
-    "Играбельный прототип ядра кроссплейного TD: 10 волн, 6 башен, слияние в уникальные, аватар «Охотница». По мотивам GDD кооперативного Tower Defense.",
+    "Прототип кооперативного Tower Defense в мире, который убил живой минерал: защитите лагерь беженцев от заражённых — 10 волн, слияние башен, Охотница и загадочный ИИ на связи.",
   keywords: ["Tower Defense", "прототип", "стимпанк", "кооператив", "GDD"],
   icons: {
     icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
