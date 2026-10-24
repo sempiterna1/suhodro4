@@ -4,7 +4,7 @@
 // отсортированные по глубине. Всё, что лежит на земле (радиусы, кольца, взрывы), рисуется через
 // groundPath — в той же проекции, поэтому круги становятся эллипсами на снегу.
 
-import { ALL_DEFS, CELL, MAP_H, MAP_W } from './config'
+import { ALL_DEFS, ARMOR_COLORS, CELL, MAP_H, MAP_W, bossForWave } from './config'
 import type { Game } from './engine'
 import { pointAtLength } from './engine'
 import { getMap } from './map'
@@ -507,6 +507,12 @@ function drawCreepBars(ctx: CanvasRenderingContext2D, game: Game) {
     ctx.fillRect(x, y, Math.max(1, Math.round(w * hpFrac)), 4)
     ctx.fillStyle = 'rgba(255,255,255,0.25)'
     ctx.fillRect(x, y, Math.max(1, Math.round(w * hpFrac)), 1)
+    // рамка цвета брони у полосы HP босса — видно смену брони между фазами
+    if (c.isBoss) {
+      ctx.strokeStyle = ARMOR_COLORS[c.armor]
+      ctx.lineWidth = 1.5
+      ctx.strokeRect(x - 2, y - 2, w + 4, 8)
+    }
   }
 }
 
@@ -780,7 +786,8 @@ function drawOverlayLabels(ctx: CanvasRenderingContext2D, game: Game, view: View
     if (!c.isBoss) continue
     const p = pointAtLength(c.dist)
     const s = toScreen(p.x, p.y)
-    text('КОЛОСС РАЗЛОМА', s.x, s.y - creepHeight(c) - 14, '#a6f095')
+    const bossName = bossForWave(game.wave)?.name ?? 'Колосс Разлома'
+    text(bossName.toUpperCase(), s.x, s.y - creepHeight(c) - 14, '#a6f095')
   }
   const av = toScreen(game.avatar.x, game.avatar.y)
   text(game.av.name.toUpperCase(), av.x, av.y + 16, game.av.color, 9)

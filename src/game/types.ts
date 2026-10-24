@@ -113,6 +113,8 @@ export interface Creep {
   slowUntil: number
   vulnBonus: number // доп. % получаемого урона (Паровой котёл)
   vulnUntil: number
+  bossPhase?: number // индекс текущей фазы босса (0 = базовая), только для isBoss
+  nextSummonAt?: number // time следующего призыва (фазы с summon)
 }
 
 export interface Tower {
@@ -228,6 +230,7 @@ export interface UiState {
   }
   nextWaveArmor: ArmorType
   nextWaveIsBoss: boolean
+  nextWaveBossName: string | null // имя босса с фазами (BOSSES), для боссовых волн
   nextWaveIsMoney: boolean
   nextWaveCount: number
   mapName: string // название выбранной карты (MAP_DEFS)

@@ -115,7 +115,7 @@ export function WaveChip({ ui, build }: { ui: UiState; build: { name: string; co
   } else {
     title = `Волна ${ui.wave}`
     if (ui.phase === 'wave') tag = <Tag color={UI.gold}>на поле {ui.creepsAlive}</Tag>
-    else if (ui.nextWaveIsBoss) tag = <Tag color="#ff7a7a">босс</Tag>
+    else if (ui.nextWaveIsBoss) tag = <Tag color="#ff7a7a">босс{ui.nextWaveBossName ? ` · ${ui.nextWaveBossName}` : ''}</Tag>
     else tag = <Tag color={ARMOR_COLORS[ui.nextWaveArmor]} title="Броня следующей волны">{ARMOR_NAMES[ui.nextWaveArmor]}</Tag>
   }
   return (

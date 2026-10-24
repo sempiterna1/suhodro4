@@ -736,6 +736,48 @@ export const BOSS_ESCORTS = 8
 export const BOSS_SPEED = 24
 export const BOSS_LIVES_COST = 10
 
+// ─── Боссы с фазами (GDD: «10 — тяжёлая броня; 20 — универсальная, призывает;
+// финальный меняет тип брони каждые 25% здоровья») ───────────────────────
+// Фаза включается, когда доля HP босса падает до atHp. Броня и скорость
+// меняются на значения фазы, summon — периодический призыв крипов на позиции босса.
+export interface BossSummonDef {
+  count: number
+  armor: ArmorType
+  every: number // интервал призыва, с
+  hpMult: number // множитель HP призываемых (мягче обычных крипов волны)
+}
+export interface BossPhase {
+  atHp: number
+  armor: ArmorType
+  speedMult: number
+  name: string // название фазы для всплывающей подписи
+  summon?: BossSummonDef
+}
+export interface BossDef {
+  name: string
+  baseArmor: ArmorType
+  phases: BossPhase[] // по убыванию atHp; переходы необратимы
+}
+export const BOSSES: Record<number, BossDef> = {
+  10: {
+    name: 'Колосс Разлома',
+    baseArmor: 'heavy',
+    phases: [
+      { atHp: 0.5, armor: 'heavy', speedMult: 1.35, name: 'Ярость' },
+    ],
+  },
+  20: {
+    name: 'Сердце Разлома',
+    baseArmor: 'universal',
+    phases: [
+      { atHp: 0.75, armor: 'heavy', speedMult: 1.0, name: 'Панцирь' },
+      { atHp: 0.5, armor: 'medium', speedMult: 1.15, name: 'Заражённый призыв', summon: { count: 3, armor: 'medium', every: 9, hpMult: 0.5 } },
+      { atHp: 0.25, armor: 'light', speedMult: 1.4, name: 'Последний рубеж', summon: { count: 4, armor: 'universal', every: 6, hpMult: 0.5 } },
+    ],
+  },
+}
+export const bossForWave = (n: number): BossDef | null => BOSSES[n] ?? null
+
 // ─── Аватары (GDD, приложение: «Аватар и предметы» — 4 архетипа, не утверждены окончательно) ───
 // Способности, перезарядки и пассивки — из таблицы GDD. Чисел скорости, дальности и урона аватаров в GDD нет —
 // они подобраны разумно: Охотница — быстрая стрелок-разведчица, Воевода и Инженер — ближе к башням, Архимаг — дальний и хрупкий.

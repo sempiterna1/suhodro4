@@ -9,6 +9,7 @@ import {
   SELL_RATIO_ENGINEER,
   VOEVODA_RADIUS,
   type AvatarId,
+  BOSSES,
   BOSS_ESCORTS,
   BOSS_GOLD_MULT,
   BOSS_HP_MULT,
@@ -169,6 +170,8 @@ interface SpawnOrder {
   isBoss: boolean
   armor: ArmorType
   kind: CreepKind
+  atDist?: number // стартовая позиция по тропе (призыв у босса), по умолчанию вход
+  hpMult?: number // оверрайд множителя HP волны (призванные крипы слабее)
 }
 
 /** Случайный вид врага для брони волны */
@@ -319,7 +322,8 @@ export class Game {
     this.waveSpawned = 0
 
     if (def.kind === 'boss') {
-      this.spawnQueue.push({ t: 0, isBoss: true, armor: 'heavy', kind: 'titan' })
+      const boss = BOSSES[def.n]
+      this.spawnQueue.push({ t: 0, isBoss: true, armor: boss?.baseArmor ?? 'heavy', kind: 'titan' })
       for (let i = 0; i < BOSS_ESCORTS; i++) {
         this.spawnQueue.push({ t: 3 + i * 1.2, isBoss: false, armor: 'medium', kind: kindFor('medium') })
       }
@@ -665,9 +669,14 @@ export class Game {
         size = 26
         gold = goldForKill(def.n) * BOSS_GOLD_MULT
         livesCost = BOSS_LIVES_COST
+        const bd = BOSSES[def.n]
+        if (bd) {
+          const p0 = pointAtLength(o.atDist ?? 0)
+          this.addFloat(p0.x, p0.y - 44, `⚠ ${bd.name}`, '#ff8a4a')
+        }
       } else {
         const kd = CREEP_KINDS[o.kind]
-        hp = hpForWave(def.n) * ARMOR_HP_MULT[o.armor] * def.hpMult * kd.hpMult * HP_PLAYTEST_MULT * this.coopMult()
+        hp = hpForWave(def.n) * ARMOR_HP_MULT[o.armor] * (o.hpMult ?? def.hpMult) * kd.hpMult * HP_PLAYTEST_MULT * this.coopMult()
         // GDD: скорость +1% за волну (макс +25%) × особенность карты (Ледяной перевал ×1.1)
         speed = ARMOR_SPEED[o.armor] * kd.speedMult * waveSpeedMult(def.n) * this.mapDef.creepSpeedMult
         size = kd.size
@@ -681,7 +690,7 @@ export class Game {
         hp,
         maxHp: hp,
         speed,
-        dist: 0,
+        dist: o.atDist ?? 0,
         size,
         isBoss: o.isBoss,
         gold,
@@ -702,9 +711,52 @@ export class Game {
     }
   }
 
+  /**
+   * Фазы босса (GDD: смена брони по здоровью, призыв крипов у финального).
+   * Переходы необратимы: считаем целевую фазу по доле HP и проходим пропущенные.
+   */
+  private updateBossPhase(c: Creep) {
+    const def = WAVES[this.wave - 1]
+    if (!def || def.kind !== 'boss' || c.hp <= 0) return
+    const boss = BOSSES[def.n]
+    if (!boss) return
+    const frac = c.hp / c.maxHp
+    let target = 0
+    for (let i = 0; i < boss.phases.length; i++) {
+      if (frac <= boss.phases[i].atHp) target = i + 1
+    }
+    while ((c.bossPhase ?? 0) < target) {
+      c.bossPhase = (c.bossPhase ?? 0) + 1
+      const ph = boss.phases[c.bossPhase - 1]
+      c.armor = ph.armor
+      c.speed = BOSS_SPEED * this.mapDef.creepSpeedMult * ph.speedMult
+      const p = pointAtLength(c.dist)
+      this.addFloat(p.x, p.y - 36, `${boss.name}: ${ph.name}!`, '#ff8a4a')
+      if (ph.summon) c.nextSummonAt = this.time + 1.2 // первый призыв почти сразу
+    }
+    // призыв крипов текущей фазы — появляются у босса на тропе
+    const cur = boss.phases[(c.bossPhase ?? 0) - 1]
+    if (cur?.summon && this.time >= (c.nextSummonAt ?? Infinity)) {
+      c.nextSummonAt = this.time + cur.summon.every
+      for (let i = 0; i < cur.summon.count; i++) {
+        this.spawnQueue.push({
+          t: this.time - this.waveStart,
+          isBoss: false,
+          armor: cur.summon.armor,
+          kind: kindFor(cur.summon.armor),
+          atDist: Math.max(0, c.dist - 20 * (i + 1)),
+          hpMult: cur.summon.hpMult,
+        })
+      }
+      const p = pointAtLength(c.dist)
+      this.addFloat(p.x, p.y - 16, 'Призыв!', '#c58aff')
+    }
+  }
+
   private updateCreeps(dt: number) {
     const next: Creep[] = []
     for (const c of this.creeps) {
+      if (c.isBoss) this.updateBossPhase(c)
       // горение
       if (this.time < c.burnUntil && c.burnDps > 0) {
         this.damageCreep(c, c.burnDps * dt, 'burn')
@@ -1218,6 +1270,7 @@ export class Game {
       },
       nextWaveArmor: def.armor,
       nextWaveIsBoss: def.kind === 'boss',
+      nextWaveBossName: def.kind === 'boss' ? (BOSSES[def.n]?.name ?? null) : null,
       nextWaveIsMoney: def.kind === 'money',
       nextWaveCount: def.kind === 'boss' ? 1 + BOSS_ESCORTS : def.count,
       mapName: this.mapDef.name,
