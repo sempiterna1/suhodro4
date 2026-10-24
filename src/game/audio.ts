@@ -514,7 +514,7 @@ export class Sfx {
       const acc = (this.stepAcc.get(c.uid) ?? Math.random() * def.stride) + moved
       if (acc >= def.stride && stepBudget > 0) {
         stepBudget--
-        this.playStep(def, pointAtLength(c.dist).x)
+        this.playStep(def, pointAtLength(c.dist, c.pathIdx).x)
         this.stepAcc.set(c.uid, acc - def.stride)
       } else this.stepAcc.set(c.uid, Math.min(acc, def.stride * 1.5))
     }

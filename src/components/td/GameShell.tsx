@@ -1286,7 +1286,7 @@ export default function GameShell() {
               >
                 {topBar(portrait)}
                 <div className="mt-2 flex flex-col items-center gap-1.5">
-                  <CenterNotices paused={ui.paused && canBuild} />
+                  <CenterNotices paused={ui.paused && canBuild} secondExit={ui.phase === 'preview' && ui.secondExitWave !== null && ui.wave === ui.secondExitWave ? ui.secondExitWave : null} />
                   {portrait && rotateHint && (
                     <button
                       onClick={() => setRotateHint(false)}
@@ -1355,7 +1355,7 @@ export default function GameShell() {
             </AnimatePresence>
             <div className="absolute inset-x-0 flex justify-center" style={{ top: 56 * topScale }}>
               <div style={{ zoom: uiScale }}>
-                <CenterNotices paused={ui.paused && canBuild} />
+                <CenterNotices paused={ui.paused && canBuild} secondExit={ui.phase === 'preview' && ui.secondExitWave !== null && ui.wave === ui.secondExitWave ? ui.secondExitWave : null} />
               </div>
             </div>
             <AnimatePresence>

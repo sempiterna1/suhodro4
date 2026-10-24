@@ -11,7 +11,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { AVATARS, AVATAR_IDS, CELL, MAP_DEFS, MAP_H, MAP_W, type AvatarId } from '@/game/config'
 import { generateMap } from '@/game/map'
 import { avatarPortrait } from '@/game/pixel'
-import type { UiState } from '@/game/types'
+import type { UiState, Vec } from '@/game/types'
 
 type Step = 0 | 1 | 2
 const STEP_TITLES = ['ГЛАВНАЯ', 'ВЫБОР КАРТЫ', 'ВЫБОР ГЕРОЯ']
@@ -197,19 +197,24 @@ function MapPreview({ seed, w = 320, h = 200 }: { seed: number; w?: number; h?: 
     for (let gx = 0; gx < MAP_W / CELL; gx++)
       for (let gy = 0; gy < MAP_H / CELL; gy++)
         if ((gx + gy) % 2 === 0) ctx.fillRect(gx * CELL * sx, gy * CELL * sy, CELL * sx, CELL * sy)
-    const pts = generateMap(seed).points
-    const stroke = (width: number, color: string) => {
+    const map = generateMap(seed)
+    const pts = map.points
+    const stroke = (width: number, color: string, line: Vec[] = pts, dash?: number[]) => {
       ctx.beginPath()
-      pts.forEach((p, i) => (i ? ctx.lineTo(p.x * sx, p.y * sy) : ctx.moveTo(p.x * sx, p.y * sy)))
+      line.forEach((p, i) => (i ? ctx.lineTo(p.x * sx, p.y * sy) : ctx.moveTo(p.x * sx, p.y * sy)))
       ctx.lineWidth = width
       ctx.strokeStyle = color
       ctx.lineJoin = 'round'
       ctx.lineCap = 'round'
+      if (dash) ctx.setLineDash(dash)
       ctx.stroke()
+      ctx.setLineDash([])
     }
     stroke(9, '#33291c') // тёмная обочина
     stroke(6, '#b3a284') // настил тракта
     stroke(1.4, 'rgba(255,255,255,0.16)') // блик
+    // второй выход (GDD): закрытая до своей волны тропа — пунктиром
+    if (map.points2) stroke(3.5, '#7fe0a8', map.points2, [10, 7])
     // вход (РАЗЛОМ) и выход (ЛАГЕРЬ) — как подписи на поле
     const dot = (x: number, y: number, color: string) => {
       ctx.beginPath()
@@ -222,6 +227,7 @@ function MapPreview({ seed, w = 320, h = 200 }: { seed: number; w?: number; h?: 
     }
     dot(pts[0].x * sx, pts[0].y * sy, '#a6f095')
     dot(pts[pts.length - 1].x * sx, pts[pts.length - 1].y * sy, '#ffb347')
+    if (map.points2) dot(map.points2[0].x * sx, map.points2[0].y * sy, '#7fe0a8')
   }, [seed, w, h])
   return <canvas ref={ref} className="block h-auto w-full" aria-hidden />
 }

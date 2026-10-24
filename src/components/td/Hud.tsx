@@ -236,10 +236,23 @@ export function TopBar({
 }
 
 // ─── Баннер паузы под верхней полосой ─────────────────────────────────────
-export function CenterNotices({ paused }: { paused: boolean }) {
+/** secondExit — предупреждение GDD «Второй выход»: показывается в паузе перед волной открытия */
+export function CenterNotices({ paused, secondExit }: { paused: boolean; secondExit?: number | null }) {
   return (
     <div className="pointer-events-none flex flex-col items-center gap-2">
       <AnimatePresence>
+        {secondExit != null && (
+          <motion.span
+            key="second-exit"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: [1, 0.55, 1], scale: 1 }}
+            transition={{ opacity: { repeat: Infinity, duration: 1.6 }, scale: { duration: 0.2 } }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            className="rounded-full border border-[#59c27a] bg-[rgba(14,19,31,0.92)] px-5 py-1.5 text-[13px] font-bold uppercase tracking-[0.14em] text-[#a6f095]"
+          >
+            С волны {secondExit}: второй выход — крипы идут по двум тропам!
+          </motion.span>
+        )}
         {paused && (
           <motion.span
             key="pause"

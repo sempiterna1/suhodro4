@@ -64,6 +64,7 @@ import {
   pointAtLength,
   randomSeed,
   setMap,
+  setSecondPathActive,
   snapToCell,
 } from './map'
 import type { GuestCmd, Snap } from './mp-protocol'
@@ -172,6 +173,7 @@ interface SpawnOrder {
   kind: CreepKind
   atDist?: number // стартовая позиция по тропе (призыв у босса), по умолчанию вход
   hpMult?: number // оверрайд множителя HP волны (призванные крипы слабее)
+  pathIdx?: number // тропа призыва (наследует босса); для входящих распределяется поровну
 }
 
 /** Случайный вид врага для брони волны */
@@ -225,6 +227,7 @@ export class Game {
   private waveSpawned = 0
   private waveTotal = 0
   private waveStart = 0
+  private spawnAlt = 0 // чередование троп при открытом втором выходе (поровну)
 
   constructor() {
     this.reset()
@@ -273,6 +276,18 @@ export class Game {
   private loadMap(m: GameMap) {
     setMap(m)
     this.mapSeed = m.seed
+    setSecondPathActive(this.secondExitOpen)
+  }
+
+  /** GDD «Второй выход»: волна открытия второй тропы на этой карте (null — выхода нет) */
+  get secondExitWave(): number | null {
+    return this.mapDef.secondExitWave ?? null
+  }
+
+  /** Второй выход открыт: волна открытия наступила (появляется в паузе перед ней) */
+  get secondExitOpen(): boolean {
+    const n = this.secondExitWave
+    return n !== null && this.wave >= n
   }
 
   /** Определение текущей карты (реестр MAP_DEFS; чужое зерно → «Пограничный тракт») */
@@ -320,6 +335,11 @@ export class Game {
     this.waveStart = this.time
     this.spawnQueue = []
     this.waveSpawned = 0
+    this.spawnAlt = 0
+    if (def.n === this.secondExitWave) {
+      const p2 = pointAtLength(30, 1)
+      this.addFloat(p2.x, p2.y - 26, 'Открылся второй выход!', '#a6f095')
+    }
 
     if (def.kind === 'boss') {
       const boss = BOSSES[def.n]
@@ -571,7 +591,7 @@ export class Game {
       let pick: Creep | null = null
       let bn = 0
       for (const c of this.creeps) {
-        const p = pointAtLength(c.dist)
+        const p = pointAtLength(c.dist, c.pathIdx)
         let n = 0
         for (const o of this.creeps) {
           const q = pointAtLength(o.dist)
@@ -583,10 +603,10 @@ export class Game {
         }
       }
       if (!pick) return { ok: false, error: 'Нет цели' }
-      const spot = pointAtLength(pick.dist)
+      const spot = pointAtLength(pick.dist, pick.pathIdx)
       const dmg = av.damage * 5 * lvlMult
       for (const c of [...this.creeps]) {
-        const q = pointAtLength(c.dist)
+        const q = pointAtLength(c.dist, c.pathIdx)
         if (Math.hypot(spot.x - q.x, spot.y - q.y) <= R) this.applyHit(c, { damage: dmg, attacks: ['magic'], sourceDefId: 'avatar' })
       }
       this.avatar.cooldown = av.abilityCd
@@ -600,7 +620,7 @@ export class Game {
     best.markedBonus = markBonusForLevel(this.avatar.level)
     best.goldMult = 2
     this.avatar.cooldown = av.abilityCd
-    const p = pointAtLength(best.dist)
+    const p = pointAtLength(best.dist, best.pathIdx)
     this.effects.push({ x: p.x, y: p.y, r: 30, born: this.time, dur: 0.7, color: '#e8c170', kind: 'mark' })
     return { ok: true }
   }
@@ -671,7 +691,7 @@ export class Game {
         livesCost = BOSS_LIVES_COST
         const bd = BOSSES[def.n]
         if (bd) {
-          const p0 = pointAtLength(o.atDist ?? 0)
+          const p0 = pointAtLength(o.atDist ?? 0, o.pathIdx ?? 0)
           this.addFloat(p0.x, p0.y - 44, `⚠ ${bd.name}`, '#ff8a4a')
         }
       } else {
@@ -683,6 +703,9 @@ export class Game {
         gold = goldForKill(def.n) * def.goldMult
         livesCost = 1
       }
+      // призванные боссом идут по его тропе; входящие делятся между тропами поровну (GDD)
+      const pathIdx =
+        o.atDist !== undefined ? o.pathIdx ?? 0 : this.secondExitOpen ? (this.spawnAlt ^= 1) : 0
       this.creeps.push({
         uid: this.uid++,
         kind: o.kind,
@@ -691,6 +714,7 @@ export class Game {
         maxHp: hp,
         speed,
         dist: o.atDist ?? 0,
+        pathIdx,
         size,
         isBoss: o.isBoss,
         gold,
@@ -730,7 +754,7 @@ export class Game {
       const ph = boss.phases[c.bossPhase - 1]
       c.armor = ph.armor
       c.speed = BOSS_SPEED * this.mapDef.creepSpeedMult * ph.speedMult
-      const p = pointAtLength(c.dist)
+      const p = pointAtLength(c.dist, c.pathIdx)
       this.addFloat(p.x, p.y - 36, `${boss.name}: ${ph.name}!`, '#ff8a4a')
       if (ph.summon) c.nextSummonAt = this.time + 1.2 // первый призыв почти сразу
     }
@@ -746,9 +770,10 @@ export class Game {
           kind: kindFor(cur.summon.armor),
           atDist: Math.max(0, c.dist - 20 * (i + 1)),
           hpMult: cur.summon.hpMult,
+          pathIdx: c.pathIdx,
         })
       }
-      const p = pointAtLength(c.dist)
+      const p = pointAtLength(c.dist, c.pathIdx)
       this.addFloat(p.x, p.y - 16, 'Призыв!', '#c58aff')
     }
   }
@@ -765,11 +790,12 @@ export class Game {
       if (this.time >= c.stunnedUntil) {
         c.dist += c.speed * this.slowFactor(c) * dt
       }
-      if (c.dist >= pathLength()) {
-        // прорвался
+      const len = pathLength(c.pathIdx)
+      if (c.dist >= len) {
+        // прорвался — у каждой тропы свой выход
         this.lives -= c.livesCost
         this.stats.leaked++
-        const exit = pointAtLength(pathLength() - 30)
+        const exit = pointAtLength(len - 30, c.pathIdx)
         this.addFloat(exit.x, exit.y - 20, `−${c.livesCost} ♥`, '#e05252')
         if (this.lives <= 0) {
           this.lives = 0
@@ -805,7 +831,7 @@ export class Game {
     this.stats.goldEarned += g
     this.stats.kills++
     if (c.isBoss) this.stats.bossKills++
-    const p = pointAtLength(c.dist)
+    const p = pointAtLength(c.dist, c.pathIdx)
     this.addFloat(p.x, p.y - 18, `+${g}`, '#e8c170')
     // опыт аватара за убийства рядом
     if (Math.hypot(p.x - this.avatar.x, p.y - this.avatar.y) <= this.av.xpRadius) {
@@ -824,7 +850,7 @@ export class Game {
 
   private creepsInRange(x: number, y: number, range: number): Creep[] {
     return this.creeps.filter((c) => {
-      const p = pointAtLength(c.dist)
+      const p = pointAtLength(c.dist, c.pathIdx)
       return Math.hypot(p.x - x, p.y - y) <= range + c.size
     })
   }
@@ -864,14 +890,15 @@ export class Game {
       }
 
       if (tw.cooldown > 0) continue
-      // цели: крипы в радиусе, первым — тот, кто дальше всех по тропе
-      const inRange = this.creepsInRange(tw.x, tw.y, range).sort((a, b) => b.dist - a.dist)
+      // цели: крипы в радиусе, первым — кто дальше прошёл свою тропу (доли пути при двух тропах)
+      const progress = (c: Creep) => c.dist / pathLength(c.pathIdx)
+      const inRange = this.creepsInRange(tw.x, tw.y, range).sort((a, b) => progress(b) - progress(a))
       if (inRange.length === 0) continue
 
       tw.cooldown = Math.max(MIN_INTERVAL, (def.interval * levelIntervalMult(tw.level)) / (tw.rampMult * (tw.hasteUntil && this.time < tw.hasteUntil ? (tw.hasteMult ?? 1) : 1)))
       tw.shotCount++
       tw.lastShotAt = this.time
-      const tp = pointAtLength(inRange[0].dist)
+      const tp = pointAtLength(inRange[0].dist, inRange[0].pathIdx)
       tw.aim = Math.atan2(tp.y - tw.y, tp.x - tw.x)
       if (def.ramp) tw.rampMult += def.ramp * (tw.level >= 5 ? 2 : 1)
       this.fireTower(tw, def, inRange, range)
@@ -918,9 +945,9 @@ export class Game {
       if (def.id === 'crossbow' && tw.shotCount % 5 === 0) crit = true
       if (def.id === 'pyro') {
         // огонь перекидывается — подожжём ещё одного крипа рядом с целью
-        const tp = pointAtLength(target.dist)
+        const tp = pointAtLength(target.dist, target.pathIdx)
         const near = this.creeps.find(
-          (c) => c !== target && Math.hypot(pointAtLength(c.dist).x - tp.x, pointAtLength(c.dist).y - tp.y) <= 60
+          (c) => c !== target && Math.hypot(pointAtLength(c.dist, c.pathIdx).x - tp.x, pointAtLength(c.dist, c.pathIdx).y - tp.y) <= 60
         )
         if (near) this.applyBurn(near, burn, def.id)
       }
@@ -940,12 +967,12 @@ export class Game {
     // ── Мгновенные атаки (без снаряда) ──
     if (def.line) {
       // болт насквозь по линии; на 5 ур. — через всю карту
-      const tp = pointAtLength(target.dist)
+      const tp = pointAtLength(target.dist, target.pathIdx)
       const len = l5 ? 2000 : range
       const d = Math.hypot(tp.x - spot.x, tp.y - spot.y) || 1
       const end = { x: spot.x + ((tp.x - spot.x) / d) * len, y: spot.y + ((tp.y - spot.y) / d) * len }
       for (const c of [...this.creeps]) {
-        const p = pointAtLength(c.dist)
+        const p = pointAtLength(c.dist, c.pathIdx)
         if (distToSegment(p, spot, end) <= LINE_WIDTH + c.size) this.applyHit(c, { ...base, heavyBonus: def.heavyBonus })
       }
       this.effects.push({ x: spot.x, y: spot.y, r: 0, born: this.time, dur: 0.25, color: def.color, kind: 'beam', points: [spot, end] })
@@ -969,7 +996,7 @@ export class Game {
         mult = Math.min(l5 ? 5 : def.focus.max, 1 + def.focus.perHit * tw.focusStacks)
       }
       for (const c of targets) {
-        const p = pointAtLength(c.dist)
+        const p = pointAtLength(c.dist, c.pathIdx)
         this.applyHit(c, { ...base, damage: dmg * mult })
         if (chain) this.chainFrom(c, chain, dmg, attacks, spot, def.color)
         else this.effects.push({ x: spot.x, y: spot.y, r: 0, born: this.time, dur: 0.15, color: def.color, kind: 'beam', points: [spot, p] })
@@ -1009,7 +1036,7 @@ export class Game {
         x: spot.x,
         y: spot.y,
         targetUid: c.uid,
-        targetPos: pointAtLength(c.dist),
+        targetPos: pointAtLength(c.dist, c.pathIdx),
         ox: spot.x,
         oy: spot.y,
         speed: def.projSpeed,
@@ -1076,7 +1103,7 @@ export class Game {
   /** Цепная молния: от крипа `from` прыгает к ближайшим ещё не задетым */
   private chainFrom(from: Creep, jumps: number, dmg: number, attacks: AttackType[], start: Vec, color: string) {
     const hit = new Set([from.uid])
-    const points: Vec[] = [start, pointAtLength(from.dist)]
+    const points: Vec[] = [start, pointAtLength(from.dist, from.pathIdx)]
     let cur = points[1]
     let d = dmg
     for (let i = 0; i < jumps; i++) {
@@ -1084,7 +1111,7 @@ export class Game {
       let best = CHAIN_RANGE
       for (const c of this.creeps) {
         if (hit.has(c.uid)) continue
-        const p = pointAtLength(c.dist)
+        const p = pointAtLength(c.dist, c.pathIdx)
         const dd = Math.hypot(p.x - cur.x, p.y - cur.y)
         if (dd <= best) {
           best = dd
@@ -1094,7 +1121,7 @@ export class Game {
       if (!next) break
       d *= CHAIN_FALLOFF
       hit.add(next.uid)
-      cur = pointAtLength(next.dist)
+      cur = pointAtLength(next.dist, next.pathIdx)
       points.push(cur)
       this.damageCreep(next, d, attacks)
     }
@@ -1114,7 +1141,7 @@ export class Game {
     const next: Projectile[] = []
     for (const pr of this.projectiles) {
       const target = this.creeps.find((c) => c.uid === pr.targetUid)
-      if (target) pr.targetPos = pointAtLength(target.dist)
+      if (target) pr.targetPos = pointAtLength(target.dist, target.pathIdx)
       const tp = pr.targetPos
       if (!tp) continue // цель исчезла и точки нет
       const dx = tp.x - pr.x
@@ -1129,14 +1156,14 @@ export class Game {
         if (pr.splash) {
           const r = pr.splash
           for (const c of [...this.creeps]) {
-            const p = pointAtLength(c.dist)
+            const p = pointAtLength(c.dist, c.pathIdx)
             if (Math.hypot(p.x - pr.x, p.y - pr.y) <= r + c.size) this.applyHit(c, hit)
           }
           this.effects.push({ x: pr.x, y: pr.y, r: r, born: this.time, dur: 0.35, color: pr.color, kind: 'blast' })
           // Грозовая мортира: молния от взрыва по N ближайшим
           if (pr.chain) {
             const near = [...this.creeps]
-              .map((c) => ({ c, p: pointAtLength(c.dist) }))
+              .map((c) => ({ c, p: pointAtLength(c.dist, c.pathIdx) }))
               .map((o) => ({ ...o, d: Math.hypot(o.p.x - pr.x, o.p.y - pr.y) }))
               .filter((o) => o.d <= CHAIN_RANGE * 1.6)
               .sort((a, b) => a.d - b.d)
@@ -1152,7 +1179,7 @@ export class Game {
           // способность Камнемёта 5 ур.: осколки после удара
           if (pr.kind === 'rock' && pr.sourceDefId === 'catapult' && pr.sourceLevel >= 5) {
             for (const c of [...this.creeps]) {
-              const p = pointAtLength(c.dist)
+              const p = pointAtLength(c.dist, c.pathIdx)
               if (c !== target && Math.hypot(p.x - pr.x, p.y - pr.y) <= 80) {
                 this.damageCreep(c, pr.damage * 0.4, ['crush'])
               }
@@ -1192,7 +1219,7 @@ export class Game {
       let target: Creep | null = null
       let bestDist = Infinity
       for (const c of this.creeps) {
-        const p = pointAtLength(c.dist)
+        const p = pointAtLength(c.dist, c.pathIdx)
         const d = Math.hypot(p.x - av.x, p.y - av.y)
         if (d <= this.av.range && d < bestDist) {
           bestDist = d
@@ -1206,7 +1233,7 @@ export class Game {
           x: av.x,
           y: av.y,
           targetUid: target.uid,
-          targetPos: pointAtLength(target.dist),
+          targetPos: pointAtLength(target.dist, target.pathIdx),
           ox: av.x,
           oy: av.y,
           speed: 480,
@@ -1231,6 +1258,8 @@ export class Game {
     // разгон Автоматического арсенала действует только до конца волны
     for (const tw of this.towers) tw.rampMult = 1
     this.wave++
+    // второй выход (GDD): пауза перед волной открытия — тропа подсвечивается и строить на ней нельзя
+    setSecondPathActive(this.secondExitOpen)
     if (this.wave > TOTAL_WAVES) {
       this.phase = 'won'
     } else {
@@ -1275,6 +1304,7 @@ export class Game {
       nextWaveCount: def.kind === 'boss' ? 1 + BOSS_ESCORTS : def.count,
       mapName: this.mapDef.name,
       mapFeature: this.mapDef.feature,
+      secondExitWave: this.secondExitWave,
     }
   }
 
@@ -1330,7 +1360,7 @@ export class Game {
       })),
       creeps: this.creeps.map((c) => ({
         uid: c.uid, kind: c.kind, armor: c.armor, hp: c.hp, maxHp: c.maxHp, speed: c.speed,
-        dist: c.dist, size: c.size, isBoss: c.isBoss,
+        dist: c.dist, pathIdx: c.pathIdx, size: c.size, isBoss: c.isBoss,
         burnDps: c.burnDps, burnUntil: c.burnUntil,
         stunnedUntil: c.stunnedUntil, markedUntil: c.markedUntil, markedBonus: c.markedBonus,
         slowPct: c.slowPct, slowUntil: c.slowUntil, vulnBonus: c.vulnBonus, vulnUntil: c.vulnUntil,
@@ -1361,6 +1391,7 @@ export class Game {
     this.shop = [...s.shop]
     // карта гостя — та же, что у хоста: генерируем по его зерну
     if (s.mapSeed !== this.mapSeed) this.loadMap(generateMap(s.mapSeed))
+    else setSecondPathActive(this.secondExitOpen) // волна могла открыть второй выход
     this.time = s.time
     this.previewRemaining = s.previewRemaining
     this.waveSpawned = s.waveSpawned
@@ -1372,7 +1403,7 @@ export class Game {
     this.towers = s.towers.map((t) => ({ ...t }))
     this.creeps = s.creeps.map((c) => ({
       uid: c.uid, kind: c.kind, armor: c.armor, hp: c.hp, maxHp: c.maxHp, speed: c.speed,
-      dist: c.dist, size: c.size, isBoss: c.isBoss,
+      dist: c.dist, pathIdx: c.pathIdx ?? 0, size: c.size, isBoss: c.isBoss,
       gold: 0, livesCost: 1, burnSource: '',
       burnDps: c.burnDps, burnUntil: c.burnUntil,
       stunnedUntil: c.stunnedUntil, markedUntil: c.markedUntil, markedBonus: c.markedBonus,

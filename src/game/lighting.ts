@@ -111,7 +111,7 @@ function collectLights(game: Game, t: number): Light[] {
     }
   }
   for (const c of game.creeps) {
-    const p = pointAtLength(c.dist)
+    const p = pointAtLength(c.dist, c.pathIdx)
     const s = toScreen(p.x, p.y)
     const burning = game.time < c.burnUntil && c.burnDps > 0
     // минерал в телах заражённых светится зелёным; горящие — огнём

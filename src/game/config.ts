@@ -656,6 +656,8 @@ export interface MapDef {
   seed: number
   creepSpeedMult: number // «Ледяной перевал: крипы быстрее на 10%»
   universalExtra: number // «Пепельная долина»: +N универсальных врагов в обычной волне
+  /** GDD «Второй выход»: с этой волны открывается второй портал, крипы делятся поровну */
+  secondExitWave?: number
 }
 
 export const MAP_DEFS: MapDef[] = [
@@ -664,7 +666,7 @@ export const MAP_DEFS: MapDef[] = [
   { id: 'bridge', name: 'Каменный мост', feature: 'тропа извилиста, мест мало — сливайте башни', seed: 2, creepSpeedMult: 1, universalExtra: 0 },
   { id: 'mines', name: 'Заброшенные шахты', feature: 'короткая тропа — максимум мест под стройку', seed: 10, creepSpeedMult: 1, universalExtra: 0 },
   { id: 'pass', name: 'Ледяной перевал', feature: 'заражённые быстрее на 10%', seed: 1, creepSpeedMult: 1.1, universalExtra: 0 },
-  { id: 'valley', name: 'Пепельная долина', feature: 'в каждой волне универсальные враги', seed: 6, creepSpeedMult: 1, universalExtra: 6 },
+  { id: 'valley', name: 'Пепельная долина', feature: 'универсальные враги в каждой волне; с 16-й волны — второй выход', seed: 6, creepSpeedMult: 1, universalExtra: 6, secondExitWave: 16 },
 ]
 
 /** Определение карты по зерну (зерно уникально в рамках MAP_DEFS) */

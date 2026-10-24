@@ -97,7 +97,8 @@ export interface Creep {
   hp: number
   maxHp: number
   speed: number
-  dist: number // пройдено по тропе, px
+  dist: number // пройдено по своей тропе, px
+  pathIdx: number // 0 — основная тропа, 1 — второй выход (GDD «Второй выход»)
   size: number
   isBoss: boolean
   gold: number
@@ -235,4 +236,5 @@ export interface UiState {
   nextWaveCount: number
   mapName: string // название выбранной карты (MAP_DEFS)
   mapFeature: string
+  secondExitWave: number | null // волна открытия второго выхода на этой карте (null — его нет)
 }

@@ -94,9 +94,9 @@ function creepHeight(c: Creep) {
   return art ? ASSETS[art.name].h * art.s : c.size * 2
 }
 
-// ─── Кэш фона (перестраивается при смене карты) ─────────────────────────
+// ─── Кэш фона (перестраивается при смене карты и открытии второго выхода) ──
 let bgCache: HTMLCanvasElement | null = null
-let bgSeed = -1
+let bgSeed = ''
 /** Пикселей экрана на единицу карты при текущем приближении */
 export function viewScale(view: ViewState) {
   return Math.min(view.vw / MAP_W, view.vh / MAP_H) * view.cam.z
@@ -124,9 +124,11 @@ const facingLeft = new Map<number, boolean>()
 
 // ─── Основной рендер ─────────────────────────────────────────────────────
 export function render(ctx: CanvasRenderingContext2D, game: Game, view: ViewState) {
-  if (!bgCache || bgSeed !== game.mapSeed) {
-    bgCache = buildBackground(getMap())
-    bgSeed = game.mapSeed
+  // второй выход (GDD): с волны открытия (пауза перед ней) в фон запекается вторая тропа
+  const bgKey = game.mapSeed + ':' + (game.secondExitOpen ? 1 : 0)
+  if (!bgCache || bgSeed !== bgKey) {
+    bgCache = buildBackground(getMap(), game.secondExitOpen)
+    bgSeed = bgKey
     // земля в разрешении низкого холста: без приближения копируется один к одному (дёшево)
     bgLow = document.createElement('canvas')
     bgLow.width = MAP_W * PIXEL
@@ -164,6 +166,7 @@ export function render(ctx: CanvasRenderingContext2D, game: Game, view: ViewStat
   drawDrift(L, now) // позёмка — по земле, под всем остальным
 
   // всё, что лежит на земле: связи слияния, кольца и радиусы башен, путь Охотницы, кольца взрывов
+  drawSecondExitGlow(L, game, now)
   drawMergeLinks(L, game, view)
   drawTowerRings(L, game, view)
   drawAvatarGround(L, game, view)
@@ -206,12 +209,15 @@ function drawEntities(ctx: CanvasRenderingContext2D, game: Game, view: ViewState
     items.push({ y: p.y, draw: () => drawProp(ctx, p, now) })
   }
   items.push({ y: roadEnds.entry.y - 4, draw: () => drawPortal(ctx, now) })
+  if (game.secondExitOpen && roadEnds.entry2.y) {
+    items.push({ y: roadEnds.entry2.y - 4, draw: () => drawPortal(ctx, now, roadEnds.entry2) })
+  }
   for (const tw of game.towers) {
     const s = toScreen(tw.x, tw.y)
     items.push({ y: s.y + 4, draw: () => drawTowerBody(ctx, game, view, tw, s) })
   }
   for (const c of game.creeps) {
-    const p = pointAtLength(c.dist)
+    const p = pointAtLength(c.dist, c.pathIdx)
     const s = toScreen(p.x, p.y)
     items.push({ y: s.y, draw: () => drawCreep(ctx, game, c, p, s) })
   }
@@ -377,7 +383,7 @@ function drawCreep(ctx: CanvasRenderingContext2D, game: Game, c: Creep, p: Vec, 
   const mid = s.y - h * 0.5
 
   // смотрит по ходу движения на экране
-  const ahead = pointAtLength(c.dist + 3)
+  const ahead = pointAtLength(c.dist + 3, c.pathIdx)
   const sa = toScreen(ahead.x, ahead.y)
   if (Math.abs(sa.x - s.x) > 0.2) facingLeft.set(c.uid, sa.x < s.x)
   const left = facingLeft.get(c.uid) ?? false
@@ -491,7 +497,7 @@ function drawCreepBars(ctx: CanvasRenderingContext2D, game: Game) {
   const order = [...game.creeps].sort((a, b) => Number(b.isBoss) - Number(a.isBoss) || b.dist - a.dist)
   for (const c of order) {
     if (!c.isBoss && c.hp >= c.maxHp) continue
-    const p = pointAtLength(c.dist)
+    const p = pointAtLength(c.dist, c.pathIdx)
     const s = toScreen(p.x, p.y)
     const w = c.isBoss ? 60 : Math.max(18, Math.round(c.size * 1.6))
     const x = Math.round(s.x - w / 2)
@@ -782,9 +788,13 @@ function drawOverlayLabels(ctx: CanvasRenderingContext2D, game: Game, view: View
   }
   text('РАЗЛОМ', roadEnds.entry.x, roadEnds.entry.y - 34, '#a6f095')
   text('ЛАГЕРЬ', roadEnds.exit.x + 10, roadEnds.exit.y - 46, '#ffb347')
+  if (game.secondExitOpen && roadEnds.entry2.y) {
+    text('РАЗЛОМ II', roadEnds.entry2.x, roadEnds.entry2.y - 34, '#a6f095')
+    text('ЛАГЕРЬ II', roadEnds.exit2.x + 10, roadEnds.exit2.y - 46, '#ffb347')
+  }
   for (const c of game.creeps) {
     if (!c.isBoss) continue
-    const p = pointAtLength(c.dist)
+    const p = pointAtLength(c.dist, c.pathIdx)
     const s = toScreen(p.x, p.y)
     const bossName = bossForWave(game.wave)?.name ?? 'Колосс Разлома'
     text(bossName.toUpperCase(), s.x, s.y - creepHeight(c) - 14, '#a6f095')
@@ -809,6 +819,29 @@ function drawFloats(ctx: CanvasRenderingContext2D, game: Game) {
     ctx.fillText(f.text, s.x, y)
     ctx.globalAlpha = 1
   }
+}
+
+/**
+ * GDD «Второй выход»: в паузе перед волной открытия и в саму эту волну новая тропа
+ * пульсирует зелёным пунктиром — игрок видит, откуда пойдут крипы.
+ */
+function drawSecondExitGlow(ctx: CanvasRenderingContext2D, game: Game, now: number) {
+  const n = game.secondExitWave
+  if (n === null || game.wave !== n) return
+  const points2 = getMap().points2
+  if (!points2) return
+  ctx.save()
+  ctx.globalAlpha = 0.55 + 0.35 * Math.sin(now * 3)
+  groundPath(ctx, () => {
+    ctx.moveTo(points2[0].x, points2[0].y)
+    for (let i = 1; i < points2.length; i++) ctx.lineTo(points2[i].x, points2[i].y)
+  })
+  ctx.strokeStyle = '#7fe0a8'
+  ctx.lineWidth = 5
+  ctx.setLineDash([14, 10])
+  ctx.stroke()
+  ctx.setLineDash([])
+  ctx.restore()
 }
 
 function drawMergeLinks(ctx: CanvasRenderingContext2D, game: Game, view: ViewState) {

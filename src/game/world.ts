@@ -49,8 +49,14 @@ export interface Prop {
 }
 export const props: Prop[] = []
 
-/** Где начинается и кончается дорога (экран) — для портала Разлома и надписей */
-export const roadEnds = { entry: { x: 0, y: 0 }, exit: { x: 0, y: 0 } }
+/** Где начинается и кончается дорога (экран) — для портала Разлома и надписей.
+ *  entry2/exit2 — второй выход (GDD): заполняются, когда он открыт (withSecond) */
+export const roadEnds = {
+  entry: { x: 0, y: 0 },
+  exit: { x: 0, y: 0 },
+  entry2: { x: 0, y: 0 },
+  exit2: { x: 0, y: 0 },
+}
 
 /** Экранная глубина точки под передним левым краем поля (y = MAP_H); <0 — над краем */
 function belowFrontEdge(sx: number, sy: number) {
@@ -60,7 +66,8 @@ function belowFrontEdge(sx: number, sy: number) {
 }
 
 // ─── Земля ───────────────────────────────────────────────────────────────
-export function buildBackground(map: GameMap): HTMLCanvasElement {
+/** withSecond — запечь и вторую тропу (GDD «Второй выход» открылся) */
+export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasElement {
   mapLights.length = 0
   props.length = 0
   shadowLayer = null
@@ -71,23 +78,35 @@ export function buildBackground(map: GameMap): HTMLCanvasElement {
   cv.height = H
   const L = cv.getContext('2d')!
   const seed = map.seed + 17
+  const second = withSecond && map.cells2 ? map.cells2 : null
   const onPath = new Set(map.cells.map((c) => c.cx + ',' + c.cy))
+  if (second) for (const c of second) onPath.add(c.cx + ',' + c.cy)
   const first = map.cells[0]
   const last = map.cells[map.cells.length - 1]
+  const first2 = second ? second[0] : null
+  const last2 = second ? second[second.length - 1] : null
   const entryY = first.cy * CELL + CELL / 2
   const exitY = last.cy * CELL + CELL / 2
+  const exit2Y = last2 ? last2.cy * CELL + CELL / 2 : -999
+  const entry2Y = first2 ? first2.cy * CELL + CELL / 2 : -999
+  roadEnds.entry2 = { x: 0, y: 0 }
+  roadEnds.exit2 = { x: 0, y: 0 }
+  /** Коридор к лагерю — не застраивать домами и кострами (учитывает второй выход) */
+  const nearExit = (y: number, pad: number) => Math.abs(y - exitY) < pad || (!!last2 && Math.abs(y - exit2Y) < pad)
 
-  /** Клетка дороги? Вне поля дорога продолжается от входа влево и от выхода вправо */
+  /** Клетка дороги? Вне поля дорога продолжается от входа влево/вверх и от выхода вправо */
   const road = (cx: number, cy: number) => {
     if (cx < 0) return cy === first.cy
-    if (cx >= GRID_W) return cy === last.cy && cy >= 0 && cy < GRID_H
-    if (cy < 0 || cy >= GRID_H) return false
+    if (cx >= GRID_W)
+      return (cy === last.cy || (!!last2 && cy === last2.cy)) && cy >= 0 && cy < GRID_H
+    if (cy < 0) return !!first2 && cx === first2.cx // северная дорога ко второму входу
+    if (cy >= GRID_H) return false
     return onPath.has(cx + ',' + cy)
   }
 
   // расстояние каждой клетки до тропы (в шагах по клеткам): декор — не ближе 2, крупный — от 3
   const dist = new Map<string, number>()
-  let front = map.cells.map((c) => c.cx + ',' + c.cy)
+  let front = [...onPath]
   for (const k of front) dist.set(k, 0)
   for (let d = 1; front.length; d++) {
     const next: string[] = []
@@ -340,7 +359,7 @@ export function buildBackground(map: GameMap): HTMLCanvasElement {
   spots.sort((a, b) => want(a) - want(b))
   for (const [bx, by] of spots) {
     const p = toScreen(bx, by)
-    if (p.x < 620 || p.x > 880 || p.y > 548 || Math.abs(by - exitY) < 70 || Math.hypot(bx - 1080, by - 330) < 130) continue
+    if (p.x < 620 || p.x > 880 || p.y > 548 || nearExit(by, 70) || Math.hypot(bx - 1080, by - 330) < 130) continue
     const sc = 0.6
     const base = steamBase()
     add('baked', bx, by, sc, { baked: base })
@@ -353,7 +372,7 @@ export function buildBackground(map: GameMap): HTMLCanvasElement {
   // радиомачта лагеря: через неё выходит на связь ИИ
   for (const [mx, my] of [[1010, 150], [1010, 520], [1040, 80]]) {
     const p = toScreen(mx, my)
-    if (p.x > 930 || p.y > 590 || Math.abs(my - exitY) < 50 || placed.some((q) => Math.hypot(q.x - mx, q.y - my) < 50)) continue
+    if (p.x > 930 || p.y > 590 || nearExit(my, 50) || placed.some((q) => Math.hypot(q.x - mx, q.y - my) < 50)) continue
     const mast = radioMast()
     add('baked', mx, my, 0.8, { baked: mast })
     placed.push({ x: mx, y: my })
@@ -367,7 +386,7 @@ export function buildBackground(map: GameMap): HTMLCanvasElement {
       const y = wy + (r() - 0.5) * 20
       const p = toScreen(x, y)
       if (p.x > 930 || p.y > 590 || p.x < 560) continue
-      if (Math.abs(y - exitY) < 48) continue
+      if (nearExit(y, 48)) continue
       if (placed.some((q) => Math.hypot(q.x - x, q.y - y) < 70)) continue
       placed.push({ x, y })
       const name = houses[hi++ % houses.length]
@@ -380,7 +399,7 @@ export function buildBackground(map: GameMap): HTMLCanvasElement {
     const x = 1010 + r() * 220
     const y = 60 + r() * 500
     const p = toScreen(x, y)
-    if (p.x > 920 || p.y > 586 || p.x < 600 || Math.abs(y - exitY) < 40) continue
+    if (p.x > 920 || p.y > 586 || p.x < 600 || nearExit(y, 40)) continue
     if (placed.some((q) => Math.hypot(q.x - x, q.y - y) < 50)) continue
     placed.push({ x, y })
     add('fire', x, y, 1)
@@ -404,7 +423,7 @@ export function buildBackground(map: GameMap): HTMLCanvasElement {
     const x = 1000 + r() * 260
     const y = 40 + r() * 540
     const p = toScreen(x, y)
-    if (p.x > 935 || p.y > 594 || p.x < 570 || Math.abs(y - exitY) < 30) continue
+    if (p.x > 935 || p.y > 594 || p.x < 570 || nearExit(y, 30)) continue
     if (placed.some((q) => Math.hypot(q.x - x, q.y - y) < 34)) continue
     placed.push({ x, y })
     const name = pick<AssetName>(['prop-crate', 'prop-barrel', 'prop-crates', 'prop-sled', 'prop-box', 'prop-lamp'])
@@ -413,7 +432,7 @@ export function buildBackground(map: GameMap): HTMLCanvasElement {
   }
   // стена по правому краю поля, разрыв — ворота для дороги; у ворот фонари-башенки
   for (let y = 26; y < MAP_H; y += 48) {
-    if (Math.abs(y - exitY) < 46) continue
+    if (nearExit(y, 46)) continue
     add('bld-wall', MAP_W + 18, y, 0.5, { flip: true })
   }
   for (const dy of [-44, 44]) {
@@ -421,6 +440,15 @@ export function buildBackground(map: GameMap): HTMLCanvasElement {
     mapLights.push({ x: p.x, y: p.y - 36, kind: 'gate', seed: dy })
   }
   roadEnds.exit = toScreen(MAP_W, exitY)
+  // второй выход: свои ворота в стене, фонари-башенки и дорога к лагерю
+  if (last2) {
+    for (const dy of [-44, 44]) {
+      const p = add('prop-lamptower', MAP_W + 18, exit2Y + dy, 0.36)
+      mapLights.push({ x: p.x, y: p.y - 36, kind: 'gate', seed: 100 + dy })
+    }
+    for (let i = 0; i < 2; i++) roadLamp(MAP_W + 50 + i * 80, exit2Y + (i % 2 ? 30 : -30), 20 + i)
+    roadEnds.exit2 = toScreen(MAP_W, exit2Y)
+  }
 
   // лес за задними краями и в низине под утёсом: выборка по экрану, частая сетка с дрожанием
   for (let sy = -6; sy < H + 30; sy += 13) {
@@ -431,6 +459,7 @@ export function buildBackground(map: GameMap): HTMLCanvasElement {
       if (w.x >= -8 && w.y >= -8 && w.x < MAP_W + 8 && w.y < MAP_H + 8) continue // поле
       if (w.x >= MAP_W - 10 && w.y < MAP_H + 10) continue // город
       if (w.x < 0 && Math.abs(w.y - entryY) < 46) continue // дорога ко входу
+      if (w.y < 0 && !!first2 && Math.abs(w.x - (first2.cx * CELL + CELL / 2)) < 46) continue // северная дорога ко второму входу
       if (w.y >= MAP_H) {
         const d = belowFrontEdge(x, y)
         if (d >= 0 && d < CLIFF + 6) continue // на утёсе
@@ -462,6 +491,12 @@ export function buildBackground(map: GameMap): HTMLCanvasElement {
   if (camp.x > 10 && camp.y > 30) {
     props.push({ name: 'prop-tent', x: camp.x, y: camp.y, s: 0.36 })
     mapLights.push({ x: camp.x, y: camp.y - 12, kind: 'furnace', seed: 3 })
+  }
+  // второй выход: второй портал Разлома над северной кромкой
+  if (first2) {
+    const e2 = map.points2?.[0] ?? { x: first2.cx * CELL + CELL / 2, y: entry2Y }
+    roadEnds.entry2 = toScreen(e2.x, e2.y - 44)
+    mapLights.push({ x: roadEnds.entry2.x, y: roadEnds.entry2.y - 16, kind: 'portal', seed: 2 })
   }
 
   // мягкая холодная виньетка по краям
@@ -798,8 +833,8 @@ export function drawDrift(ctx: CanvasRenderingContext2D, t: number) {
 }
 
 /** Портал Разлома: тёмный провал в земле, зелёный водоворот, осколки кристаллов */
-export function drawPortal(ctx: CanvasRenderingContext2D, t: number) {
-  const { x, y } = roadEnds.entry
+export function drawPortal(ctx: CanvasRenderingContext2D, t: number, at: { x: number; y: number } = roadEnds.entry) {
+  const { x, y } = at
   ctx.save()
   ctx.fillStyle = 'rgba(8,14,22,0.82)'
   ctx.beginPath()

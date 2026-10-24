@@ -31,7 +31,7 @@ export interface Snap {
   towers: Array<Pick<Tower, 'id' | 'x' | 'y' | 'defId' | 'level' | 'invested' | 'cooldown' | 'shotCount' | 'hammerCd'
     | 'rampMult' | 'focusUid' | 'focusStacks' | 'lastShotAt' | 'aim' | 'hasteUntil' | 'hasteMult' | 'moved'>>
   creeps: Array<
-    Pick<Creep, 'uid' | 'kind' | 'armor' | 'hp' | 'maxHp' | 'speed' | 'dist' | 'size' | 'isBoss'
+    Pick<Creep, 'uid' | 'kind' | 'armor' | 'hp' | 'maxHp' | 'speed' | 'dist' | 'pathIdx' | 'size' | 'isBoss'
       | 'burnDps' | 'burnUntil' | 'stunnedUntil' | 'markedUntil' | 'markedBonus'
       | 'slowPct' | 'slowUntil' | 'vulnBonus' | 'vulnUntil'>
   >
