@@ -5,7 +5,10 @@ import {
   ALL_DEFS,
   ARMOR_HP_MULT,
   ARMOR_SPEED,
-  AVATAR,
+  AVATARS,
+  SELL_RATIO_ENGINEER,
+  VOEVODA_RADIUS,
+  type AvatarId,
   BOSS_ESCORTS,
   BOSS_GOLD_MULT,
   BOSS_HP_MULT,
@@ -190,6 +193,11 @@ export class Game {
   projectiles: Projectile[] = []
   effects: Effect[] = []
   floats: FloatText[] = []
+  /** Выбранный аватар (GDD: 4 архетипа); меняется только до первой волны */
+  avatarId: AvatarId = 'hunter'
+  get av() {
+    return AVATARS[this.avatarId]
+  }
   avatar = {
     x: 90,
     y: 260,
@@ -389,10 +397,24 @@ export class Game {
   sell(id: number): ActionResult {
     const tw = this.towerById(id)
     if (!tw) return { ok: false, error: 'Башни нет' }
-    const refund = Math.floor(tw.invested * SELL_RATIO)
+    const refund = Math.floor(tw.invested * (this.avatarId === 'engineer' ? SELL_RATIO_ENGINEER : SELL_RATIO))
     this.gold += refund
     this.towers = this.towers.filter((t) => t.id !== id)
     this.addFloat(tw.x, tw.y - 24, `+${refund}`, '#e8c170')
+    return { ok: true }
+  }
+
+  /** Перенос башни на другую клетку — один раз для каждой башни, бесплатно */
+  moveTower(id: number, x: number, y: number): ActionResult {
+    const tw = this.towerById(id)
+    if (!tw) return { ok: false, error: 'Башни нет' }
+    if (tw.moved) return { ok: false, error: 'Эту башню уже переносили' }
+    const err = placementError(x, y, this.towers.filter((t) => t.id !== id), this.avatar)
+    if (err) return { ok: false, error: err }
+    const at = snapToCell(x, y)
+    tw.x = at.x
+    tw.y = at.y
+    tw.moved = true
     return { ok: true }
   }
 
@@ -461,19 +483,87 @@ export class Game {
       .filter((tid) => !!this.canMerge(id, tid))
   }
 
+  /** Выбор аватара: в меню перед стартом и до начала первой волны */
+  setAvatar(id: AvatarId): ActionResult {
+    if (!AVATARS[id]) return { ok: false, error: 'Нет такого аватара' }
+    if (!(this.phase === 'intro' || (this.phase === 'preview' && this.wave === 1))) return { ok: false, error: 'Аватара можно сменить только до первой волны' }
+    this.avatarId = id
+    this.avatar.cooldown = 0
+    this.avatar.target = null
+    return { ok: true }
+  }
+
   moveAvatar(p: Vec) {
     this.avatar.target = { x: p.x, y: p.y }
   }
 
   useAbility(): ActionResult {
     if (this.avatar.cooldown > 0) return { ok: false, error: 'Способность перезаряжается' }
+    const av = this.av
+    const lvlMult = 1 + 0.1 * (this.avatar.level - 1) // GDD: каждый уровень аватара +10% силы способности
+    if (av.id === 'voevoda') {
+      const near = this.towers.filter((t) => Math.hypot(t.x - this.avatar.x, t.y - this.avatar.y) <= VOEVODA_RADIUS)
+      if (near.length === 0) return { ok: false, error: 'Нет башен рядом' }
+      for (const t of near) {
+        t.hasteUntil = this.time + av.abilityDur
+        t.hasteMult = 1 + 0.4 * lvlMult
+      }
+      this.avatar.cooldown = av.abilityCd
+      this.effects.push({ x: this.avatar.x, y: this.avatar.y, r: VOEVODA_RADIUS, born: this.time, dur: 0.8, color: av.color, kind: 'blast' })
+      return { ok: true }
+    }
+    if (av.id === 'engineer') {
+      let nearest: Tower | null = null
+      let bd = Infinity
+      for (const t of this.towers) {
+        const d = Math.hypot(t.x - this.avatar.x, t.y - this.avatar.y)
+        if (d < bd) {
+          bd = d
+          nearest = t
+        }
+      }
+      if (!nearest) return { ok: false, error: 'Нет башен' }
+      nearest.hasteUntil = this.time + av.abilityDur
+      nearest.hasteMult = 2
+      this.avatar.cooldown = av.abilityCd
+      this.effects.push({ x: nearest.x, y: nearest.y, r: 36, born: this.time, dur: 0.8, color: av.color, kind: 'blast' })
+      return { ok: true }
+    }
+    if (av.id === 'archmage') {
+      // метеор падает в самое плотное скопление: цель с наибольшим числом врагов рядом (при равенстве — дальше по тропе)
+      const R = 70
+      let pick: Creep | null = null
+      let bn = 0
+      for (const c of this.creeps) {
+        const p = pointAtLength(c.dist)
+        let n = 0
+        for (const o of this.creeps) {
+          const q = pointAtLength(o.dist)
+          if (Math.hypot(p.x - q.x, p.y - q.y) <= R) n++
+        }
+        if (n > bn || (n === bn && pick && c.dist > pick.dist)) {
+          bn = n
+          pick = c
+        }
+      }
+      if (!pick) return { ok: false, error: 'Нет цели' }
+      const spot = pointAtLength(pick.dist)
+      const dmg = av.damage * 5 * lvlMult
+      for (const c of [...this.creeps]) {
+        const q = pointAtLength(c.dist)
+        if (Math.hypot(spot.x - q.x, spot.y - q.y) <= R) this.applyHit(c, { damage: dmg, attacks: ['magic'], sourceDefId: 'avatar' })
+      }
+      this.avatar.cooldown = av.abilityCd
+      this.effects.push({ x: spot.x, y: spot.y, r: R, born: this.time, dur: 0.6, color: av.color, kind: 'blast' })
+      return { ok: true }
+    }
     let best: Creep | null = null
     for (const c of this.creeps) if (!best || c.hp > best.hp) best = c
     if (!best) return { ok: false, error: 'Нет цели' }
-    best.markedUntil = this.time + AVATAR.abilityDur
+    best.markedUntil = this.time + av.abilityDur
     best.markedBonus = markBonusForLevel(this.avatar.level)
     best.goldMult = 2
-    this.avatar.cooldown = AVATAR.abilityCd
+    this.avatar.cooldown = av.abilityCd
     const p = pointAtLength(best.dist)
     this.effects.push({ x: p.x, y: p.y, r: 30, born: this.time, dur: 0.7, color: '#e8c170', kind: 'mark' })
     return { ok: true }
@@ -625,7 +715,7 @@ export class Game {
 
   private killCreep(c: Creep) {
     if (this.creeps.indexOf(c) < 0) return
-    const g = Math.round(c.gold * c.goldMult) + AVATAR.passiveBonus
+    const g = Math.round(c.gold * c.goldMult) + this.av.passiveBonus
     this.gold += g
     this.stats.goldEarned += g
     this.stats.kills++
@@ -633,16 +723,17 @@ export class Game {
     const p = pointAtLength(c.dist)
     this.addFloat(p.x, p.y - 18, `+${g}`, '#e8c170')
     // опыт аватара за убийства рядом
-    if (Math.hypot(p.x - this.avatar.x, p.y - this.avatar.y) <= AVATAR.xpRadius) {
+    if (Math.hypot(p.x - this.avatar.x, p.y - this.avatar.y) <= this.av.xpRadius) {
       this.avatar.xp++
       while (
-        this.avatar.level < AVATAR.maxLevel &&
-        this.avatar.xp >= AVATAR.xpThresholds[this.avatar.level]
+        this.avatar.level < this.av.maxLevel &&
+        this.avatar.xp >= this.av.xpThresholds[this.avatar.level]
       ) {
         this.avatar.level++
         this.addFloat(this.avatar.x, this.avatar.y - 30, `Ур. ${this.avatar.level}`, '#7fd0a0')
       }
     }
+    this.effects.push({ x: p.x, y: p.y, r: 0, born: this.time, dur: 1, color: '', kind: 'corpse', creep: c.kind, uid: c.uid })
     this.creeps = this.creeps.filter((x) => x !== c)
   }
 
@@ -692,7 +783,7 @@ export class Game {
       const inRange = this.creepsInRange(tw.x, tw.y, range).sort((a, b) => b.dist - a.dist)
       if (inRange.length === 0) continue
 
-      tw.cooldown = Math.max(MIN_INTERVAL, (def.interval * levelIntervalMult(tw.level)) / tw.rampMult)
+      tw.cooldown = Math.max(MIN_INTERVAL, (def.interval * levelIntervalMult(tw.level)) / (tw.rampMult * (tw.hasteUntil && this.time < tw.hasteUntil ? (tw.hasteMult ?? 1) : 1)))
       tw.shotCount++
       tw.lastShotAt = this.time
       const tp = pointAtLength(inRange[0].dist)
@@ -714,12 +805,19 @@ export class Game {
     return 1 + best
   }
 
+  /** Пассивки аватаров: Воевода +5% башням рядом, Архимаг +10% магическим башням */
+  private avatarPassiveMult(tw: Tower, def: TowerDefinition): number {
+    if (this.avatarId === 'voevoda' && Math.hypot(tw.x - this.avatar.x, tw.y - this.avatar.y) <= VOEVODA_RADIUS) return 1.05
+    if (this.avatarId === 'archmage' && (def.merged ? def.attacks.includes('magic') : def.attack === 'magic')) return 1.1
+    return 1
+  }
+
   private fireTower(tw: Tower, def: TowerDefinition, inRange: Creep[], range: number) {
     const target = inRange[0]
     const spot = { x: tw.x, y: tw.y }
     const l5 = tw.level >= 5
     const attacks: AttackType[] = def.merged ? [...def.attacks] : [def.attack]
-    let dmg = def.damage * levelDamageMult(tw.level) * this.auraMult(tw)
+    let dmg = def.damage * levelDamageMult(tw.level) * this.auraMult(tw) * this.avatarPassiveMult(tw, def)
     if (def.waveGrowth) dmg *= 1 + def.waveGrowth * (this.wave - 1)
 
     let burn = def.burn ? { ...def.burn } : undefined
@@ -998,8 +1096,8 @@ export class Game {
       if (d < 4) {
         av.target = null
       } else {
-        av.x += (dx / d) * AVATAR.speed * dt
-        av.y += (dy / d) * AVATAR.speed * dt
+        av.x += (dx / d) * this.av.speed * dt
+        av.y += (dy / d) * this.av.speed * dt
       }
     }
     av.x = Math.max(14, Math.min(MAP_W - 14, av.x))
@@ -1011,13 +1109,13 @@ export class Game {
       for (const c of this.creeps) {
         const p = pointAtLength(c.dist)
         const d = Math.hypot(p.x - av.x, p.y - av.y)
-        if (d <= AVATAR.range && d < bestDist) {
+        if (d <= this.av.range && d < bestDist) {
           bestDist = d
           target = c
         }
       }
       if (target) {
-        av.attackCd = AVATAR.interval
+        av.attackCd = this.av.interval
         this.projectiles.push({
           uid: this.uid++,
           x: av.x,
@@ -1027,7 +1125,7 @@ export class Game {
           ox: av.x,
           oy: av.y,
           speed: 480,
-          damage: AVATAR.damage,
+          damage: this.av.damage,
           attacks: ['universal'],
           color: '#e8c170',
           kind: 'arrow',
@@ -1081,8 +1179,9 @@ export class Game {
       avatar: {
         level: lvl,
         xp: this.avatar.xp,
-        xpNext: lvl < AVATAR.maxLevel ? AVATAR.xpThresholds[lvl] : null,
+        xpNext: lvl < this.av.maxLevel ? this.av.xpThresholds[lvl] : null,
         cooldown: this.avatar.cooldown,
+        id: this.avatarId,
       },
       nextWaveArmor: def.armor,
       nextWaveIsBoss: def.kind === 'boss',
@@ -1128,6 +1227,7 @@ export class Game {
       waveTotal: this.waveTotal,
       coop: this.coop,
       stats: { ...this.stats },
+      avatarId: this.avatarId,
       avatar: {
         x: this.avatar.x, y: this.avatar.y, target: this.avatar.target,
         level: this.avatar.level, xp: this.avatar.xp,
@@ -1138,7 +1238,7 @@ export class Game {
         invested: t.invested, cooldown: t.cooldown,
         shotCount: t.shotCount, hammerCd: t.hammerCd,
         rampMult: t.rampMult, focusUid: t.focusUid, focusStacks: t.focusStacks,
-        lastShotAt: t.lastShotAt, aim: t.aim,
+        lastShotAt: t.lastShotAt, aim: t.aim, hasteUntil: t.hasteUntil, hasteMult: t.hasteMult, moved: t.moved,
       })),
       creeps: this.creeps.map((c) => ({
         uid: c.uid, kind: c.kind, armor: c.armor, hp: c.hp, maxHp: c.maxHp, speed: c.speed,
@@ -1179,6 +1279,7 @@ export class Game {
     this.waveTotal = s.waveTotal
     this.coop = s.coop
     this.stats = { ...s.stats }
+    this.avatarId = s.avatarId ?? 'hunter'
     this.avatar = { ...s.avatar }
     this.towers = s.towers.map((t) => ({ ...t }))
     this.creeps = s.creeps.map((c) => ({
@@ -1232,12 +1333,12 @@ export class Game {
       const dx = av.target.x - av.x
       const dy = av.target.y - av.y
       const d = Math.hypot(dx, dy)
-      if (d <= AVATAR.speed * dt) {
+      if (d <= this.av.speed * dt) {
         av.x = av.target.x
         av.y = av.target.y
       } else {
-        av.x += (dx / d) * AVATAR.speed * dt
-        av.y += (dy / d) * AVATAR.speed * dt
+        av.x += (dx / d) * this.av.speed * dt
+        av.y += (dy / d) * this.av.speed * dt
       }
     }
   }
@@ -1254,6 +1355,9 @@ export class Game {
         break
       case 'sell':
         res = this.sell(cmd.id)
+        break
+      case 'move':
+        res = this.moveTower(cmd.id, cmd.x, cmd.y)
         break
       case 'merge':
         res = this.merge(cmd.a, cmd.b)

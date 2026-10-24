@@ -1,377 +1,544 @@
 'use client'
 
-// HUD «Железного Разлома» в стиле зимнего стимпанка: тёмная сталь, холодный кант, тёплые огни.
-// Верхняя полоса (поверх верхнего ряда клеток, куда тропа не заходит): ресурсы · волна · кнопки.
-// Нижняя панель (под полем, не перекрывает его): Охотница · арсенал с картинками башен · ролл.
-// Размер HUD масштабируется под экран (zoom из GameShell) — на 2K/4K он не мельчит.
+// HUD «Последнего горизонта»: один набор компонентов для телефона (ландшафт) и компьютера.
+// Верх: ресурсы · волна (или что строим) · скорость, пауза, меню. Низ: герой и способность · арсенал
+// (прокручиваемый ряд карточек + закреплённый ролл) · «Начать». Раскладку задаёт GameShell.
+// Стиль: Rubik, панели rgba(14,19,31,.9) с рамкой #3a4660, золото #f2c94c, линейные иконки.
 
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, useAnimationControls } from 'framer-motion'
+import { AI_SIGNALS, ALL_DEFS, ARMOR_COLORS, ARMOR_NAMES, AVATARS, TOWERS } from '@/game/config'
+import { avatarPortrait, towerThumb } from '@/game/pixel'
+import type { AttackType, TowerDef, UiState } from '@/game/types'
+import type { MpRole, MpStatus } from './Panels'
+import { DAMAGE_TYPE, TOWER_CARD_W, TowerInfoCard } from './TowerInfo'
 import {
-  Coins, Dices, Heart, Maximize2, Minimize2, Pause, Play, RotateCcw, Swords, Users, Zap, HelpCircle, Volume2, VolumeX, Cog,
-  Lightbulb, LightbulbOff,
-} from 'lucide-react'
-import { AI_SIGNALS, ALL_DEFS, ARMOR_COLORS, ARMOR_NAMES, ATTACK_NAMES, AVATAR, TOWERS } from '@/game/config'
-import { towerThumb } from '@/game/pixel'
-import type { TowerDef, UiState } from '@/game/types'
-import { ARMOR_ICONS, ATTACK_COLORS, Price, type MpRole, type MpStatus } from './Panels'
+  BoltIcon, CheckIcon, CloseIcon, CoinIcon, DiceIcon, ExitFullscreenIcon, FullscreenIcon, HeartIcon, HelpIcon, InfinityIcon,
+  MaskIcon, MenuIcon, PauseIcon, PlayIcon, RestartIcon, SoundIcon, SoundOffIcon, SunIcon, SwordsIcon, UsersIcon,
+} from './icons'
 
-/** Стальная рамка: светлый кант, тёмная внутренняя фаска, тень */
-export const BRASS =
-  'pointer-events-auto rounded-md border-2 border-[#7088a8] bg-gradient-to-b from-[#1b2433] to-[#0c111a] ' +
-  'shadow-[inset_0_0_0_2px_#2a3548,inset_0_3px_0_rgba(240,176,96,0.25),0_6px_18px_rgba(0,0,0,0.6)]'
-/** Та же рамка для панелей башни и слияния */
-export const HUD_PANEL = BRASS
+// ─── Токены ──────────────────────────────────────────────────────────────
+export const UI = {
+  panel: 'rgba(14,19,31,0.9)',
+  line: '#3a4660',
+  gold: '#f2c94c',
+  heart: '#ff7a7a',
+  text: '#e8ecf4',
+  text2: '#c3cbe0',
+  green: '#59c27a',
+  card: '#1f2638',
+  cardOn: '#2b3550',
+} as const
 
-const slideDown = { initial: { y: -24, opacity: 0 }, animate: { y: 0, opacity: 1 }, exit: { y: -24, opacity: 0 } }
-const slideUp = { initial: { y: 30, opacity: 0 }, animate: { y: 0, opacity: 1 }, exit: { y: 30, opacity: 0 } }
+/** Цвета типов урона: дробящий, магический, колющий (универсальный — нейтральный) */
+export const DMG_COLORS: Record<AttackType, string> = {
+  crush: '#e8893a',
+  magic: '#ef6b80',
+  pierce: '#59c27a',
+  universal: '#a0aec0',
+}
 
-/** Стальная шестерня-заклёпка в углу рамки */
-function CornerGear({ className }: { className: string }) {
+const PILL = 'pointer-events-auto border border-[#3a4660] bg-[rgba(14,19,31,0.9)]'
+const slideDown = { initial: { y: -16, opacity: 0 }, animate: { y: 0, opacity: 1 }, exit: { y: -16, opacity: 0 } }
+
+/** Ярлык: высота 20, 10 px, верхний регистр, рамка цветом ярлыка */
+export function Tag({ color, children, title }: { color: string; children: React.ReactNode; title?: string }) {
   return (
-    <span className={`pointer-events-none absolute flex h-6 w-6 items-center justify-center rounded-full border-2 border-[#7088a8] bg-[#172030] text-[#93a9c6] ${className}`}>
-      <Cog className="h-4 w-4" />
+    <span
+      title={title}
+      className="inline-flex h-5 shrink-0 items-center rounded-full border px-2 text-[10px] font-bold uppercase leading-none tracking-[0.04em]"
+      style={{ color, borderColor: color, background: 'rgba(255,255,255,0.06)' }}
+    >
+      {children}
     </span>
   )
 }
 
-// ─── Ресурсы: жизни, золото, волна ───────────────────────────────────────
+/** Круглая кнопка 44 px: скорость, пауза, меню, отмена */
+export function RoundButton({
+  onClick, label, active = false, disabled = false, children, className = '',
+}: { onClick: () => void; label: string; active?: boolean; disabled?: boolean; children: React.ReactNode; className?: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      title={label}
+      className={`${PILL} flex h-11 w-11 shrink-0 items-center justify-center rounded-full p-0 text-[15px] font-bold leading-none text-[#e8ecf4] transition-transform active:scale-95 disabled:opacity-40 ${
+        active ? '!border-[#f2c94c] !text-[#f2c94c]' : ''
+      } ${className}`}
+    >
+      {children}
+    </button>
+  )
+}
+
+// ─── Верх-лево: жизни · золото · волна ────────────────────────────────────
 export function ResourceBar({ ui }: { ui: UiState }) {
   const lives = useAnimationControls()
   const gold = useAnimationControls()
   const prevLives = useRef(ui.lives)
   const prevGold = useRef(ui.gold)
   useEffect(() => {
-    if (ui.lives < prevLives.current) {
-      lives.start({ x: [0, -5, 5, -3, 3, 0], color: ['#ffffff', '#e05252'], transition: { duration: 0.4 } })
-    }
+    if (ui.lives < prevLives.current) lives.start({ x: [0, -5, 5, -3, 3, 0], transition: { duration: 0.4 } })
     prevLives.current = ui.lives
   }, [ui.lives, lives])
   useEffect(() => {
-    if (ui.gold !== prevGold.current && !ui.infiniteGold) gold.start({ scale: [1, 1.25, 1], transition: { duration: 0.25 } })
+    if (ui.gold !== prevGold.current && !ui.infiniteGold) gold.start({ scale: [1, 1.2, 1], transition: { duration: 0.25 } })
     prevGold.current = ui.gold
   }, [ui.gold, ui.infiniteGold, gold])
 
   return (
-    <motion.div {...slideDown} className={`${BRASS} flex h-11 items-center gap-3 px-3 font-mono text-sm font-bold tabular-nums`}>
-      <motion.span animate={lives} className="flex items-center gap-1 text-[#e05252]" title="Жизни">
-        <Heart className="h-4 w-4 fill-[#e05252]" /> {ui.lives}
+    <motion.div {...slideDown} className={`${PILL} flex h-11 items-center gap-4 rounded-full px-4 text-[15px] font-bold leading-none`}>
+      <motion.span animate={lives} className="flex items-center gap-1.5 text-[#ff7a7a]" title="Жизни">
+        <HeartIcon size={18} /> {ui.lives}
       </motion.span>
-      <span className="h-5 w-px bg-[#7088a866]" />
-      <motion.span animate={gold} className="flex items-center gap-1 text-[#ffc46b]" title="Золото">
-        <Coins className="h-4 w-4" /> {ui.infiniteGold ? '∞' : ui.gold}
+      <motion.span animate={gold} className="flex items-center gap-1.5 text-[#f2c94c]" title="Золото">
+        <CoinIcon size={18} /> {ui.infiniteGold ? '∞' : ui.gold}
       </motion.span>
-      <span className="h-5 w-px bg-[#7088a866]" />
-      <span className="flex items-center gap-1 text-[#dde6f0]" title="Волна">
-        <Swords className="h-4 w-4 text-[#7088a8]" /> {Math.min(ui.wave, ui.totalWaves)}/{ui.totalWaves}
+      <span className="flex items-center gap-1.5 text-[#c3cbe0]" title="Волна">
+        <SwordsIcon size={18} /> {Math.min(ui.wave, ui.totalWaves)}/{ui.totalWaves}
       </span>
-      {ui.coop && (
-        <span className="rounded border border-[#e05252aa] px-1.5 text-[10px] text-[#ff9a7a]" title="Кооп: HP волн ×1.85">
-          КООП ×1.85
-        </span>
-      )}
+      {ui.coop && <Tag color="#ff9a7a" title="Кооп: HP волн ×1.85">кооп ×1.85</Tag>}
     </motion.div>
   )
 }
 
-// ─── Волна: таймер до следующей или ход текущей ──────────────────────────
-export function WaveWidget({ ui, onStart }: { ui: UiState; onStart: () => void }) {
-  const inWave = ui.phase === 'wave'
-  const left = Math.ceil(ui.previewRemaining)
+// ─── Верх-центр: «Волна N + ярлык» или «Башня + ВЫБЕРИТЕ КЛЕТКУ» ──────────
+export function WaveChip({ ui, build }: { ui: UiState; build: { name: string; color: string } | null }) {
+  let title: string
+  let tag: React.ReactNode
+  if (build) {
+    title = build.name
+    tag = <Tag color={build.color}>выберите клетку</Tag>
+  } else {
+    title = `Волна ${ui.wave}`
+    if (ui.phase === 'wave') tag = <Tag color={UI.gold}>на поле {ui.creepsAlive}</Tag>
+    else if (ui.nextWaveIsBoss) tag = <Tag color="#ff7a7a">босс</Tag>
+    else tag = <Tag color={ARMOR_COLORS[ui.nextWaveArmor]} title="Броня следующей волны">{ARMOR_NAMES[ui.nextWaveArmor]}</Tag>
+  }
   return (
-    <motion.div {...slideDown} className={`${BRASS} flex h-11 min-w-0 items-center gap-2 px-3`}>
-      <span className="shrink-0 font-serif text-sm font-black tracking-wide text-[#ffc46b]">Волна {ui.wave}</span>
-      {inWave ? (
-        <>
-          <div className="h-2.5 w-32 shrink overflow-hidden rounded-sm border border-[#2e3c52] bg-[#080c13]" title="Вышло из портала">
-            <motion.div
-              className="h-full bg-gradient-to-r from-[#7088a8] to-[#ffd700]"
-              animate={{ width: `${(ui.waveSpawned / Math.max(1, ui.waveTotal)) * 100}%` }}
-              transition={{ ease: 'easeOut', duration: 0.3 }}
-            />
-          </div>
-          <span className="shrink-0 font-mono text-xs text-[#dde6f0]" title="Заражённых на поле">☣ {ui.creepsAlive}</span>
-        </>
-      ) : (
-        <>
-          <span
-            className="shrink-0 rounded-sm border px-1.5 py-0.5 text-[10px] font-semibold uppercase"
-            style={{ color: ARMOR_COLORS[ui.nextWaveArmor], borderColor: ARMOR_COLORS[ui.nextWaveArmor] + '66' }}
-            title="Броня следующей волны"
-          >
-            {ARMOR_ICONS[ui.nextWaveArmor]} {ARMOR_NAMES[ui.nextWaveArmor]}
-          </span>
-          {ui.nextWaveIsBoss && <span className="shrink-0 text-[10px] font-bold text-[#e05252]">⚠ БОСС</span>}
-          {ui.nextWaveIsMoney && <span className="shrink-0 text-[10px] font-bold text-[#7fd0a0]">💰 ×3</span>}
-          <motion.span
-            key={left}
-            initial={{ scale: left <= 5 ? 1.4 : 1 }}
-            animate={{ scale: 1 }}
-            className={`w-8 shrink-0 text-right font-mono text-sm tabular-nums ${left <= 5 ? 'text-[#ffd700]' : 'text-[#dde6f0]'}`}
-          >
-            {left}с
-          </motion.span>
-          <button
-            onClick={onStart}
-            className="flex h-7 shrink-0 items-center gap-1 rounded border border-[#93a9c6] bg-gradient-to-b from-[#2e3c52] to-[#1f2a3b] px-2 text-xs font-bold text-[#ffd700] transition-colors hover:from-[#34475f]"
-            title="Начать волну сейчас"
-          >
-            <Play className="h-3 w-3" /> Начать
-          </button>
-        </>
-      )}
+    <motion.div {...slideDown} className={`${PILL} flex h-11 items-center gap-2.5 whitespace-nowrap rounded-full pl-4 pr-3 text-[15px] font-bold leading-none text-[#f4ead2]`}>
+      <span>{title}</span>
+      {tag}
     </motion.div>
   )
 }
 
-// ─── Кнопки: мелкие иконки в рамке + две большие круглые стальные ────────
-function IconButton({
-  onClick, title, active = false, disabled = false, children,
-}: { onClick: () => void; title: string; active?: boolean; disabled?: boolean; children: React.ReactNode }) {
-  return (
-    <motion.button
-      whileHover={disabled ? undefined : { y: -1 }}
-      whileTap={disabled ? undefined : { scale: 0.9 }}
-      onClick={onClick}
-      disabled={disabled}
-      title={title}
-      aria-label={title}
-      className={`flex h-8 min-w-8 items-center justify-center gap-1 rounded border px-1.5 text-xs transition-colors disabled:opacity-40 ${
-        active
-          ? 'border-[#ffd700] bg-[#26344a] text-[#ffd700]'
-          : 'border-[#5b6f8c88] bg-[#141b27] text-[#f0b060] hover:border-[#f0b060] hover:text-[#ffd700]'
-      }`}
-    >
-      {children}
-    </motion.button>
-  )
-}
-
-/** Большая круглая стальная кнопка с зубчатым ободом */
-function RoundBrass({ onClick, title, active, disabled, children }: {
-  onClick: () => void; title: string; active?: boolean; disabled?: boolean; children: React.ReactNode
-}) {
-  return (
-    <motion.button
-      whileHover={disabled ? undefined : { rotate: 8 }}
-      whileTap={disabled ? undefined : { scale: 0.88 }}
-      onClick={onClick}
-      disabled={disabled}
-      title={title}
-      aria-label={title}
-      className={`pointer-events-auto relative flex h-11 w-11 items-center justify-center rounded-full border-[3px] font-mono text-sm font-black shadow-[0_4px_10px_rgba(0,0,0,0.6),inset_0_2px_0_rgba(255,230,160,0.35)] disabled:opacity-40 ${
-        active ? 'border-[#ffd700] bg-[#34475f] text-[#ffe9a0]' : 'border-[#7088a8] bg-gradient-to-b from-[#2e3c52] to-[#172030] text-[#ffc46b]'
-      }`}
-      // зубчатый обод — пунктирное кольцо вокруг
-      style={{ outline: '2px dashed #3e5070', outlineOffset: 1 }}
-    >
-      {children}
-    </motion.button>
-  )
-}
-
-export function ControlBar({
-  ui, skin, fullscreen, muted, lighting, role, mpStatus,
-  onSpeed, onPause, onInvite, onInfiniteGold, onSkin, onMute, onLighting, onHelp, onRestart, onFullscreen,
-}: {
-  ui: UiState
+// ─── Меню: всё редкое ────────────────────────────────────────────────────
+export interface MenuActions {
   skin: 'steam' | 'lol'
   fullscreen: boolean
   muted: boolean
   lighting: boolean
-  onLighting: () => void
   role: MpRole
   mpStatus: MpStatus
-  onSpeed: () => void
-  onPause: () => void
-  onInvite?: () => void
+  onLighting: () => void
+  onMute: () => void
   onInfiniteGold: () => void
   onSkin: () => void
-  onMute: () => void
   onHelp: () => void
   onRestart: () => void
   onFullscreen: () => void
-}) {
-  const playing = ui.phase === 'preview' || ui.phase === 'wave'
+  onInvite?: () => void
+}
+
+export function MenuPanel({ ui, m, onClose }: { ui: UiState; m: MenuActions; onClose: () => void }) {
+  const row = (icon: React.ReactNode, label: string, on: (() => void) | null, active = false, closes = false) => (
+    <button
+      key={label}
+      type="button"
+      disabled={!on}
+      onClick={() => {
+        on?.()
+        if (closes) onClose() // переключатели оставляют меню открытым; окна и рестарт закрывают
+      }}
+      className={`flex h-11 w-full min-w-0 items-center gap-2.5 rounded-xl border px-3 text-left text-[13px] font-bold active:scale-[0.98] disabled:cursor-default ${
+        active ? 'border-[#f2c94c] bg-[#2b3550] text-[#f2c94c]' : 'border-[#3a4660] bg-[#1f2638] text-[#e8ecf4]'
+      }`}
+    >
+      <span className="flex w-5 shrink-0 justify-center">{icon}</span>
+      {label}
+    </button>
+  )
   return (
-    <motion.div {...slideDown} className="flex items-center gap-2">
-      <div className={`${BRASS} flex h-11 items-center gap-1 px-1.5`}>
-        {role !== 'single' && (
-          <span
-            className={`flex h-8 items-center gap-1 rounded border px-1.5 font-mono text-[10px] ${
-              mpStatus === 'linked' ? 'border-[#7fd0a088] text-[#7fd0a0]' : 'border-[#5b6f8c66] text-[#7088a8]'
-            }`}
-            title={mpStatus === 'linked' ? 'Оба игрока на связи' : 'Второй игрок не подключился'}
-          >
-            <Users className="h-3 w-3" /> {mpStatus === 'linked' ? '2/2' : '1/2'}
-          </span>
-        )}
-        {role === 'host' && onInvite && (
-          <IconButton onClick={onInvite} title="Пригласить друга">
-            <Users className="h-3.5 w-3.5" />
-          </IconButton>
-        )}
-        <IconButton onClick={onLighting} title={lighting ? 'Выключить свет и тени (для слабых устройств)' : 'Включить свет и тени'} active={lighting}>
-          {lighting ? <Lightbulb className="h-3.5 w-3.5" /> : <LightbulbOff className="h-3.5 w-3.5" />}
-        </IconButton>
-        <IconButton onClick={onMute} title={muted ? 'Включить звук' : 'Выключить звук'} active={!muted}>
-          {muted ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
-        </IconButton>
-        <IconButton
-          onClick={onInfiniteGold}
-          title={ui.infiniteGold ? 'Выключить бесконечное золото (вернётся прежнее)' : 'Бесконечное золото — для тестов'}
-          active={ui.infiniteGold}
-        >
-          <Coins className="h-3.5 w-3.5" />∞
-        </IconButton>
-        <IconButton onClick={onSkin} title={skin === 'lol' ? 'Вернуть стимпанк-башни' : 'Шуточный скин башен'} active={skin === 'lol'}>
-          🍆
-        </IconButton>
-        <IconButton onClick={onHelp} title="Как играть и книга слияний">
-          <HelpCircle className="h-3.5 w-3.5" />
-        </IconButton>
-        <IconButton onClick={onRestart} title="Начать заново (новая карта)">
-          <RotateCcw className="h-3.5 w-3.5" />
-        </IconButton>
-        <IconButton onClick={onFullscreen} title={fullscreen ? 'Выйти из полноэкранного режима' : 'На весь экран'} active={fullscreen}>
-          {fullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
-        </IconButton>
-      </div>
-      <RoundBrass onClick={onSpeed} title="Скорость игры" active={ui.speed > 1}>
-        ×{ui.speed}
-      </RoundBrass>
-      <RoundBrass onClick={onPause} title={ui.paused ? 'Продолжить (P)' : 'Пауза (P)'} active={ui.paused} disabled={!playing}>
-        {ui.paused ? <Play className="h-5 w-5 fill-current" /> : <Pause className="h-5 w-5 fill-current" />}
-      </RoundBrass>
+    <motion.div
+      {...slideDown}
+      className={`${PILL} grid max-h-[calc(100dvh-72px)] w-[min(400px,calc(100vw-24px))] grid-cols-2 gap-1.5 overflow-y-auto rounded-2xl p-2`}
+      role="menu"
+      aria-label="Меню"
+    >
+      {m.role !== 'single' && row(<UsersIcon />, `Кооп: ${m.mpStatus === 'linked' ? '2/2 на связи' : '1/2'}`, null)}
+      {m.role === 'host' && m.onInvite && row(<UsersIcon />, 'Пригласить друга', m.onInvite, false, true)}
+      {row(m.muted ? <SoundOffIcon /> : <SoundIcon />, m.muted ? 'Звук: выкл' : 'Звук: вкл', m.onMute, !m.muted)}
+      {row(<SunIcon />, m.lighting ? 'Свет и тени: вкл' : 'Свет и тени: выкл', m.onLighting, m.lighting)}
+      {row(<InfinityIcon />, 'Бесконечное золото', m.onInfiniteGold, ui.infiniteGold)}
+      {row(<MaskIcon />, 'Шуточный скин', m.onSkin, m.skin === 'lol')}
+      {row(<HelpIcon />, 'Как играть', m.onHelp, false, true)}
+      {row(m.fullscreen ? <ExitFullscreenIcon /> : <FullscreenIcon />, m.fullscreen ? 'Выйти из полного экрана' : 'На весь экран (F)', m.onFullscreen, m.fullscreen)}
+      {row(<RestartIcon />, 'Начать заново', m.onRestart, false, true)}
     </motion.div>
   )
 }
 
-// ─── Нижняя панель: Охотница · арсенал · ролл ────────────────────────────
-export function BottomPanel({
-  ui, role, armed, onAbility, onPick, onRoll,
+// ─── Верхняя полоса: ресурсы · волна · скорость/пауза/меню ────────────────
+export function TopBar({
+  ui, build, menu, menuOpen, onMenu, onSpeed, onPause, stacked = false,
 }: {
   ui: UiState
-  role: MpRole
-  armed: string | null
-  onAbility: () => void
-  onPick: (defId: string, e: React.PointerEvent) => void
-  onRoll: () => void
+  build: { name: string; color: string } | null
+  menu: MenuActions
+  menuOpen: boolean
+  onMenu: (open: boolean) => void
+  onSpeed: () => void
+  onPause: () => void
+  /** узкий портрет: плашка волны уходит во вторую строку */
+  stacked?: boolean
 }) {
-  const canBuild = ui.phase === 'preview' || ui.phase === 'wave'
-  const pool = ui.shop.map((id) => ALL_DEFS[id]).filter((d): d is TowerDef => !!d && !d.merged)
-  // картинки башен рисуются на холсте (кэш в pixel.ts). На сервере пул всегда пуст — арсенал выпадает
-  // только при старте игры в браузере, поэтому document здесь уже есть и гидратация не расходится
-  const thumb = (t: TowerDef) => (typeof document === 'undefined' ? '' : towerThumb(t))
-  const [spin, setSpin] = useState(0)
-  const canRoll = ui.gold >= ui.rollCost && canBuild
+  const playing = ui.phase === 'preview' || ui.phase === 'wave'
+  const rightRef = useRef<HTMLDivElement>(null)
+  // тап мимо меню закрывает его
+  useEffect(() => {
+    if (!menuOpen) return
+    const close = (e: PointerEvent) => {
+      if (!rightRef.current?.contains(e.target as Node)) onMenu(false)
+    }
+    document.addEventListener('pointerdown', close)
+    return () => document.removeEventListener('pointerdown', close)
+  }, [menuOpen, onMenu])
+  return (
+    <div className={stacked ? 'flex flex-wrap items-start justify-between gap-2' : 'grid grid-cols-[1fr_auto_1fr] items-start gap-2'}>
+      <div className="flex justify-start">
+        <ResourceBar ui={ui} />
+      </div>
+      <div className={stacked ? 'order-last flex w-full justify-center' : 'flex justify-center'}>
+        <WaveChip ui={ui} build={build} />
+      </div>
+      <div ref={rightRef} className="relative flex justify-end gap-2">
+        <RoundButton onClick={onSpeed} label="Скорость игры" active={ui.speed > 1}>×{ui.speed}</RoundButton>
+        <RoundButton onClick={onPause} label={ui.paused ? 'Продолжить (P)' : 'Пауза (P)'} active={ui.paused} disabled={!playing}>
+          {ui.paused ? <PlayIcon /> : <PauseIcon />}
+        </RoundButton>
+        <RoundButton onClick={() => onMenu(!menuOpen)} label="Меню" active={menuOpen}>
+          <MenuIcon />
+        </RoundButton>
+        <AnimatePresence>
+          {menuOpen && (
+            <div className="pointer-events-auto absolute right-0 top-[52px] z-30">
+              <MenuPanel ui={ui} m={menu} onClose={() => onMenu(false)} />
+            </div>
+          )}
+        </AnimatePresence>
+      </div>
+    </div>
+  )
+}
 
+// ─── Баннер паузы под верхней полосой ─────────────────────────────────────
+export function CenterNotices({ paused }: { paused: boolean }) {
+  return (
+    <div className="pointer-events-none flex flex-col items-center gap-2">
+      <AnimatePresence>
+        {paused && (
+          <motion.span
+            key="pause"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            className="rounded-full border border-[#3a4660] bg-[rgba(14,19,31,0.9)] px-5 py-1.5 text-[13px] font-bold uppercase tracking-[0.2em] text-[#f2c94c]"
+          >
+            Пауза
+          </motion.span>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
+// ─── Низ-лево: герой и способность ────────────────────────────────────────
+export function HeroButtons({ ui, role, onAbility }: { ui: UiState; role: MpRole; onAbility: () => void }) {
+  const canBuild = ui.phase === 'preview' || ui.phase === 'wave'
   const cd = ui.avatar.cooldown
   const ready = cd <= 0 && role !== 'guest' && canBuild
-  const xpNext = ui.avatar.xpNext
-  const xpPrev = xpNext ? [0, 3, 7, 12, 18, 25, 33, 42, 52][ui.avatar.level - 1] ?? 0 : 0
-  const xpFrac = xpNext ? Math.min(1, (ui.avatar.xp - xpPrev) / (xpNext - xpPrev)) : 1
+  const AVATAR = AVATARS[ui.avatar.id]
   const cdFrac = Math.min(1, cd / AVATAR.abilityCd)
-
+  const caption = 'text-[10px] font-bold uppercase leading-[14px] tracking-[0.04em] text-[#c3cbe0] [text-shadow:0_1px_2px_#000]'
   return (
-    <motion.div {...slideUp} className={`${BRASS} relative flex flex-wrap items-stretch justify-center gap-3 px-6 pb-2 pt-4 lg:flex-nowrap`}>
-      <CornerGear className="-left-2 -top-2" />
-      <CornerGear className="-right-2 -top-2" />
-      <CornerGear className="-bottom-2 -left-2" />
-      <CornerGear className="-bottom-2 -right-2" />
-      {/* табличка-заголовок на верхней кромке */}
-      <span className="pointer-events-none absolute -top-3.5 left-1/2 -translate-x-1/2 rounded border-2 border-[#7088a8] bg-gradient-to-b from-[#26344a] to-[#141b27] px-4 py-0.5 font-serif text-xs font-black tracking-[0.3em] text-[#ffc46b] shadow-md">
-        АРСЕНАЛ
-      </span>
-
-      {/* Охотница */}
-      <div className="flex shrink-0 items-center gap-2 rounded border-2 border-[#2e3c52] bg-[#0a0f17]/70 p-2">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded border-2 border-[#7fd0a0] bg-[#1f2d24] text-2xl">🏹</div>
-        <div className="w-28">
-          <p className="font-serif text-sm font-black text-[#7fd0a0]">{AVATAR.name}</p>
-          <p className="font-mono text-[10px] text-[#7088a8]">уровень {ui.avatar.level}/10</p>
-          <div className="mt-1 h-2 overflow-hidden rounded-sm border border-[#2a3a2e] bg-[#080c13]" title={xpNext ? `Опыт ${ui.avatar.xp}/${xpNext}` : 'Максимум'}>
-            <motion.div className="h-full bg-[#7fd0a0]" animate={{ width: `${xpFrac * 100}%` }} />
-          </div>
-          <p className="mt-1 text-[9px] leading-tight text-[#5b6f8c]">клик по земле — идти</p>
+    <div className="pointer-events-auto flex gap-3">
+      <div className="flex w-16 flex-col items-center gap-1" title={`${AVATAR.name}: ${AVATAR.role}. Пассивно: ${AVATAR.passive}`}>
+        <div
+          className="h-14 w-14 overflow-hidden rounded-full border-2 border-[#59c27a] bg-[rgba(14,19,31,0.9)]"
+          role="img"
+          aria-label={AVATAR.name}
+        >
+              <img src={avatarPortrait(AVATAR.id, 3)} alt="" className="h-full w-full object-cover object-top" style={{ imageRendering: 'pixelated' }} draggable={false} />
         </div>
+        <span className={caption}>{AVATAR.name}</span>
+      </div>
+      <div className="flex w-16 flex-col items-center gap-1">
         <motion.button
+          type="button"
           onClick={onAbility}
           disabled={!ready}
-          whileTap={ready ? { scale: 0.9 } : undefined}
-          animate={ready ? { boxShadow: ['0 0 0px #ffd70000', '0 0 16px #ffd700cc', '0 0 0px #ffd70000'] } : { boxShadow: '0 0 0px #ffd70000' }}
-          transition={ready ? { duration: 1.6, repeat: Infinity } : undefined}
-          className="relative flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-full border-[3px] border-[#7088a8] text-[#ffd700] disabled:text-[#5b6f8c]"
-          // кольцо перезарядки — тёмный сектор тает по мере готовности
-          style={{ background: `conic-gradient(#0a0f17 ${cdFrac * 360}deg, #26344a 0deg)` }}
+          aria-label={`Способность: ${AVATAR.abilityName}`}
           title={role === 'guest' ? 'Способностью управляет хост' : `${AVATAR.abilityName}: ${AVATAR.abilityDesc}`}
+          whileTap={ready ? { scale: 0.92 } : undefined}
+          animate={ready ? { boxShadow: ['0 0 0 rgba(242,201,76,0)', '0 0 14px rgba(242,201,76,0.8)', '0 0 0 rgba(242,201,76,0)'] } : { boxShadow: '0 0 0 rgba(242,201,76,0)' }}
+          transition={ready ? { duration: 1.6, repeat: Infinity } : undefined}
+          className="relative flex h-14 w-14 items-center justify-center rounded-full border-2 border-[#f2c94c] p-0 text-[#f2c94c] disabled:opacity-60"
+          style={{ background: cd > 0 ? `conic-gradient(rgba(5,8,14,0.85) ${cdFrac * 360}deg, rgba(14,19,31,0.9) 0deg)` : UI.panel }}
         >
-          <Zap className="h-6 w-6" />
-          <span className="font-mono text-[9px] leading-none">{cd > 0 ? Math.ceil(cd) : 'метка'}</span>
+          <BoltIcon size={24} />
         </motion.button>
+        <span className={caption}>{cd > 0 ? `${Math.ceil(cd)} с` : AVATAR.abilityName.split(' ')[0]}</span>
+      </div>
+    </div>
+  )
+}
+
+// ─── «Начать · 11с» ───────────────────────────────────────────────────────
+export function StartButton({ ui, onStart }: { ui: UiState; onStart: () => void }) {
+  if (ui.phase !== 'preview') return null
+  const left = Math.ceil(ui.previewRemaining)
+  return (
+    <motion.button
+      type="button"
+      onClick={onStart}
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      aria-label={`Начать волну, авто через ${left} секунд`}
+      className="pointer-events-auto flex h-11 items-center gap-2 whitespace-nowrap rounded-full border-0 bg-[#f2c94c] pl-3.5 pr-[18px] text-[15px] font-bold leading-none text-[#1a1408] active:scale-95"
+    >
+      <PlayIcon stroke="#1a1408" />
+      <span>Начать · {left}с</span>
+    </motion.button>
+  )
+}
+
+// ─── Арсенал: прокручиваемый ряд карточек + закреплённый ролл ─────────────
+const CARD = {
+  sm: { w: 64, h: 76, iw: 56, ih: 44, name: false },
+  lg: { w: 92, h: 118, iw: 80, ih: 64, name: true },
+} as const
+
+export function Arsenal({
+  ui, armed, onPick, onRoll, size = 'sm', rowWidth, fill = false, info = true,
+}: {
+  ui: UiState
+  armed: string | null
+  onPick: (defId: string) => void
+  onRoll: () => void
+  size?: 'sm' | 'lg'
+  /** ширина ряда; по умолчанию для sm — 3,5 карточки */
+  rowWidth?: number | string
+  /** на всю ширину (портрет телефона) */
+  fill?: boolean
+  /** карточка с подробностями при наведении мыши (на телефоне не нужна) */
+  info?: boolean
+}) {
+  const c = CARD[size]
+  const canBuild = ui.phase === 'preview' || ui.phase === 'wave'
+  const pool = ui.shop.map((id) => ALL_DEFS[id]).filter((d): d is TowerDef => !!d && !d.merged)
+  const thumb = (t: TowerDef) => (typeof document === 'undefined' ? '' : towerThumb(t))
+  const canRoll = ui.gold >= ui.rollCost && canBuild
+  const [spin, setSpin] = useState(0)
+
+  // прокрутка: края затухают, пока в ту сторону ещё есть башни
+  const vp = useRef<HTMLDivElement>(null)
+  const [edge, setEdge] = useState({ start: true, end: false })
+  const [dragging, setDragging] = useState(false)
+  const down = useRef<{ x: number; left: number; mouse: boolean } | null>(null)
+  const moved = useRef(false)
+  const measure = () => {
+    const el = vp.current
+    if (!el) return
+    const start = el.scrollLeft <= 2
+    const end = el.scrollLeft + el.clientWidth >= el.scrollWidth - 2
+    setEdge((e) => (e.start === start && e.end === end ? e : { start, end }))
+  }
+  useEffect(measure, [pool.length, size])
+  useEffect(() => {
+    const el = vp.current
+    if (!el) return
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  // колесо мыши по вертикали листает ряд вбок; слушатель не пассивный, чтобы страница не дёргалась
+  useEffect(() => {
+    const el = vp.current
+    if (!el) return
+    const onWheel = (e: WheelEvent) => {
+      if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && el.scrollWidth > el.clientWidth) {
+        e.preventDefault()
+        el.scrollLeft += e.deltaY
+      }
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [])
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    moved.current = false
+    down.current = { x: e.clientX, left: vp.current?.scrollLeft ?? 0, mouse: e.pointerType === 'mouse' }
+  }
+  const onPointerMove = (e: React.PointerEvent) => {
+    const d = down.current
+    if (!d || !vp.current) return
+    const dx = e.clientX - d.x
+    if (Math.abs(dx) > 4) moved.current = true // сдвиг больше ~4 px — это прокрутка, а не тап
+    if (d.mouse && moved.current) {
+      if (!dragging) setDragging(true)
+      vp.current.scrollLeft = d.left - dx
+    }
+  }
+  const onPointerUp = () => {
+    down.current = null
+    if (dragging) setDragging(false)
+  }
+
+  const fadeL = edge.start ? '#000 0' : 'transparent 0, #000 18px'
+  const fadeR = edge.end ? '#000 100%' : '#000 calc(100% - 28px), transparent 100%'
+  const mask = `linear-gradient(to right, ${fadeL}, ${fadeR})`
+
+  // подсказка над карточкой для мыши (на пальцах её заменяет плашка с названием вверху)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const [hover, setHover] = useState<{ id: string; left: number } | null>(null)
+  const showHover = (id: string, card: HTMLElement) => {
+    const root = rootRef.current
+    if (!root) return
+    const rr = root.getBoundingClientRect(), cr = card.getBoundingClientRect()
+    const k = rr.width / (root.offsetWidth || 1) || 1
+    const cx = (cr.left + cr.width / 2 - rr.left) / k
+    const lo = (8 - rr.left) / k, hi = (window.innerWidth - 8 - rr.left) / k - TOWER_CARD_W
+    setHover({ id, left: Math.max(lo, Math.min(hi, cx - TOWER_CARD_W / 2)) })
+  }
+
+  return (
+    <div ref={rootRef} className={`${PILL} relative flex items-center gap-1.5 rounded-[18px] p-1.5 ${fill ? 'w-full' : ''}`} style={{ maxWidth: '100%' }}>
+      <div
+        ref={vp}
+        role="group"
+        aria-label="Арсенал, листается вбок"
+        onScroll={measure}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerLeave={onPointerUp}
+        onPointerCancel={onPointerUp}
+        className={`flex min-w-0 gap-1.5 overflow-x-auto overflow-y-hidden ${fill ? 'flex-1' : ''} [&::-webkit-scrollbar]:hidden`}
+        style={{
+          width: rowWidth ?? (size === 'sm' ? 246 : undefined),
+          height: c.h,
+          overscrollBehaviorX: 'contain',
+          touchAction: 'pan-x',
+          scrollSnapType: dragging ? 'none' : 'x mandatory',
+          scrollbarWidth: 'none',
+          cursor: dragging ? 'grabbing' : 'grab',
+          userSelect: 'none',
+          WebkitMaskImage: mask,
+          maskImage: mask,
+        }}
+      >
+        {pool.map((t) => {
+          const affordable = ui.gold >= t.price
+          const locked = !affordable || !canBuild
+          const on = armed === t.id
+          return (
+            <button
+              key={ui.shop.join() + t.id}
+              type="button"
+              aria-pressed={on}
+              aria-label={`${t.name}, ${DAMAGE_TYPE[t.attack].name.toLowerCase()}, цена ${t.price}${affordable ? '' : ', не хватает золота'}`}
+              onClick={() => {
+                if (moved.current || locked) return
+                setHover(null)
+                onPick(t.id)
+              }}
+              onPointerEnter={(e) => info && e.pointerType === 'mouse' && showHover(t.id, e.currentTarget)}
+              onPointerLeave={() => setHover((h) => (h?.id === t.id ? null : h))}
+              className={`relative flex shrink-0 grow-0 snap-start flex-col items-center justify-between rounded-xl pb-1.5 pt-1 ${
+                on ? 'border-2 border-[#f2c94c] bg-[#2b3550]' : 'border border-[#3a4660] bg-[#1f2638]'
+              } ${locked ? 'opacity-50' : ''}`}
+              style={{ flexBasis: c.w, width: c.w, height: c.h, boxSizing: 'border-box' }}
+            >
+              <span className="absolute left-[5px] top-[5px] h-2 w-2 rounded-full" style={{ background: DMG_COLORS[t.attack] }} />
+                  <img
+                src={thumb(t) || undefined}
+                alt=""
+                draggable={false}
+                className="pointer-events-none block object-contain"
+                style={{ width: c.iw, height: c.ih, imageRendering: 'pixelated' }}
+              />
+              {c.name && <span className="w-full truncate px-1 text-center text-[11px] font-bold leading-tight text-[#c3cbe0]">{t.name}</span>}
+              <span className={`text-[13px] font-bold leading-4 ${affordable ? 'text-[#f2c94c]' : 'text-[#ff8a8a]'}`}>{t.price}</span>
+            </button>
+          )
+        })}
+        {pool.length === 0 && <span className="self-center px-3 text-xs text-[#c3cbe0]">Арсенал выпадет с началом игры</span>}
       </div>
 
-      {/* карточки башен */}
-      <div className="flex flex-wrap justify-center gap-2 lg:flex-nowrap">
-        <AnimatePresence mode="popLayout" initial={false}>
-          {pool.map((t, i) => {
-            const affordable = ui.gold >= t.price
-            const usable = canBuild && affordable
-            const picked = armed === t.id
-            return (
-              <motion.button
-                key={ui.shop.join() + t.id}
-                layout
-                initial={{ y: 26, opacity: 0, rotate: -5 }}
-                animate={{ y: picked ? -6 : 0, opacity: usable ? 1 : 0.45, rotate: 0 }}
-                exit={{ y: -18, opacity: 0 }}
-                transition={{ delay: i * 0.05, type: 'spring', stiffness: 400, damping: 26 }}
-                whileHover={usable ? { y: -5 } : undefined}
-                type="button"
-                disabled={!usable}
-                onPointerDown={(e) => usable && onPick(t.id, e)}
-                style={{ touchAction: 'none' }}
-                className={`flex w-[116px] shrink-0 flex-col overflow-hidden rounded border-2 bg-gradient-to-b from-[#172030] to-[#0a0f17] ${
-                  picked ? 'border-[#ffd700] shadow-[0_0_14px_#ffd70088]' : usable ? 'cursor-grab border-[#5b6f8c] hover:border-[#f0b060]' : 'cursor-not-allowed border-[#2e3c52]'
-                }`}
-                title={`${t.name} — ${t.role}. ${ATTACK_NAMES[t.attack]} атака, радиус ${t.range}. Перетащите на клетку или нажмите и выберите клетку`}
-              >
-                <span className="relative flex h-[60px] items-end justify-center border-b-2 border-[#2e3c52] bg-[radial-gradient(circle_at_50%_70%,#1f2a3b,#0a0f17)]">
-                  {thumb(t) && (
-                    <img src={thumb(t)} alt="" className="mb-0.5 h-[56px] w-auto max-w-[60px] object-contain drop-shadow-[0_2px_3px_rgba(0,0,0,0.6)]" draggable={false} />
-                  )}
-                  <span className="absolute left-1 top-1 text-sm leading-none">{t.glyph}</span>
-                  <span className="absolute right-1 top-1 h-2 w-2 rounded-full" style={{ background: ATTACK_COLORS[t.attack] }} title={ATTACK_NAMES[t.attack]} />
-                </span>
-                <span className="flex flex-col items-center px-1 py-0.5">
-                  <span className="w-full truncate text-center font-serif text-[11px] font-bold leading-tight text-[#ffc46b]">{t.name}</span>
-                  <Price value={t.price} ok={affordable} className="text-[11px]" />
-                </span>
-              </motion.button>
-            )
-          })}
-        </AnimatePresence>
-        {pool.length === 0 && <span className="self-center px-4 text-xs text-[#5b6f8c]">Арсенал выпадет с началом игры</span>}
-      </div>
+      {/* карточка башни под мышью — вне прокручиваемого ряда, чтобы он её не обрезал */}
+      <AnimatePresence>
+        {hover && ALL_DEFS[hover.id] && (
+          <div key={hover.id} className="pointer-events-none absolute z-50" style={{ left: hover.left, bottom: '100%', marginBottom: 12 }}>
+            <TowerInfoCard def={ALL_DEFS[hover.id]} affordable={ui.gold >= ALL_DEFS[hover.id].price} thumb={thumb(ALL_DEFS[hover.id] as TowerDef)} />
+          </div>
+        )}
+      </AnimatePresence>
 
-      {/* ролл */}
-      <motion.button
-        whileTap={canRoll ? { scale: 0.92 } : undefined}
+      <div className="h-14 w-px shrink-0 bg-[#3a4660]" style={{ height: c.h - 20 }} />
+      <button
+        type="button"
         disabled={!canRoll}
         onClick={() => {
           setSpin((s) => s + 1)
           onRoll()
         }}
-        className="flex w-24 shrink-0 flex-col items-center justify-center gap-1 rounded border-2 border-[#7088a8] bg-gradient-to-b from-[#2e3c52] to-[#141b27] text-[#ffd700] hover:from-[#34475f] disabled:opacity-40"
+        aria-label={`Ролл: обновить арсенал за ${ui.rollCost}`}
         title={`Ролл арсенала: ${pool.length} новых башен из ${TOWERS.length}`}
+        className="flex shrink-0 flex-col items-center justify-between rounded-xl border border-[#3a4660] bg-[#1f2638] pb-1.5 pt-1 disabled:opacity-50"
+        style={{ flexBasis: c.w, width: c.w, height: c.h, boxSizing: 'border-box' }}
       >
-        <motion.span animate={{ rotate: spin * 360 }} transition={{ duration: 0.45 }}>
-          <Dices className="h-8 w-8" />
-        </motion.span>
-        <span className="font-serif text-xs font-black tracking-wider">РОЛЛ</span>
-        <Price value={ui.rollCost} ok={ui.gold >= ui.rollCost} className="text-xs" />
-      </motion.button>
-    </motion.div>
+        <span className="flex items-center justify-center text-[#f2c94c]" style={{ width: c.iw, height: c.ih }}>
+          <motion.span animate={{ rotate: spin * 360 }} transition={{ duration: 0.45 }} className="flex">
+            <DiceIcon size={size === 'sm' ? 26 : 34} />
+          </motion.span>
+        </span>
+        {c.name && <span className="text-[11px] font-bold leading-tight text-[#c3cbe0]">Ролл</span>}
+        <span className={`text-[13px] font-bold leading-4 ${ui.gold >= ui.rollCost ? 'text-[#f2c94c]' : 'text-[#ff8a8a]'}`}>{ui.rollCost}</span>
+      </button>
+    </div>
+  )
+}
+
+// ─── Подтверждение постройки: плашка с ценой и круглые ✕ / ✓ ──────────────
+export function BuildConfirmButton({
+  kind, onClick, disabled, size, label,
+}: { kind: 'cancel' | 'ok'; onClick: () => void; disabled?: boolean; size: number; label: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      className={`pointer-events-auto flex items-center justify-center rounded-full p-0 active:scale-95 disabled:opacity-40 ${
+        kind === 'ok' ? 'border border-[#59c27a] bg-[#59c27a] text-[#0b1a10]' : 'border border-[#3a4660] bg-[rgba(14,19,31,0.92)] text-[#e8ecf4]'
+      }`}
+      style={{ width: size, height: size }}
+    >
+      {kind === 'ok' ? <CheckIcon size={size * 0.45} /> : <CloseIcon size={size * 0.45} />}
+    </button>
+  )
+}
+
+export function PricePlaque({ price }: { price: number }) {
+  return (
+    <span className="inline-flex h-5 items-center justify-center gap-1 rounded-full border border-[#3a4660] bg-[rgba(14,19,31,0.92)] px-2 text-[12px] font-bold leading-none text-[#f2c94c]">
+      <CoinIcon size={12} strokeWidth={3} />
+      {price}
+    </span>
   )
 }
 
@@ -401,10 +568,10 @@ export function WaveBanner({ ui }: { ui: UiState }) {
           transition={{ type: 'spring', stiffness: 260, damping: 18 }}
           className="pointer-events-none text-center"
         >
-          <p className={`font-serif text-3xl font-black tracking-[0.12em] sm:text-5xl sm:tracking-[0.2em] drop-shadow-[0_4px_0_rgba(0,0,0,0.8)] ${shown.boss ? 'text-[#ff5a3c]' : 'text-[#ffd700]'}`}>
+          <p className={`text-3xl font-bold tracking-[0.12em] sm:text-5xl sm:tracking-[0.2em] drop-shadow-[0_4px_0_rgba(0,0,0,0.8)] ${shown.boss ? 'text-[#ff7a7a]' : 'text-[#f2c94c]'}`}>
             {shown.boss ? 'КОЛОСС РАЗЛОМА' : `ВОЛНА ${shown.wave}`}
           </p>
-          <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.25em] text-[#f0b060] sm:text-sm sm:tracking-[0.4em] drop-shadow-[0_2px_0_rgba(0,0,0,0.8)]">
+          <p className="mt-1 text-[11px] font-medium uppercase tracking-[0.25em] text-[#c3cbe0] sm:text-sm sm:tracking-[0.4em] drop-shadow-[0_2px_0_rgba(0,0,0,0.8)]">
             {shown.boss ? 'босс идёт к лагерю' : 'заражённые выходят из Разлома'}
           </p>
           {AI_SIGNALS[shown.wave - 1] && (
@@ -412,228 +579,13 @@ export function WaveBanner({ ui }: { ui: UiState }) {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.5 }}
-              className="mx-auto mt-3 max-w-md rounded border border-[#5fd06a55] bg-[#070d0acc] px-3 py-1.5 font-mono text-xs text-[#a6f095] shadow-lg"
+              className="mx-auto mt-3 max-w-md rounded-xl border border-[#59c27a66] bg-[rgba(14,19,31,0.9)] px-3 py-1.5 text-xs font-medium text-[#a6f095] shadow-lg"
             >
-              <span className="text-[#5fd06a]">▮ сигнал ИИ:</span> «{AI_SIGNALS[shown.wave - 1]}»
+              <span className="text-[#59c27a]">▮ сигнал ИИ:</span> «{AI_SIGNALS[shown.wave - 1]}»
             </motion.p>
           )}
         </motion.div>
       )}
     </AnimatePresence>
-  )
-}
-
-// ─── Уведомления сверху по центру: пауза, выбранная для постройки башня ───
-export function CenterNotices({ paused, armedName, touch = false }: { paused: boolean; armedName: string | null; touch?: boolean }) {
-  return (
-    <div className="pointer-events-none flex flex-col items-center gap-2">
-      <AnimatePresence>
-        {paused && (
-          <motion.span
-            key="pause"
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.8 }}
-            className="rounded border-2 border-[#93a9c6] bg-gradient-to-b from-[#1f2a3b] to-[#0f151f] px-5 py-1 font-serif text-lg font-black tracking-[0.35em] text-[#ffd700] shadow-[0_4px_12px_rgba(0,0,0,0.6)]"
-          >
-            ПАУЗА
-          </motion.span>
-        )}
-        {armedName && (
-          <motion.span key="armed" {...slideDown} className="rounded border border-[#f0b060] bg-[#0f151f]/90 px-3 py-1 text-center text-xs text-[#f0b060] shadow-lg">
-            {armedName}: {touch ? 'коснитесь клетки · карточка ещё раз — отмена' : 'нажмите на клетку · Esc или правая кнопка — отмена'}
-          </motion.span>
-        )}
-      </AnimatePresence>
-    </div>
-  )
-}
-
-// ─── Телефон ─────────────────────────────────────────────────────────────
-// Поле во весь экран; сверху одна тонкая полоса, редкие кнопки — в меню; внизу лента арсенала;
-// способность Охотницы — круглая кнопка над полем.
-
-/** Круглая кнопка способности Охотницы: кольцо перезарядки, уровень на значке */
-export function AbilityButton({ ui, role, onAbility, size = 56 }: { ui: UiState; role: MpRole; onAbility: () => void; size?: number }) {
-  const canBuild = ui.phase === 'preview' || ui.phase === 'wave'
-  const cd = ui.avatar.cooldown
-  const ready = cd <= 0 && role !== 'guest' && canBuild
-  const cdFrac = Math.min(1, cd / AVATAR.abilityCd)
-  return (
-    <motion.button
-      onClick={onAbility}
-      disabled={!ready}
-      whileTap={ready ? { scale: 0.9 } : undefined}
-      animate={ready ? { boxShadow: ['0 0 0px #ffd70000', '0 0 16px #ffd700cc', '0 0 0px #ffd70000'] } : { boxShadow: '0 0 0px #ffd70000' }}
-      transition={ready ? { duration: 1.6, repeat: Infinity } : undefined}
-      className="relative flex shrink-0 flex-col items-center justify-center rounded-full border-[3px] border-[#7088a8] text-[#ffd700] disabled:text-[#5b6f8c]"
-      style={{ width: size, height: size, background: `conic-gradient(#0a0f17 ${cdFrac * 360}deg, #26344a 0deg)` }}
-      title={role === 'guest' ? 'Способностью управляет хост' : `${AVATAR.abilityName}: ${AVATAR.abilityDesc}`}
-    >
-      <Zap className="h-6 w-6" />
-      <span className="font-mono text-[9px] leading-none">{cd > 0 ? Math.ceil(cd) : 'метка'}</span>
-      <span className="absolute -right-1 -top-1 rounded-full border border-[#7fd0a0] bg-[#1f2d24] px-1 font-mono text-[9px] font-bold text-[#7fd0a0]">
-        {ui.avatar.level}
-      </span>
-    </motion.button>
-  )
-}
-
-/** Тонкая верхняя полоса телефона: ресурсы · волна с кнопкой старта · скорость · пауза · меню */
-export function MobileTopBar({
-  ui, onStart, onSpeed, onPause, onMenu, menuOpen,
-}: { ui: UiState; onStart: () => void; onSpeed: () => void; onPause: () => void; onMenu: () => void; menuOpen: boolean }) {
-  const inWave = ui.phase === 'wave'
-  const left = Math.ceil(ui.previewRemaining)
-  const btn = 'flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-[#7088a8] bg-gradient-to-b from-[#2e3c52] to-[#141b27] text-[#ffc46b] active:scale-95'
-  return (
-    <div className="pointer-events-auto flex items-center justify-center gap-1.5 p-1.5">
-      <div className={`${BRASS} flex h-9 shrink-0 items-center gap-2 px-2 font-mono text-xs font-bold tabular-nums`}>
-        <span className="flex items-center gap-0.5 text-[#e05252]"><Heart className="h-3.5 w-3.5 fill-[#e05252]" />{ui.lives}</span>
-        <span className="flex items-center gap-0.5 text-[#ffc46b]"><Coins className="h-3.5 w-3.5" />{ui.infiniteGold ? '∞' : ui.gold}</span>
-        <span className="flex items-center gap-0.5 text-[#dde6f0]"><Swords className="h-3.5 w-3.5 text-[#7088a8]" />{Math.min(ui.wave, ui.totalWaves)}/{ui.totalWaves}</span>
-      </div>
-      <div className={`${BRASS} flex h-9 min-w-0 max-w-[260px] flex-1 items-center gap-1.5 px-2`}>
-        {inWave ? (
-          <>
-            <div className="h-2 min-w-0 flex-1 overflow-hidden rounded-sm border border-[#2e3c52] bg-[#080c13]">
-              <motion.div className="h-full bg-gradient-to-r from-[#7088a8] to-[#ffd700]" animate={{ width: `${(ui.waveSpawned / Math.max(1, ui.waveTotal)) * 100}%` }} />
-            </div>
-            <span className="shrink-0 font-mono text-[11px] text-[#dde6f0]">☣{ui.creepsAlive}</span>
-          </>
-        ) : (
-          <>
-            <span className="shrink-0 text-sm" style={{ color: ARMOR_COLORS[ui.nextWaveArmor] }} title={ARMOR_NAMES[ui.nextWaveArmor]}>
-              {ARMOR_ICONS[ui.nextWaveArmor]}
-            </span>
-            {ui.nextWaveIsBoss && <span className="shrink-0 text-[10px] font-bold text-[#e05252]">⚠</span>}
-            <span className={`min-w-0 flex-1 truncate font-mono text-xs tabular-nums ${left <= 5 ? 'text-[#ffd700]' : 'text-[#dde6f0]'}`}>{left}с</span>
-            <button
-              onClick={onStart}
-              className="flex h-7 shrink-0 items-center gap-1 rounded border border-[#93a9c6] bg-gradient-to-b from-[#2e3c52] to-[#1f2a3b] px-2 text-[11px] font-bold text-[#ffd700] active:scale-95"
-            >
-              <Play className="h-3 w-3" /> Волна
-            </button>
-          </>
-        )}
-      </div>
-      <button onClick={onSpeed} className={`${btn} font-mono text-xs font-bold`}>×{ui.speed}</button>
-      <button onClick={onPause} className={btn} disabled={!(ui.phase === 'preview' || ui.phase === 'wave')}>
-        {ui.paused ? <Play className="h-4 w-4 fill-current" /> : <Pause className="h-4 w-4 fill-current" />}
-      </button>
-      <button onClick={onMenu} className={`${btn} ${menuOpen ? 'border-[#ffd700]' : ''}`} aria-label="Меню">
-        <Cog className="h-4 w-4" />
-      </button>
-    </div>
-  )
-}
-
-/** Меню телефона: редкие действия крупными строками */
-export function MobileMenu({
-  ui, skin, fullscreen, muted, lighting, role,
-  onLighting, onMute, onInfiniteGold, onSkin, onHelp, onRestart, onFullscreen, onInvite, onClose,
-}: {
-  ui: UiState
-  skin: 'steam' | 'lol'
-  fullscreen: boolean
-  muted: boolean
-  lighting: boolean
-  role: MpRole
-  onLighting: () => void
-  onMute: () => void
-  onInfiniteGold: () => void
-  onSkin: () => void
-  onHelp: () => void
-  onRestart: () => void
-  onFullscreen: () => void
-  onInvite?: () => void
-  onClose: () => void
-}) {
-  const row = (icon: React.ReactNode, label: string, on: () => void, active = false) => (
-    <button
-      key={label}
-      onClick={() => {
-        on()
-        onClose()
-      }}
-      className={`flex h-11 w-full items-center gap-3 rounded border px-3 text-left text-sm active:scale-[0.98] ${
-        active ? 'border-[#ffd70088] bg-[#26344a] text-[#ffd700]' : 'border-[#2e3c52] bg-[#0f151f] text-[#ccd8e6]'
-      }`}
-    >
-      <span className="flex w-5 justify-center">{icon}</span>
-      {label}
-    </button>
-  )
-  return (
-    <motion.div {...slideDown} className={`${BRASS} pointer-events-auto flex w-64 flex-col gap-1.5 p-2`}>
-      {role === 'host' && onInvite && row(<Users className="h-4 w-4" />, 'Пригласить друга', onInvite)}
-      {row(fullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />, fullscreen ? 'Выйти из полного экрана' : 'На весь экран', onFullscreen, fullscreen)}
-      {row(lighting ? <Lightbulb className="h-4 w-4" /> : <LightbulbOff className="h-4 w-4" />, lighting ? 'Свет и тени: вкл' : 'Свет и тени: выкл', onLighting, lighting)}
-      {row(muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />, muted ? 'Звук: выкл' : 'Звук: вкл', onMute, !muted)}
-      {row(<Coins className="h-4 w-4" />, 'Бесконечное золото', onInfiniteGold, ui.infiniteGold)}
-      {row(<span>🍆</span>, 'Шуточный скин', onSkin, skin === 'lol')}
-      {row(<HelpCircle className="h-4 w-4" />, 'Как играть', onHelp)}
-      {row(<RotateCcw className="h-4 w-4" />, 'Начать заново', onRestart)}
-    </motion.div>
-  )
-}
-
-/** Лента арсенала телефона: карточки листаются пальцем; нажать — выбрать, потянуть на поле — поставить */
-export function MobileArsenal({
-  ui, armed, onPick, onRoll, vertical = false,
-}: { ui: UiState; armed: string | null; onPick: (defId: string, e: React.PointerEvent) => void; onRoll: () => void; vertical?: boolean }) {
-  const canBuild = ui.phase === 'preview' || ui.phase === 'wave'
-  const pool = ui.shop.map((id) => ALL_DEFS[id]).filter((d): d is TowerDef => !!d && !d.merged)
-  const thumb = (t: TowerDef) => (typeof document === 'undefined' ? '' : towerThumb(t))
-  const canRoll = ui.gold >= ui.rollCost && canBuild
-  return (
-    // в портрете — лента внизу (листается вбок), в альбомной ориентации — колонка справа (листается вниз)
-    <div
-      className={
-        vertical
-          ? `${BRASS} flex w-[88px] shrink-0 flex-col items-center gap-1.5 overflow-y-auto overflow-x-hidden rounded-none border-y-0 border-r-0 px-1.5 py-1.5`
-          : `${BRASS} flex shrink-0 items-stretch gap-1.5 overflow-x-auto rounded-none border-x-0 border-b-0 px-2 pt-1.5`
-      }
-      style={vertical ? { paddingRight: 'max(6px, env(safe-area-inset-right))' } : { paddingBottom: 'max(6px, env(safe-area-inset-bottom))' }}
-    >
-      {pool.map((t) => {
-        const affordable = ui.gold >= t.price
-        const usable = canBuild && affordable
-        const picked = armed === t.id
-        return (
-          <button
-            key={ui.shop.join() + t.id}
-            type="button"
-            disabled={!usable}
-            onPointerDown={(e) => usable && onPick(t.id, e)}
-            style={{ touchAction: 'none' }}
-            className={`relative flex w-[74px] shrink-0 flex-col items-center overflow-hidden rounded border-2 bg-gradient-to-b from-[#172030] to-[#0a0f17] ${
-              picked ? '-translate-y-1 border-[#ffd700] shadow-[0_0_12px_#ffd70088]' : usable ? 'border-[#5b6f8c]' : 'border-[#2e3c52] opacity-45'
-            }`}
-          >
-            <span className="flex h-[50px] w-full items-end justify-center bg-[radial-gradient(circle_at_50%_70%,#1f2a3b,#0a0f17)]">
-              {thumb(t) && (
-                <img src={thumb(t)} alt="" className="h-[48px] w-auto max-w-[64px] object-contain" style={{ imageRendering: 'pixelated' }} draggable={false} />
-              )}
-            </span>
-            <span className="absolute left-0.5 top-0.5 text-xs leading-none">{t.glyph}</span>
-            <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full" style={{ background: ATTACK_COLORS[t.attack] }} />
-            <span className="w-full truncate px-0.5 text-center font-serif text-[9px] font-bold leading-tight text-[#ffc46b]">{t.name}</span>
-            <Price value={t.price} ok={affordable} className="text-[10px]" />
-          </button>
-        )
-      })}
-      {pool.length === 0 && <span className="self-center px-3 text-xs text-[#5b6f8c]">Арсенал выпадет с началом игры</span>}
-      <button
-        disabled={!canRoll}
-        onClick={onRoll}
-        // ролл прилипает к правому краю ленты — его видно, даже когда карточки не помещаются
-        className={`sticky ${vertical ? 'bottom-0 w-[74px] py-1' : 'right-0 w-[60px]'} flex shrink-0 flex-col items-center justify-center gap-0.5 rounded border-2 border-[#7088a8] bg-gradient-to-b from-[#2e3c52] to-[#141b27] text-[#ffd700] shadow-[-8px_0_12px_#0a0f17] disabled:opacity-60`}
-      >
-        <Dices className="h-6 w-6" />
-        <span className="font-serif text-[10px] font-black">РОЛЛ</span>
-        <Price value={ui.rollCost} ok={ui.gold >= ui.rollCost} className="text-[10px]" />
-      </button>
-    </div>
   )
 }

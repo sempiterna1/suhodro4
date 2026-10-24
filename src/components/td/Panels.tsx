@@ -20,19 +20,8 @@ import { X, Coins, Repeat2, Trash2, ChevronUp, Copy, Check, Clock } from 'lucide
 export type MpRole = 'single' | 'host' | 'guest'
 export type MpStatus = 'off' | 'waiting' | 'linked'
 
-export const ATTACK_COLORS: Record<AttackType, string> = {
-  pierce: '#8fae6b',
-  crush: '#c2874f',
-  magic: '#d4694f',
-  universal: '#a0aec0',
-}
-
-export const ARMOR_ICONS: Record<ArmorType, string> = {
-  light: '🪶',
-  medium: '⚙',
-  heavy: '🛡',
-  universal: '✷',
-}
+import { ATTACK_COLORS, ARMOR_ICONS, DamageBadge, EffectiveVs, effectLines } from './TowerInfo'
+export { ATTACK_COLORS, ARMOR_ICONS }
 
 function BrassTag({ color, children }: { color: string; children: React.ReactNode }) {
   return (
@@ -103,10 +92,8 @@ export function TowerPanel({
         </button>
       </div>
       <div className="mb-2 flex flex-wrap gap-1.5">
-        {attacks.map((a) => (
-          <BrassTag key={a} color={ATTACK_COLORS[a]}>
-            {ATTACK_NAMES[a]}
-          </BrassTag>
+        {attacks.map((a, i) => (
+          <DamageBadge key={a + i} type={a} className="!text-[10px]" />
         ))}
         {def.merged && (
           <BrassTag color="#ffd700">уникальная</BrassTag>
@@ -114,6 +101,9 @@ export function TowerPanel({
       </div>
       {!def.merged && <p className="mb-1 text-[11px] text-[#94a3b8]">{def.role}</p>}
       {def.merged && <p className="mb-1 text-[11px] text-[#94a3b8]">{def.desc}</p>}
+      <div className="mb-2">
+        <EffectiveVs def={def} />
+      </div>
       <div className="mb-2 grid grid-cols-3 gap-1 rounded-md border border-[#5b6f8c55] bg-[#0f151f] p-2 text-center font-mono text-xs">
         <div>
           <div className="text-[9px] uppercase text-[#5b6f8c]">урон</div>
@@ -128,6 +118,16 @@ export function TowerPanel({
           <div className="text-[#ccd8e6]">{range}</div>
         </div>
       </div>
+      {effectLines(def).length > 0 && (
+        <ul className="mb-2 flex flex-col gap-0.5 rounded border border-[#2e3c52] bg-[#0a0f17]/60 px-2 py-1">
+          {effectLines(def).map((e) => (
+            <li key={e} className="flex gap-1 text-[10.5px] leading-snug text-[#c9d6e8]">
+              <span className="text-[#f0b060]">◆</span>
+              {e}
+            </li>
+          ))}
+        </ul>
+      )}
       {tw.level >= 5 ? (
         <p className="mb-2 rounded border border-[#ffd70055] bg-[#19212e] px-2 py-1 text-[11px] text-[#ffd700]">
           ★ {def.l5}

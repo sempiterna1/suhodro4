@@ -7,6 +7,7 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   reactStrictMode: false,
+  allowedDevOrigins: ["*.trycloudflare.com"],
   // значок Next.js в углу (только в разработке) ложился на HUD Охотницы
   devIndicators: false,
 };

@@ -4,15 +4,15 @@
 // Мультиплеер: host-авторитарная модель. Хост симулирует мир и раздаёт
 // снапшоты (10 Гц) через лобби-сервис (socket.io :3003), гость шлёт команды.
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Game } from '@/game/engine'
 import { clampCamera, render, viewScale, type Skin, type ViewState } from '@/game/render'
-import { ALL_DEFS, MAP_H, MAP_W } from '@/game/config'
-import { snapToCell } from '@/game/map'
+import { ALL_DEFS, AVATARS, AVATAR_IDS, CELL, MAP_H, MAP_W, type AvatarId } from '@/game/config'
+import { GRID_H, GRID_W, snapToCell } from '@/game/map'
 import { insideField, toScreen, toWorld } from '@/game/iso'
 import { preloadAssets } from '@/game/assets'
 import type { GuestCmd } from '@/game/mp-protocol'
-import type { UiState, Vec } from '@/game/types'
+import type { TowerDef, UiState, Vec } from '@/game/types'
 import { closeLobby, createLobby, getMpSocket, joinLobby, sendCmd, sendSnap } from '@/lib/mp-client'
 import {
   HelpDialog,
@@ -24,9 +24,12 @@ import {
   type MpStatus,
 } from './Panels'
 import {
-  AbilityButton, BottomPanel, CenterNotices, ControlBar, MobileArsenal, MobileMenu, MobileTopBar, ResourceBar, WaveBanner, WaveWidget,
+  Arsenal, BuildConfirmButton, CenterNotices, DMG_COLORS, HeroButtons, PricePlaque, StartButton, TopBar, WaveBanner, type MenuActions,
 } from './Hud'
 import { Sfx } from '@/game/audio'
+import { avatarPortrait, towerThumb } from '@/game/pixel'
+import { TowerInfoCard } from './TowerInfo'
+import { MoveIcon, TrashIcon } from './icons'
 import { useToast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
 import { AnimatePresence, motion } from 'framer-motion'
@@ -61,6 +64,8 @@ export default function GameShell() {
   const [selectedTower, setSelectedTower] = useState<number | null>(null)
   // башня, выбранная в арсенале для постройки (перетаскиванием или нажатием)
   const [armed, setArmed] = useState<string | null>(null)
+  // клетка, выбранная под постройку (центр клетки); башня ставится только кнопкой ✓
+  const [buildCell, setBuildCell] = useState<Vec | null>(null)
   const [mergeFrom, setMergeFrom] = useState<number | null>(null)
   const [helpOpen, setHelpOpen] = useState(false)
   const [skin, setSkin] = useState<Skin>('steam')
@@ -143,6 +148,13 @@ export default function GameShell() {
   const selRef = useRef(selectedTower)
   const mergeRef = useRef(mergeFrom)
   const armedRef = useRef(armed)
+  const buildCellRef = useRef<Vec | null>(null)
+  const cellsRef = useRef<Vec[]>([])
+  // id башни, которую переносят (режим постройки с её клеткой в качестве старта)
+  const movingRef = useRef<number | null>(null)
+  const [isMoving, setIsMoving] = useState(false)
+  // призрак перетаскивают пальцем или мышью
+  const ghostDragRef = useRef(false)
 
   useEffect(() => {
     selRef.current = selectedTower
@@ -152,7 +164,14 @@ export default function GameShell() {
   }, [mergeFrom])
   useEffect(() => {
     armedRef.current = armed
-    if (!armed) viewRef.current.buildGhost = null
+    if (!armed) {
+      viewRef.current.buildGhost = null
+      buildCellRef.current = null
+      movingRef.current = null
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- режим закрыт
+      setIsMoving(false)
+      setBuildCell(null)
+    }
   }, [armed])
 
   // ─── Скин башен: ?skin=lol|steam в ссылке, иначе — последний выбор в этом браузере ───
@@ -312,6 +331,9 @@ export default function GameShell() {
     return () => clearInterval(iv)
   }, [mpRole, mpCode, game])
 
+  // тик режима постройки подменяется на каждой отрисовке: цикл ниже создаётся один раз
+  const buildTickRef = useRef<(dt: number) => void>(() => {})
+
   // ─── Игровой цикл (единственный, устойчивый к HMR) ────────────────────
   useEffect(() => {
     const canvas = canvasRef.current
@@ -332,6 +354,7 @@ export default function GameShell() {
       else game.update(dt)
       render(canvas.getContext('2d') ?? ctx, game, viewRef.current)
       sfx.tick(game)
+      buildTickRef.current(dt)
       uiAcc += dt
       if (uiAcc >= 0.12) {
         uiAcc = 0
@@ -396,30 +419,14 @@ export default function GameShell() {
     return insideField(p) ? p : null
   }
 
-  /** Призрак выбранной башни над клеткой: клетка, можно ли строить, радиус атаки */
-  const updateGhost = (p: Vec | null) => {
-    const defId = armedRef.current
-    const def = defId ? ALL_DEFS[defId] : undefined
-    if (!def || !p || !insideField(p)) {
-      viewRef.current.buildGhost = null
-      return
-    }
-    const at = snapToCell(p.x, p.y)
-    viewRef.current.buildGhost = {
-      x: at.x,
-      y: at.y,
-      valid: game.canPlace(p.x, p.y) === null && game.gold >= def.price,
-      range: def.range,
-      glyph: def.glyph,
-      defId: def.id,
-    }
-  }
-
   // ─── Камера: колесо и щипок — приближение, протяжка ЛКМ или пальцем — сдвиг ───
   // На компьютере до ×2, на телефоне до ×3. Короткое касание без сдвига — обычный клик.
   const panRef = useRef<{ x: number; y: number; cx: number; cy: number; moved: boolean } | null>(null)
   const pointers = useRef(new Map<number, { x: number; y: number }>())
   const pinchRef = useRef<{ d0: number; z0: number; wx: number; wy: number } | null>(null)
+  // палец: один — только тап (герой идёт / выбор клетки), два — щипок и сдвиг карты
+  const refreshBuildRef = useRef<() => void>(() => {})
+  const tapRef = useRef<{ x: number; y: number } | null>(null)
   const maxZoom = () => (window.matchMedia('(min-width: 1024px)').matches ? 2 : 3)
   /** Приблизить к точке экрана (px, py — от угла холста): точка карты под ней остаётся на месте */
   const zoomAt = (z: number, px: number, py: number, wx?: number, wy?: number) => {
@@ -462,6 +469,24 @@ export default function GameShell() {
       const w = toCanvas((p1.x + p2.x) / 2, (p1.y + p2.y) / 2, r)
       pinchRef.current = { d0: Math.hypot(p1.x - p2.x, p1.y - p2.y) || 1, z0: viewRef.current.cam.z, wx: w.x, wy: w.y }
       panRef.current = null
+      tapRef.current = null
+      return
+    }
+    const g = viewRef.current.buildGhost
+    if (armedRef.current && g && e.button === 0) {
+      const p = toMap(e)
+      if (Math.hypot(p.x - g.x, p.y - g.y) <= CELL * 1.3) {
+        ghostDragRef.current = true // взяли призрак — тянем по клеткам
+        try {
+          e.currentTarget.setPointerCapture(e.pointerId)
+        } catch {
+          // указатель уже отпущен
+        }
+        return
+      }
+    }
+    if (e.pointerType === 'touch') {
+      tapRef.current = { x: e.clientX, y: e.clientY }
       return
     }
     if (e.button !== 0 || (e.pointerType === 'mouse' && mapFits())) {
@@ -478,14 +503,47 @@ export default function GameShell() {
   }
   const handleUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
     pointers.current.delete(e.pointerId)
+    if (ghostDragRef.current) {
+      ghostDragRef.current = false
+      return
+    }
     if (pinchRef.current) {
       if (pointers.current.size < 2) pinchRef.current = null
       panRef.current = null
       return
     }
+    if (e.pointerType === 'touch') {
+      const tap = tapRef.current
+      tapRef.current = null
+      if (tap && e.type === 'pointerup') handleTap(e)
+      return
+    }
     const pan = panRef.current
     panRef.current = null
     if (pan && !pan.moved && e.type === 'pointerup') handleTap(e)
+  }
+
+  // всплывающая карточка башни под курсором (только мышь): позиция правится напрямую, без перерисовки всей оболочки
+  const [tip, setTip] = useState<{ id: number; defId: string; level: number } | null>(null)
+  const tipRef = useRef<HTMLDivElement>(null)
+  const tipMouse = useRef<{ x: number; y: number } | null>(null)
+  const placeTip = () => {
+    const el = tipRef.current, m = tipMouse.current
+    if (!el || !m) return
+    const w = el.offsetWidth, h = el.offsetHeight
+    let x = m.x + 20
+    if (x + w > window.innerWidth - 8) x = m.x - 20 - w // у правого края — слева от курсора
+    const y = Math.max(8, Math.min(window.innerHeight - h - 8, m.y - 28))
+    el.style.left = Math.max(8, x) + 'px'
+    el.style.top = y + 'px'
+  }
+  useLayoutEffect(placeTip, [tip])
+  const updateTip = (e: React.PointerEvent, id: number | null) => {
+    if (e.pointerType !== 'mouse') return
+    tipMouse.current = { x: e.clientX, y: e.clientY }
+    const tw = id !== null ? game.towerById(id) : undefined
+    setTip((prev) => (!tw ? (prev ? null : prev) : prev && prev.id === tw.id && prev.level === tw.level ? prev : { id: tw.id, defId: tw.defId, level: tw.level }))
+    placeTip()
   }
 
   const handleMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -496,6 +554,23 @@ export default function GameShell() {
       const r = e.currentTarget.getBoundingClientRect()
       const d = Math.hypot(p1.x - p2.x, p1.y - p2.y)
       zoomAt((pinch.z0 * d) / pinch.d0, (p1.x + p2.x) / 2 - r.left, (p1.y + p2.y) / 2 - r.top, pinch.wx, pinch.wy)
+      return
+    }
+    if (ghostDragRef.current) {
+      const q = toMap(e)
+      const at = snapToCell(q.x, q.y)
+      const cell = cellsRef.current.find((c) => c.x === at.x && c.y === at.y)
+      const cur = buildCellRef.current
+      if (cell && (!cur || cell.x !== cur.x || cell.y !== cur.y)) {
+        buildCellRef.current = cell
+        setBuildCell(cell)
+        refreshBuildRef.current()
+      }
+      return
+    }
+    if (e.pointerType === 'touch') {
+      const tap = tapRef.current
+      if (tap && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > 10) tapRef.current = null // палец поехал — это не тап
       return
     }
     const pan = panRef.current
@@ -512,64 +587,28 @@ export default function GameShell() {
     }
     const p = toMap(e)
     viewRef.current.mouse = p
-    viewRef.current.hoverTower = armedRef.current ? null : towerAt(p)
-    updateGhost(p)
+    const hid = armedRef.current ? null : towerAt(p)
+    viewRef.current.hoverTower = hid
+    updateTip(e, hid)
   }
 
   const handleLeave = () => {
+    setTip(null)
     viewRef.current.mouse = null
     viewRef.current.hoverTower = null
-    if (!dragRef.current) viewRef.current.buildGhost = null
   }
 
-  // ─── Постройка: перетащить башню из арсенала на клетку (или нажать башню, потом клетку) ───
-  const dragRef = useRef<{ defId: string; x: number; y: number; moved: boolean; wasArmed: boolean } | null>(null)
-
-  const buildAt = (p: Vec, defId: string) => {
+  // ─── Постройка: тап по башне в арсенале → клетка → ✓ ───
+  /** true — команда принята (у гостя — отправлена хосту) */
+  const buildAt = (p: Vec, defId: string): boolean => {
     if (asGuest && codeRef.current) {
       sendCmd(codeRef.current, { t: 'build', x: p.x, y: p.y, defId })
-      return
+      return true
     }
     const res = game.build(p.x, p.y, defId)
     if (!res.ok && res.error) errToast('Не построено', res.error)
     setUi(game.getUiState())
-  }
-
-  const startArm = (defId: string, e: React.PointerEvent) => {
-    if (ui.phase === 'intro' || ui.phase === 'over' || ui.phase === 'won') return
-    e.preventDefault()
-    setSelectedTower(null)
-    setMergeFrom(null)
-    const wasArmed = armedRef.current === defId
-    armedRef.current = defId
-    setArmed(defId)
-    dragRef.current = { defId, x: e.clientX, y: e.clientY, moved: false, wasArmed }
-    const move = (ev: PointerEvent) => {
-      const d = dragRef.current
-      if (!d) return
-      if (Math.hypot(ev.clientX - d.x, ev.clientY - d.y) > 6) d.moved = true
-      updateGhost(clientToMap(ev.clientX, ev.clientY))
-    }
-    const up = (ev: PointerEvent) => {
-      window.removeEventListener('pointermove', move)
-      window.removeEventListener('pointerup', up)
-      window.removeEventListener('pointercancel', up)
-      const d = dragRef.current
-      dragRef.current = null
-      if (!d) return
-      if (d.moved) {
-        // перетащили: отпустили над полем — строим, в любом случае снимаем выбор
-        const p = clientToMap(ev.clientX, ev.clientY)
-        if (p && ev.type === 'pointerup') buildAt(p, d.defId)
-        setArmed(null)
-      } else if (d.wasArmed) {
-        setArmed(null) // повторное нажатие на ту же карточку — отмена
-      }
-      // простое нажатие — башня остаётся выбранной до клика по клетке
-    }
-    window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', up)
-    window.addEventListener('pointercancel', up)
+    return res.ok
   }
 
   // Esc — отменить выбор башни
@@ -583,14 +622,21 @@ export default function GameShell() {
 
   const handleTap = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const p = toMap(e)
-    // выбрана башня из арсенала — клик по клетке строит её
+    // режим постройки: тап по свободной клетке переносит призрак; ставит только ✓
     if (armedRef.current) {
       if (e.button === 2) {
         setArmed(null) // правая кнопка — отмена
         return
       }
-      if (insideField(p)) buildAt(p, armedRef.current)
-      setArmed(null)
+      if (insideField(p)) {
+        const at = snapToCell(p.x, p.y)
+        const cell = cellsRef.current.find((c) => c.x === at.x && c.y === at.y)
+        if (cell) {
+          buildCellRef.current = cell
+          setBuildCell(cell)
+          refreshBuildRef.current()
+        }
+      }
       return
     }
     const tid = towerAt(p)
@@ -690,7 +736,7 @@ export default function GameShell() {
   }
 
   const doSpeed = () => {
-    const next = ui.speed === 1 ? 2 : 1
+    const next = ui.speed >= 3 ? 1 : ui.speed + 1
     if (asGuest && codeRef.current) {
       sendCmd(codeRef.current, { t: 'setSpeed', speed: next })
       return
@@ -730,6 +776,7 @@ export default function GameShell() {
   }
 
   // клавиша P — пауза (ref, чтобы обработчик видел свежий doPause)
+  const fullscreenRef = useRef<() => void>(() => {})
   const pauseRef = useRef(doPause)
   useEffect(() => {
     pauseRef.current = doPause
@@ -737,7 +784,13 @@ export default function GameShell() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || (e.target instanceof HTMLElement && e.target.isContentEditable)) return
+      // F — полный экран (по коду клавиши, поэтому работает и на русской раскладке)
+      if (e.code === 'KeyF') {
+        e.preventDefault()
+        fullscreenRef.current()
+        return
+      }
       if (e.code === 'KeyP') {
         e.preventDefault()
         pauseRef.current()
@@ -828,13 +881,19 @@ export default function GameShell() {
         .catch(() => errToast('Полный экран недоступен', 'Браузер не разрешил'))
   }
 
+  useEffect(() => {
+    fullscreenRef.current = toggleFullscreen
+  })
+
   const selectedTowerObj = selectedTower !== null ? game.towerById(selectedTower) : undefined
   const guestWaiting = mpRole === 'guest' && !mpHostLeft
   const hostLobbyIntro = mpRole === 'host' && ui.phase === 'intro'
   const canBuild = ui.phase === 'preview' || ui.phase === 'wave'
   // HUD — только в бою; в интро, лобби и на экранах итогов поле закрыто своим оверлеем
   const hudOn = canBuild && !showInvite
-  const armedName = armed ? `${ALL_DEFS[armed]?.glyph} ${ALL_DEFS[armed]?.name}` : null
+  const armedDef = armed ? ALL_DEFS[armed] : undefined
+  const buildChip = armedDef ? { name: isMoving ? `Перенос: ${armedDef.name}` : armedDef.name, color: DMG_COLORS['attack' in armedDef ? armedDef.attack : armedDef.attacks[0]] } : null
+  const buildAffordable = !!armedDef && (ui.infiniteGold || ui.gold >= armedDef.price)
   const contextPanel =
     mergeFrom !== null ? (
       <MergePanel game={game} from={mergeFrom} onCancel={() => setMergeFrom(null)} />
@@ -854,38 +913,210 @@ export default function GameShell() {
       />
     ) : null
 
-  const topBand = (
-    <>
-      <div className="flex flex-1 justify-start">
-        <ResourceBar ui={ui} />
-      </div>
-      <WaveWidget ui={ui} onStart={doStartWave} />
-      <div className="flex flex-1 justify-end">
-        <ControlBar
-          ui={ui}
-          skin={skin}
-          fullscreen={fullscreen}
-          muted={muted}
-          lighting={lighting}
-          onLighting={() => setLighting((l) => !l)}
-          role={mpRole}
-          mpStatus={mpStatus}
-          onSpeed={doSpeed}
-          onPause={doPause}
-          onInvite={mpRole === 'host' ? () => setShowInvite(true) : undefined}
-          onInfiniteGold={doInfiniteGold}
-          onSkin={() => setSkin((s) => (s === 'lol' ? 'steam' : 'lol'))}
-          onMute={() => setMuted((m) => !m)}
-          onHelp={() => setHelpOpen(true)}
-          onRestart={doRestart}
-          onFullscreen={toggleFullscreen}
-        />
-      </div>
-    </>
+  // ─── Режим постройки: свободные клетки, призрак с радиусом, плашка с ценой, кнопки ✕ / ✓ ───
+  const plaqueRef = useRef<HTMLDivElement>(null)
+  const cancelRef = useRef<HTMLDivElement>(null)
+  const okRef = useRef<HTMLDivElement>(null)
+  const buildAcc = useRef(0)
+  const btn = desktop ? Math.round(44 * Math.min(uiScale, 1.6)) : 44
+
+  /** Свободные клетки поля (центры): те, где сейчас можно поставить башню */
+  const freeCells = (): Vec[] => {
+    const out: Vec[] = []
+    for (let gx = 0; gx < GRID_W; gx++) {
+      for (let gy = 0; gy < GRID_H; gy++) {
+        const x = gx * CELL + CELL / 2
+        const y = gy * CELL + CELL / 2
+        const mv = movingRef.current !== null ? game.towerById(movingRef.current) : undefined
+        if (game.canPlace(x, y) === null || (mv && mv.x === x && mv.y === y)) out.push({ x, y })
+      }
+    }
+    return out
+  }
+  const nearestCell = (cells: Vec[], p: Vec) =>
+    cells.reduce((best, c) => (Math.hypot(c.x - p.x, c.y - p.y) < Math.hypot(best.x - p.x, best.y - p.y) ? c : best), cells[0])
+
+  /** Пересчитать призрак: клетки, выбранная клетка (если её заняли — ближайшая), радиус, хватает ли золота */
+  const refreshBuild = () => {
+    const def = armedRef.current ? ALL_DEFS[armedRef.current] : undefined
+    if (!def) {
+      viewRef.current.buildGhost = null
+      return
+    }
+    const cells = freeCells()
+    cellsRef.current = cells
+    let cell = buildCellRef.current
+    if (!cell || !cells.some((c) => c.x === cell!.x && c.y === cell!.y)) {
+      if (!cells.length) {
+        setArmed(null)
+        return
+      }
+      cell = nearestCell(cells, cell ?? { x: MAP_W / 2, y: MAP_H / 2 })
+      buildCellRef.current = cell
+      setBuildCell(cell)
+    }
+    viewRef.current.buildGhost = {
+      x: cell.x,
+      y: cell.y,
+      valid: movingRef.current !== null ? true : game.canBuild(cell.x, cell.y, def.id),
+      range: def.range,
+      glyph: def.glyph,
+      defId: def.id,
+      cells,
+      color: DMG_COLORS['attack' in def ? def.attack : def.attacks[0]],
+    }
+  }
+
+  /** Плашка с ценой и кнопки ✕ / ✓ идут за призраком по экрану (камеру можно двигать и приближать) */
+  const placeBuildUi = () => {
+    const g = viewRef.current.buildGhost
+    const pl = plaqueRef.current, cn = cancelRef.current, ok = okRef.current
+    if (!g || !cn || !ok) return
+    const v = viewRef.current
+    const sc = viewScale(v)
+    const s = toScreen(g.x, g.y)
+    const px = (s.x - v.cam.x) * sc
+    const py = (s.y - v.cam.y) * sc
+    const dx = 24 * sc + 14 + btn / 2
+    const cx = (x: number) => Math.max(btn / 2 + 6, Math.min(v.vw - btn / 2 - 6, x))
+    const cy = (y: number) => Math.max(btn / 2 + 64, Math.min(v.vh - btn / 2 - 6, y))
+    const put = (el: HTMLElement, x: number, y: number) => {
+      el.style.transform = `translate(${cx(x)}px, ${cy(y)}px) translate(-50%, -50%)`
+    }
+    put(cn, px - dx, py - 8)
+    put(ok, px + dx, py - 8)
+    if (pl) put(pl, px, py - 46 * sc - 14)
+  }
+
+  /** Быстрый доступ под выбранной башней: перенос и продажа */
+  const quickRef = useRef<HTMLDivElement>(null)
+  const placeQuickUi = () => {
+    const el = quickRef.current
+    const id = selRef.current
+    const tw = id !== null ? game.towerById(id) : undefined
+    if (!el || !tw) return
+    const v = viewRef.current
+    const sc = viewScale(v)
+    const s = toScreen(tw.x, tw.y)
+    const x = Math.max(btn + 8, Math.min(v.vw - btn - 8, (s.x - v.cam.x) * sc))
+    const y = Math.min(v.vh - btn / 2 - 8, (s.y - v.cam.y) * sc + 12 * sc + btn / 2 + 6)
+    el.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`
+  }
+
+  const pickTower = (defId: string) => {
+    if (ui.phase === 'intro' || ui.phase === 'over' || ui.phase === 'won') return
+    if (armedRef.current === defId) {
+      setArmed(null) // повторное нажатие на ту же карточку — отмена
+      return
+    }
+    setSelectedTower(null)
+    setMergeFrom(null)
+    movingRef.current = null
+    setIsMoving(false)
+    const cells = freeCells()
+    if (!cells.length) {
+      errToast('Нет места', 'Свободных клеток для башни не осталось')
+      return
+    }
+    cellsRef.current = cells
+    const v = viewRef.current
+    const sc = viewScale(v)
+    const centre = toWorld(v.cam.x + v.vw / sc / 2, v.cam.y + v.vh / sc / 2)
+    const prev = buildCellRef.current
+    const cell = (prev && cells.find((c) => c.x === prev.x && c.y === prev.y)) || nearestCell(cells, centre)
+    armedRef.current = defId
+    buildCellRef.current = cell
+    setArmed(defId)
+    setBuildCell(cell)
+    refreshBuild()
+  }
+
+  /** Перенос башни: тот же режим с клетками, но без цены; доступен один раз */
+  const startMove = (towerId: number) => {
+    const tw = game.towerById(towerId)
+    if (!tw) return
+    if (tw.moved) {
+      errToast('Перенос недоступен', 'Эту башню уже переносили')
+      return
+    }
+    setSelectedTower(null)
+    movingRef.current = towerId
+    setIsMoving(true)
+    armedRef.current = tw.defId
+    buildCellRef.current = { x: tw.x, y: tw.y }
+    setArmed(tw.defId)
+    setBuildCell({ x: tw.x, y: tw.y })
+    refreshBuild()
+  }
+
+  const confirmBuild = () => {
+    const id = armedRef.current, c = buildCellRef.current
+    if (!id || !c) return
+    const mid = movingRef.current
+    if (mid !== null) {
+      const tw = game.towerById(mid)
+      if (tw && (tw.x !== c.x || tw.y !== c.y)) {
+        if (asGuest && codeRef.current) sendCmd(codeRef.current, { t: 'move', id: mid, x: c.x, y: c.y })
+        else {
+          const res = game.moveTower(mid, c.x, c.y)
+          if (!res.ok && res.error) {
+            errToast('Не перенесено', res.error)
+            return
+          }
+        }
+      }
+      setArmed(null)
+      return
+    }
+    if (buildAt(c, id)) setArmed(null)
+  }
+
+  useEffect(() => {
+    refreshBuildRef.current = refreshBuild
+    buildTickRef.current = (dt) => {
+      buildAcc.current += dt
+      if (armedRef.current && buildAcc.current >= 0.25) {
+        buildAcc.current = 0
+        refreshBuild()
+      }
+      placeBuildUi()
+      placeQuickUi()
+    }
+  })
+  useLayoutEffect(() => {
+    if (armed) placeBuildUi()
+  }, [armed, buildCell])
+
+  const menu: MenuActions = {
+    skin,
+    fullscreen,
+    muted,
+    lighting,
+    role: mpRole,
+    mpStatus,
+    onLighting: () => setLighting((l) => !l),
+    onMute: () => setMuted((m) => !m),
+    onInfiniteGold: doInfiniteGold,
+    onSkin: () => setSkin((s) => (s === 'lol' ? 'steam' : 'lol')),
+    onHelp: () => setHelpOpen(true),
+    onRestart: doRestart,
+    onFullscreen: toggleFullscreen,
+    onInvite: mpRole === 'host' ? () => setShowInvite(true) : undefined,
+  }
+  const topBar = (stacked = false) => (
+    <TopBar
+      ui={ui}
+      build={buildChip}
+      menu={menu}
+      menuOpen={menuOpen}
+      onMenu={setMenuOpen}
+      onSpeed={doSpeed}
+      onPause={doPause}
+      stacked={stacked}
+    />
   )
-  const bottomPanel = (
-    <BottomPanel ui={ui} role={mpRole} armed={armed} onAbility={doAbility} onPick={startArm} onRoll={doRoll} />
-  )
+  const heroButtons = <HeroButtons ui={ui} role={mpRole} onAbility={doAbility} />
+  const startButton = !armed ? <StartButton ui={ui} onStart={doStartWave} /> : null
 
   return (
     // Десктоп: экран целиком без прокрутки — поле (с верхней полосой HUD поверх свободного ряда) над нижней
@@ -894,10 +1125,10 @@ export default function GameShell() {
       className={
         desktop
           ? 'relative flex min-h-dvh flex-col bg-[radial-gradient(ellipse_at_center,#0f151f,#05070b)] lg:h-dvh lg:overflow-hidden'
-          : `fixed inset-0 flex ${portrait ? 'flex-col' : 'flex-row'} overflow-hidden bg-[#070b14]`
+          : 'fixed inset-0 overflow-hidden bg-[#070b14]'
       }
     >
-      <div ref={fieldRef} className={desktop ? 'relative w-full lg:min-h-0 lg:flex-1' : 'relative min-h-0 w-full flex-1'}>
+      <div ref={fieldRef} className={desktop ? 'relative w-full lg:min-h-0 lg:flex-1' : 'absolute inset-0'}>
         <div
           className={desktop ? 'relative mx-auto overflow-hidden lg:absolute lg:inset-0 lg:m-auto' : 'absolute inset-0 overflow-hidden'}
           style={desktop ? { width: stage.w, height: stage.h } : undefined}
@@ -937,6 +1168,38 @@ export default function GameShell() {
                   в уникальные и продержитесь <b className="text-[#ffc46b]">10 волн</b> до Колосса Разлома.
                   Иногда на связь выходит ИИ. Он помогает — но не говорит почему.
                 </p>
+                {/* выбор аватара (GDD: 4 архетипа) */}
+                <div className="mb-4">
+                  <p className="mb-1.5 font-mono text-[10px] uppercase tracking-[0.25em] text-[#5b6f8c]">Выберите героя</p>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    {AVATAR_IDS.map((id) => {
+                      const a = AVATARS[id]
+                      const picked = ui.avatar.id === id
+                      return (
+                        <button
+                          key={id}
+                          type="button"
+                          onClick={() => {
+                            game.setAvatar(id)
+                            setUi(game.getUiState())
+                          }}
+                          className={`flex flex-col items-center gap-1 rounded border-2 bg-gradient-to-b from-[#172030] to-[#0a0f17] px-1.5 py-2 text-center transition-colors ${picked ? 'shadow-[0_0_12px_#ffd70066]' : 'opacity-75 hover:opacity-100'}`}
+                          style={{ borderColor: picked ? a.color : '#2e3c52' }}
+                          title={`${a.abilityName}: ${a.abilityDesc}`}
+                        >
+                          <AvatarImg id={id} />
+                          <span className="font-serif text-sm font-black leading-none" style={{ color: a.color }}>{a.name}</span>
+                          <span className="text-[10px] leading-tight text-[#b9c6d8]">{a.role}</span>
+                          <span className="text-[9px] leading-tight text-[#7088a8]">{a.abilityName} · {a.abilityCd} с</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <p className="mt-1.5 min-h-[2.4em] text-[11px] leading-snug text-[#94a3b8]">
+                    <b style={{ color: AVATARS[ui.avatar.id].color }}>{AVATARS[ui.avatar.id].abilityName}:</b> {AVATARS[ui.avatar.id].abilityDesc}.{' '}
+                    <span className="text-[#7088a8]">Пассивно: {AVATARS[ui.avatar.id].passive.toLowerCase()}.</span>
+                  </p>
+                </div>
                 <div className="mb-5 flex flex-wrap justify-center gap-2 text-[10px] text-[#94a3b8]">
                   {['15 башен', 'ролл арсенала', 'слияние', 'новая карта каждый раз', 'кооп по ссылке'].map((t) => (
                     <span key={t} className="rounded border border-[#5b6f8c55] px-2 py-1">{t}</span>
@@ -1029,56 +1292,97 @@ export default function GameShell() {
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center" style={{ zoom: uiScale }}>
             <WaveBanner ui={ui} />
           </div>
+          {/* кнопки ✕ / ✓ и плашка с ценой — идут за призраком; ставить башню сразу по тапу нельзя */}
+          {selectedTowerObj && !armed && hudOn && (
+            <div className="pointer-events-none absolute inset-0 z-10 overflow-hidden">
+              <div ref={quickRef} className="absolute left-0 top-0 flex gap-2" style={{ transform: 'translate(-999px, -999px)' }}>
+                <button
+                  type="button"
+                  aria-label="Перенести башню (один раз)"
+                  title={selectedTowerObj.moved ? 'Эту башню уже переносили' : 'Перенести башню (один раз)'}
+                  disabled={!!selectedTowerObj.moved}
+                  onClick={() => startMove(selectedTowerObj.id)}
+                  className="pointer-events-auto flex items-center justify-center rounded-full border border-[#3a4660] bg-[rgba(14,19,31,0.92)] p-0 text-[#e8ecf4] active:scale-95 disabled:opacity-40"
+                  style={{ width: btn, height: btn }}
+                >
+                  <MoveIcon size={btn * 0.45} />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Продать башню"
+                  title="Продать башню"
+                  onClick={doSell}
+                  className="pointer-events-auto flex items-center justify-center rounded-full border border-[#3a4660] bg-[rgba(14,19,31,0.92)] p-0 text-[#ff7a7a] active:scale-95"
+                  style={{ width: btn, height: btn }}
+                >
+                  <TrashIcon size={btn * 0.45} />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {armed && armedDef && buildCell && hudOn && (
+            <div className="pointer-events-none absolute inset-0 z-10 overflow-hidden">
+              {!isMoving && (
+                <div ref={plaqueRef} className="absolute left-0 top-0" style={{ transform: 'translate(-999px, -999px)' }}>
+                  <PricePlaque price={armedDef.price} />
+                </div>
+              )}
+              <div ref={cancelRef} className="absolute left-0 top-0" style={{ transform: 'translate(-999px, -999px)' }}>
+                <BuildConfirmButton kind="cancel" size={btn} label="Отмена" onClick={() => setArmed(null)} />
+              </div>
+              <div ref={okRef} className="absolute left-0 top-0" style={{ transform: 'translate(-999px, -999px)' }}>
+                <BuildConfirmButton kind="ok" size={btn} label={`Поставить за ${armedDef.price}`} disabled={!buildAffordable} onClick={confirmBuild} />
+              </div>
+            </div>
+          )}
+
           {!desktop && hudOn && (
             <>
-              <div className="pointer-events-none absolute inset-x-0 top-0 z-10" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
-                <MobileTopBar
-                  ui={ui}
-                  onStart={doStartWave}
-                  onSpeed={doSpeed}
-                  onPause={doPause}
-                  onMenu={() => setMenuOpen((o) => !o)}
-                  menuOpen={menuOpen}
-                />
-                <div className="flex flex-col items-center gap-1.5 px-2">
-                  <CenterNotices paused={ui.paused && canBuild} armedName={armedName} touch />
+              <div
+                className="pointer-events-none absolute inset-x-0 top-0 z-30"
+                style={{
+                  padding: portrait
+                    ? 'max(8px, env(safe-area-inset-top)) 8px 0'
+                    : '12px max(52px, env(safe-area-inset-right)) 0 max(52px, env(safe-area-inset-left))',
+                }}
+              >
+                {topBar(portrait)}
+                <div className="mt-2 flex flex-col items-center gap-1.5">
+                  <CenterNotices paused={ui.paused && canBuild} />
                   {portrait && rotateHint && (
                     <button
                       onClick={() => setRotateHint(false)}
-                      className="pointer-events-auto rounded-full border border-[#5b6f8c] bg-[#0f151f]/90 px-3 py-1 text-[11px] text-[#ccd8e6] shadow-lg"
+                      className="pointer-events-auto rounded-full border border-[#3a4660] bg-[rgba(14,19,31,0.9)] px-3 py-1 text-[11px] font-bold text-[#c3cbe0]"
                     >
-                      ↻ Поверните телефон — карта будет видна целиком · ✕
+                      Поверните телефон: карта будет видна целиком · ✕
                     </button>
                   )}
                 </div>
-                <AnimatePresence>
-                  {menuOpen && (
-                    <div className="absolute right-1.5 top-12">
-                      <MobileMenu
-                        ui={ui}
-                        skin={skin}
-                        fullscreen={fullscreen}
-                        muted={muted}
-                        lighting={lighting}
-                        role={mpRole}
-                        onLighting={() => setLighting((l) => !l)}
-                        onMute={() => setMuted((m) => !m)}
-                        onInfiniteGold={doInfiniteGold}
-                        onSkin={() => setSkin((sk) => (sk === 'lol' ? 'steam' : 'lol'))}
-                        onHelp={() => setHelpOpen(true)}
-                        onRestart={doRestart}
-                        onFullscreen={toggleFullscreen}
-                        onInvite={mpRole === 'host' ? () => setShowInvite(true) : undefined}
-                        onClose={() => setMenuOpen(false)}
-                      />
+              </div>
+              {portrait ? (
+                <div className="pointer-events-none absolute inset-x-2 bottom-2 z-10 flex flex-col gap-2">
+                  <div className="flex items-end justify-between">
+                    {!contextPanel ? heroButtons : <span />}
+                    {startButton}
+                  </div>
+                  <Arsenal ui={ui} armed={armed} onPick={pickTower} onRoll={doRoll} fill info={false} />
+                </div>
+              ) : (
+                <>
+                  {!contextPanel && (
+                    <div className="pointer-events-none absolute bottom-3 z-10" style={{ left: 'max(52px, env(safe-area-inset-left))' }}>
+                      {heroButtons}
                     </div>
                   )}
-                </AnimatePresence>
-              </div>
-              {!contextPanel && (
-                <div className="absolute bottom-2 right-2 z-10">
-                  <AbilityButton ui={ui} role={mpRole} onAbility={doAbility} size={58} />
-                </div>
+                  <div
+                    className="pointer-events-none absolute bottom-3 z-10 flex flex-col items-end gap-3"
+                    style={{ right: 'max(52px, env(safe-area-inset-right))' }}
+                  >
+                    {startButton}
+                    <Arsenal ui={ui} armed={armed} onPick={pickTower} onRoll={doRoll} info={false} />
+                  </div>
+                </>
               )}
               <AnimatePresence>
                 {contextPanel && (
@@ -1088,10 +1392,10 @@ export default function GameShell() {
                     animate={{ y: 0 }}
                     exit={{ y: '100%' }}
                     transition={{ type: 'spring', stiffness: 340, damping: 34 }}
-                    className="absolute inset-x-0 bottom-0 z-20 max-h-[62%] overflow-y-auto rounded-t-xl border-t-2 border-[#7088a8] bg-[#0f151f] shadow-[0_-8px_24px_rgba(0,0,0,0.6)]"
+                    className="absolute inset-x-0 bottom-0 z-20 max-h-[62%] overflow-y-auto rounded-t-xl border-t border-[#3a4660] bg-[rgba(14,19,31,0.96)] shadow-[0_-8px_24px_rgba(0,0,0,0.6)]"
                   >
-                    <div className="sticky top-0 z-10 flex justify-center bg-[#0f151f] py-1.5">
-                      <span className="h-1 w-10 rounded bg-[#5b6f8c]" />
+                    <div className="sticky top-0 z-10 flex justify-center bg-[rgba(14,19,31,0.96)] py-1.5">
+                      <span className="h-1 w-10 rounded bg-[#3a4660]" />
                     </div>
                     {contextPanel}
                   </motion.div>
@@ -1103,17 +1407,18 @@ export default function GameShell() {
 
         {/* Десктоп: верхняя полоса HUD над полем, уведомления и выезжающая панель башни */}
         {desktop && (
-          <div className="pointer-events-none absolute inset-0 z-10">
+          // оверлей — ровно по игровой зоне (как холст), а не по окну: на широких экранах панели не липнут к краям монитора
+          <div className="pointer-events-none absolute inset-0 z-10 m-auto" style={{ width: stage.w, height: stage.h }}>
             <AnimatePresence>
               {hudOn && (
-                <motion.div key="top" className="flex items-start gap-2 px-2 pt-1" style={{ zoom: topScale }}>
-                  {topBand}
+                <motion.div key="top" className="px-2 pt-1" style={{ zoom: topScale }}>
+                  {topBar()}
                 </motion.div>
               )}
             </AnimatePresence>
             <div className="absolute inset-x-0 flex justify-center" style={{ top: 56 * topScale }}>
               <div style={{ zoom: uiScale }}>
-                <CenterNotices paused={ui.paused && canBuild} armedName={armedName} />
+                <CenterNotices paused={ui.paused && canBuild} />
               </div>
             </div>
             <AnimatePresence>
@@ -1124,8 +1429,9 @@ export default function GameShell() {
                   animate={{ x: 0, opacity: 1 }}
                   exit={{ x: 340 * uiScale, opacity: 0 }}
                   transition={{ type: 'spring', stiffness: 320, damping: 32 }}
-                  className="pointer-events-auto absolute right-2 overflow-y-auto rounded-md border-2 border-[#7088a8] shadow-[0_8px_24px_rgba(0,0,0,0.6)]"
-                  style={{ top: 56 * topScale, bottom: 8, width: 300 * uiScale, maxHeight: `calc(100% - ${56 * topScale + 8}px)` }}
+                  // контейнер без своей рамки и без растяжки по высоте: рамка — только у самой карточки панели
+                  className="pointer-events-auto absolute right-2 overflow-y-auto"
+                  style={{ top: 56 * topScale, width: 300 * uiScale, maxHeight: `calc(100% - ${56 * topScale + 8}px)` }}
                 >
                   <div style={{ zoom: uiScale }}>{contextPanel}</div>
                 </motion.div>
@@ -1138,12 +1444,21 @@ export default function GameShell() {
       {/* нижняя стальная панель — под полем, не перекрывает его */}
       <AnimatePresence>
         {hudOn && desktop && (
-          <motion.div key="bottom" className="flex shrink-0 justify-center px-3 pb-2 pt-3" style={{ zoom: uiScale }}>
-            {bottomPanel}
+          <motion.div key="bottom" className="flex shrink-0 items-center justify-center gap-5 px-3 pb-2 pt-3" style={{ zoom: uiScale }}>
+            {heroButtons}
+            <Arsenal ui={ui} armed={armed} onPick={pickTower} onRoll={doRoll} size="lg" />
+            <div className="flex w-[150px] justify-start">{startButton}</div>
           </motion.div>
         )}
       </AnimatePresence>
-      {hudOn && !desktop && <MobileArsenal ui={ui} armed={armed} onPick={startArm} onRoll={doRoll} vertical={!portrait} />}
+
+      {tip && ALL_DEFS[tip.defId] && (
+        <div ref={tipRef} className="pointer-events-none fixed z-50" style={{ left: -999, top: -999 }}>
+          <div style={{ zoom: uiScale }}>
+            <TowerInfoCard def={ALL_DEFS[tip.defId]} level={tip.level} thumb={ALL_DEFS[tip.defId].merged ? undefined : towerThumb(ALL_DEFS[tip.defId] as TowerDef)} />
+          </div>
+        </div>
+      )}
 
       <HelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
     </div>
@@ -1151,6 +1466,16 @@ export default function GameShell() {
 }
 
 
+
+/** Портрет аватара: рисуется на холсте, поэтому подставляется после монтирования (без расхождения при гидратации) */
+function AvatarImg({ id }: { id: AvatarId }) {
+  const [src, setSrc] = useState('')
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- холст доступен только в браузере
+    setSrc(avatarPortrait(id, 3))
+  }, [id])
+  return <img src={src || undefined} alt="" className="h-10 w-10 object-contain" style={{ imageRendering: 'pixelated' }} draggable={false} />
+}
 
 function Stats({ ui }: { ui: UiState }) {
   return (

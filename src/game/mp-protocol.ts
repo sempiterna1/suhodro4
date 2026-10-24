@@ -3,6 +3,7 @@
 // получает снапшоты и отправляет команды. Сервис-ретранслятор —
 // mini-services/mp-service (socket.io, порт 3003, только relay).
 
+import type { AvatarId } from './config'
 import type {
   ArmorType, AvatarState, Creep, Effect, FloatText, Phase, Projectile, Tower,
 } from './types'
@@ -25,9 +26,10 @@ export interface Snap {
   waveTotal: number
   coop: boolean
   stats: { kills: number; leaked: number; goldEarned: number; merges: number; bossKills: number }
+  avatarId: AvatarId
   avatar: Pick<AvatarState, 'x' | 'y' | 'target' | 'level' | 'xp' | 'cooldown' | 'attackCd'>
   towers: Array<Pick<Tower, 'id' | 'x' | 'y' | 'defId' | 'level' | 'invested' | 'cooldown' | 'shotCount' | 'hammerCd'
-    | 'rampMult' | 'focusUid' | 'focusStacks' | 'lastShotAt' | 'aim'>>
+    | 'rampMult' | 'focusUid' | 'focusStacks' | 'lastShotAt' | 'aim' | 'hasteUntil' | 'hasteMult' | 'moved'>>
   creeps: Array<
     Pick<Creep, 'uid' | 'kind' | 'armor' | 'hp' | 'maxHp' | 'speed' | 'dist' | 'size' | 'isBoss'
       | 'burnDps' | 'burnUntil' | 'stunnedUntil' | 'markedUntil' | 'markedBonus'
@@ -46,6 +48,7 @@ export type GuestCmd =
   | { t: 'build'; x: number; y: number; defId: string }
   | { t: 'upgrade'; id: number }
   | { t: 'sell'; id: number }
+  | { t: 'move'; id: number; x: number; y: number }
   | { t: 'merge'; a: number; b: number }
   | { t: 'startWave' }
   | { t: 'setSpeed'; speed: number }

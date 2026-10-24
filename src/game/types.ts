@@ -130,6 +130,9 @@ export interface Tower {
   focusStacks: number
   lastShotAt: number // время последнего выстрела (для анимации атаки)
   aim: number // угол на последнюю цель, рад
+  hasteUntil?: number // до какого времени башня ускорена (Боевой клич Воеводы ×1.4, Перегрузка Инженера ×2)
+  hasteMult?: number
+  moved?: boolean // башню уже переносили: перенос доступен один раз
 }
 
 export interface Projectile {
@@ -174,8 +177,10 @@ export interface Effect {
   born: number
   dur: number
   color: string
-  kind: 'blast' | 'stun' | 'mark' | 'spark' | 'chain' | 'beam'
+  kind: 'blast' | 'stun' | 'mark' | 'spark' | 'chain' | 'beam' | 'corpse'
   points?: Vec[] // ломаная для 'chain' (молния) и 'beam' (болт/луч)
+  creep?: CreepKind // для 'corpse': какой враг погиб (спрайт гибели)
+  uid?: number // для 'corpse': uid погибшего, чтобы взять его направление взгляда
 }
 
 export interface AvatarState {
@@ -219,6 +224,7 @@ export interface UiState {
     xp: number
     xpNext: number | null
     cooldown: number
+    id: import('./config').AvatarId
   }
   nextWaveArmor: ArmorType
   nextWaveIsBoss: boolean
