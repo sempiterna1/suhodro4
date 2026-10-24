@@ -230,4 +230,6 @@ export interface UiState {
   nextWaveIsBoss: boolean
   nextWaveIsMoney: boolean
   nextWaveCount: number
+  mapName: string // название выбранной карты (MAP_DEFS)
+  mapFeature: string
 }

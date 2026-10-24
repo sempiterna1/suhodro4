@@ -72,6 +72,16 @@ export const AI_SIGNALS: string[] = [
   'Они идут толпой. Им больше нечего терять.',
   'Сейчас придёт большое. Готовьтесь.',
   'Это не конец. Но если выстоите — у лагеря будет время.',
+  'Вы прошли первого Колосса. Минерал это запомнит.',
+  'Дальше — те, кто недавно был людьми. Не всматривайтесь.',
+  'Минерал слушает ваши башни и меняет маршруты.',
+  'Лагерь держится. Пока держится — держите и вы.',
+  'Мои сенсоры стареют. Ваша оборона — ещё нет.',
+  'Идёт холод. Идёт металл. Идёт время.',
+  'Вторая половина пути. Она всегда тяжелее первой.',
+  'Соберите всё, что строили. Сейчас решается.',
+  'Последняя передышка. Тратьте с умом.',
+  'Он идёт. Колосс. Не за вами — за минералом. Вы просто на пути.',
 ]
 
 /** Виды врагов для брони волны (кроме босса) */
@@ -635,9 +645,36 @@ export const SPOT_RADIUS = 18 // платформа башни внутри кл
 // Максимальная дистанция между башнями для слияния (аналог «соседних площадок»)
 export const MERGE_DIST = 140
 
-// ─── Волны прототипа: 10 волн до первого босса ──────────────────────────
-// GDD: волны 1–10 — один тип брони за волну, по кругу;
-// 9-я — денежная, 10-я — босс.
+// ─── Карты (GDD: «Карты и сложности») ───────────────────────────────────
+// У каждой карты фиксированное зерно — тропа всегда одна и та же (GDD: «Тропы
+// фиксированы и видны с начала матча»), у хоста и гостя совпадает автоматически.
+// Зёрна подобраны скриптом scripts/pick-maps.ts под длину/извилистость тропы.
+export interface MapDef {
+  id: string
+  name: string
+  feature: string // особенность из GDD
+  seed: number
+  creepSpeedMult: number // «Ледяной перевал: крипы быстрее на 10%»
+  universalExtra: number // «Пепельная долина»: +N универсальных врагов в обычной волне
+}
+
+export const MAP_DEFS: MapDef[] = [
+  { id: 'tract', name: 'Пограничный тракт', feature: 'обучающая: простая тропа, много мест', seed: 0, creepSpeedMult: 1, universalExtra: 0 },
+  { id: 'mill', name: 'Старая мельница', feature: 'длинная петля — простор для площадных башен', seed: 3, creepSpeedMult: 1, universalExtra: 0 },
+  { id: 'bridge', name: 'Каменный мост', feature: 'тропа извилиста, мест мало — сливайте башни', seed: 2, creepSpeedMult: 1, universalExtra: 0 },
+  { id: 'mines', name: 'Заброшенные шахты', feature: 'короткая тропа — максимум мест под стройку', seed: 10, creepSpeedMult: 1, universalExtra: 0 },
+  { id: 'pass', name: 'Ледяной перевал', feature: 'заражённые быстрее на 10%', seed: 1, creepSpeedMult: 1.1, universalExtra: 0 },
+  { id: 'valley', name: 'Пепельная долина', feature: 'в каждой волне универсальные враги', seed: 6, creepSpeedMult: 1, universalExtra: 6 },
+]
+
+/** Определение карты по зерну (зерно уникально в рамках MAP_DEFS) */
+export const mapDefBySeed = (seed: number): MapDef =>
+  MAP_DEFS.find((d) => d.seed === seed) ?? MAP_DEFS[0]
+
+// ─── Волны: 20 на каждой карте ─────────────────────────────────────────
+// GDD: волны 1–10 — один тип брони за волну по кругу; 9-я — денежная, 10-я — босс.
+// Волны 11–20: броня варьируется (в ротацию входят универсалы), 19-я — денежная,
+// 20-я — финальный Колосс Разлома. HP растёт по формуле hpForWave(n).
 export interface WaveDef {
   n: number
   kind: 'normal' | 'money' | 'boss'
@@ -649,10 +686,12 @@ export interface WaveDef {
   spawnInterval: number
 }
 
-export const TOTAL_WAVES = 10
+export const TOTAL_WAVES = 20
 
 export const WAVES: WaveDef[] = (() => {
   const cycle: ArmorType[] = ['light', 'medium', 'heavy']
+  // 11–20: «случайный тип, объявленный заранее» (GDD) — фиксированная varied-ротация с универсалами
+  const cycleLate: ArmorType[] = ['medium', 'universal', 'light', 'heavy', 'universal']
   const waves: WaveDef[] = []
   for (let n = 1; n <= 8; n++) {
     waves.push({
@@ -666,28 +705,31 @@ export const WAVES: WaveDef[] = (() => {
       spawnInterval: 0.9,
     })
   }
-  waves.push({
-    n: 9,
-    kind: 'money',
-    armor: 'light',
-    count: 30,
-    hpMult: 0.5,
-    goldMult: 3,
-    bonusMult: 2,
-    spawnInterval: 0.7,
-  })
-  waves.push({
-    n: 10,
-    kind: 'boss',
-    armor: 'heavy',
-    count: 9, // 1 босс + 8 сопровождающих
-    hpMult: 1,
-    goldMult: 1,
-    bonusMult: 1,
-    spawnInterval: 0.9,
-  })
+  waves.push(
+    { n: 9, kind: 'money', armor: 'light', count: 30, hpMult: 0.5, goldMult: 3, bonusMult: 2, spawnInterval: 0.7 },
+    { n: 10, kind: 'boss', armor: 'heavy', count: 9, hpMult: 1, goldMult: 1, bonusMult: 1, spawnInterval: 0.9 } // 1 босс + 8 сопровождающих
+  )
+  for (let n = 11; n <= 18; n++) {
+    waves.push({
+      n,
+      kind: 'normal',
+      armor: cycleLate[(n - 11) % cycleLate.length],
+      count: 20,
+      hpMult: 1,
+      goldMult: 1,
+      bonusMult: 1,
+      spawnInterval: 0.85,
+    })
+  }
+  waves.push(
+    { n: 19, kind: 'money', armor: 'light', count: 30, hpMult: 0.5, goldMult: 3, bonusMult: 2, spawnInterval: 0.7 },
+    { n: 20, kind: 'boss', armor: 'heavy', count: 9, hpMult: 1, goldMult: 1, bonusMult: 1, spawnInterval: 0.9 } // Колосс Разлома
+  )
   return waves
 })()
+
+/** GDD: скорость крипов +1% за волну, суммарно не больше +25% */
+export const waveSpeedMult = (n: number) => 1 + Math.min(0.25, 0.01 * (n - 1))
 
 export const BOSS_HP_MULT = 15
 export const BOSS_ESCORTS = 8

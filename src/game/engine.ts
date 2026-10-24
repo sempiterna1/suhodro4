@@ -46,8 +46,11 @@ import {
   levelDamageMult,
   levelIntervalMult,
   levelRangeMult,
+  mapDefBySeed,
   markBonusForLevel,
   waveBonus,
+  waveSpeedMult,
+  type MapDef,
 } from './config'
 import {
   type GameMap,
@@ -250,13 +253,28 @@ export class Game {
       this.goldBeforeCheat = this.gold
       this.refillGold()
     }
-    // каждая новая игра — новая тропа
-    if (!this.mapLocked) this.loadMap(generateMap(randomSeed()))
+    // каждая новая игра — новая тропа; если игрок выбрал карту на интро — она и дальше используется
+    if (this.selectedSeed !== null) this.loadMap(generateMap(this.selectedSeed))
+    else if (!this.mapLocked) this.loadMap(generateMap(randomSeed()))
+  }
+
+  /** Зерно выбранной игроком карты (null — случайная карта, как раньше) */
+  selectedSeed: number | null = null
+
+  /** Выбор карты из реестра MAP_DEFS: применяется сразу и живёт после рестарта */
+  selectMap(seed: number) {
+    this.selectedSeed = seed
+    this.loadMap(generateMap(seed))
   }
 
   private loadMap(m: GameMap) {
     setMap(m)
     this.mapSeed = m.seed
+  }
+
+  /** Определение текущей карты (реестр MAP_DEFS; чужое зерно → «Пограничный тракт») */
+  get mapDef(): MapDef {
+    return mapDefBySeed(this.mapSeed)
   }
 
   /** Зафиксировать карту (не меняется при рестарте) — для тестов и выбора конкретной карты */
@@ -308,6 +326,20 @@ export class Game {
     } else {
       for (let i = 0; i < def.count; i++) {
         this.spawnQueue.push({ t: i * def.spawnInterval, isBoss: false, armor: def.armor, kind: kindFor(def.armor) })
+      }
+      // Особенность карты («Пепельная долина»): дополнительные универсальные враги,
+      // равномерно распределённые по волне
+      const extra = this.mapDef.universalExtra
+      if (extra > 0) {
+        const span = def.count * def.spawnInterval
+        for (let i = 0; i < extra; i++) {
+          this.spawnQueue.push({
+            t: 0.6 + (i * span) / extra,
+            isBoss: false,
+            armor: 'universal',
+            kind: kindFor('universal'),
+          })
+        }
       }
     }
     this.waveTotal = this.spawnQueue.length
@@ -629,14 +661,15 @@ export class Game {
       let livesCost: number
       if (o.isBoss) {
         hp = hpForWave(def.n) * BOSS_HP_MULT * HP_PLAYTEST_MULT * this.coopMult()
-        speed = BOSS_SPEED
+        speed = BOSS_SPEED * this.mapDef.creepSpeedMult
         size = 26
         gold = goldForKill(def.n) * BOSS_GOLD_MULT
         livesCost = BOSS_LIVES_COST
       } else {
         const kd = CREEP_KINDS[o.kind]
         hp = hpForWave(def.n) * ARMOR_HP_MULT[o.armor] * def.hpMult * kd.hpMult * HP_PLAYTEST_MULT * this.coopMult()
-        speed = ARMOR_SPEED[o.armor] * kd.speedMult
+        // GDD: скорость +1% за волну (макс +25%) × особенность карты (Ледяной перевал ×1.1)
+        speed = ARMOR_SPEED[o.armor] * kd.speedMult * waveSpeedMult(def.n) * this.mapDef.creepSpeedMult
         size = kd.size
         gold = goldForKill(def.n) * def.goldMult
         livesCost = 1
@@ -1187,6 +1220,8 @@ export class Game {
       nextWaveIsBoss: def.kind === 'boss',
       nextWaveIsMoney: def.kind === 'money',
       nextWaveCount: def.kind === 'boss' ? 1 + BOSS_ESCORTS : def.count,
+      mapName: this.mapDef.name,
+      mapFeature: this.mapDef.feature,
     }
   }
 

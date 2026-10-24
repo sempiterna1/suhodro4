@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Game } from '@/game/engine'
 import { clampCamera, render, viewScale, type Skin, type ViewState } from '@/game/render'
-import { ALL_DEFS, AVATARS, AVATAR_IDS, CELL, MAP_H, MAP_W, type AvatarId } from '@/game/config'
+import { ALL_DEFS, AVATARS, AVATAR_IDS, CELL, MAP_DEFS, MAP_H, MAP_W, type AvatarId } from '@/game/config'
 import { GRID_H, GRID_W, snapToCell } from '@/game/map'
 import { insideField, toScreen, toWorld } from '@/game/iso'
 import { preloadAssets } from '@/game/assets'
@@ -58,7 +58,13 @@ function frameField(v: ViewState, portrait: boolean) {
 
 export default function GameShell() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [game] = useState(() => new Game())
+  // по умолчанию выбрана первая карта реестра — зерно 0 детерминировано,
+  // поэтому SSR и клиент получают одинаковое состояние (гидратация не расходится)
+  const [game] = useState(() => {
+    const g = new Game()
+    g.selectMap(MAP_DEFS[0].seed)
+    return g
+  })
 
   const [ui, setUi] = useState<UiState>(() => game.getUiState())
   const [selectedTower, setSelectedTower] = useState<number | null>(null)
@@ -805,7 +811,7 @@ export default function GameShell() {
     setSelectedTower(null)
     setArmed(null)
     setMergeFrom(null)
-    toast({ title: 'Новая попытка', description: 'Пограничный тракт снова под атакой.' })
+    toast({ title: 'Новая попытка', description: `${game.mapDef.name} снова под атакой.` })
   }
 
   // ─── Создание лобби (хост) ─────────────────────────────────────────────
@@ -1144,7 +1150,7 @@ export default function GameShell() {
             onPointerUp={handleUp}
             onPointerCancel={handleUp}
             onContextMenu={(e) => e.preventDefault()}
-            aria-label="Карта игры Пограничный тракт"
+            aria-label={`Карта игры ${ui.mapName}`}
           />
 
           {/* Интро (одиночка / хост без лобби) */}
@@ -1159,15 +1165,45 @@ export default function GameShell() {
                 <p className="mb-1 font-mono text-[10px] uppercase tracking-[0.3em] text-[#5b6f8c]">
                   паропанк · tower defense · прототип
                 </p>
-                <h1 className="mb-3 font-serif text-4xl font-black tracking-wide text-[#ffc46b] drop-shadow-[0_3px_0_rgba(0,0,0,0.7)] sm:text-5xl">
-                  ПОСЛЕДНИЙ ГОРИЗОНТ
+                {/* логотип игры (public/logo-the-last-horizon.png) вместо текстового заголовка */}
+                <h1 className="mb-3 select-none">
+                  <img
+                    src="/logo-the-last-horizon.png"
+                    alt="Последний горизонт"
+                    className="mx-auto w-full max-w-[430px] drop-shadow-[0_8px_24px_rgba(0,0,0,0.85)]"
+                    draggable={false}
+                  />
                 </h1>
                 <p className="mb-4 text-xs leading-relaxed text-[#b8c6d8] sm:text-sm">
                   Новый минерал убил восемь из десяти людей — и он живой: меняет зверей, лес и машины.
-                  Заражённые идут по Пограничному тракту к лагерю беженцев. Ставьте башни, сливайте их
-                  в уникальные и продержитесь <b className="text-[#ffc46b]">10 волн</b> до Колосса Разлома.
+                  Заражённые идут по тракту к лагерю беженцев. Ставьте башни, сливайте их
+                  в уникальные и продержитесь <b className="text-[#ffc46b]">20 волн</b> до Колосса Разлома.
                   Иногда на связь выходит ИИ. Он помогает — но не говорит почему.
                 </p>
+                {/* выбор карты (GDD: «Карты и сложности»; у каждой карты 20 волн) */}
+                <div className="mb-4">
+                  <p className="mb-1.5 font-mono text-[10px] uppercase tracking-[0.25em] text-[#5b6f8c]">Карта · 20 волн</p>
+                  <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+                    {MAP_DEFS.map((m) => {
+                      const picked = ui.mapName === m.name
+                      return (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => {
+                            game.selectMap(m.seed)
+                            setUi(game.getUiState())
+                          }}
+                          className={`flex flex-col items-center gap-0.5 rounded border-2 bg-gradient-to-b from-[#172030] to-[#0a0f17] px-1.5 py-1.5 text-center transition-colors ${picked ? 'border-[#ffc46b] shadow-[0_0_12px_#ffd70055]' : 'border-[#2e3c52] opacity-75 hover:opacity-100'}`}
+                          title={m.feature}
+                        >
+                          <span className="font-serif text-xs font-black leading-tight text-[#ccd8e6]">{m.name}</span>
+                          <span className="text-[9px] leading-tight text-[#7088a8]">{m.feature}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
                 {/* выбор аватара (GDD: 4 архетипа) */}
                 <div className="mb-4">
                   <p className="mb-1.5 font-mono text-[10px] uppercase tracking-[0.25em] text-[#5b6f8c]">Выберите героя</p>
@@ -1201,7 +1237,7 @@ export default function GameShell() {
                   </p>
                 </div>
                 <div className="mb-5 flex flex-wrap justify-center gap-2 text-[10px] text-[#94a3b8]">
-                  {['15 башен', 'ролл арсенала', 'слияние', 'новая карта каждый раз', 'кооп по ссылке'].map((t) => (
+                  {['15 башен', 'ролл арсенала', 'слияние', '6 карт · 20 волн', 'кооп по ссылке'].map((t) => (
                     <span key={t} className="rounded border border-[#5b6f8c55] px-2 py-1">{t}</span>
                   ))}
                 </div>
@@ -1272,7 +1308,7 @@ export default function GameShell() {
                 </h2>
                 <p className="mb-4 text-sm text-[#b8c6d8]">
                   {ui.phase === 'won'
-                    ? 'Колосс Разлома пал, лагерь может идти дальше — к убежищу, о котором говорит ИИ. В полной версии вас ждут ещё 9 карт и 3 сложности.'
+                    ? `Колосс Разлома пал на карте «${ui.mapName}» — лагерь может идти дальше, к убежищу, о котором говорит ИИ. Попробуйте остальные карты: всего их ${MAP_DEFS.length}.`
                     : `Заражённые прорвались к лагерю на волне ${ui.wave}. Минерал забирает тракт...`}
                 </p>
                 <Stats ui={ui} />
