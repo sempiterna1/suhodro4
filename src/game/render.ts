@@ -8,7 +8,7 @@ import { ALL_DEFS, CELL, MAP_H, MAP_W } from './config'
 import type { Game } from './engine'
 import { pointAtLength } from './engine'
 import { getMap } from './map'
-import { ASSETS, drawAsset, towerArt, type AssetName } from './assets'
+import { ASSETS, assetFrames, drawAsset, drawAssetFrame, towerArt, type AssetName } from './assets'
 import { towerSprite } from './towers'
 import { drawLongShadow } from './shadows'
 import { crispDraw, setLowScale } from './pixelart'
@@ -18,7 +18,7 @@ import { buildBackground, drawDrift, drawPortal, drawProp, drawPropShadows, prop
 import { windAt } from './wind'
 import { applyLighting, drawBeams, drawFog, drawSmoke } from './lighting'
 import { drawLolProjectile, drawLolTower } from './render-lol'
-import type { Creep, CreepKind, Tower, Vec } from './types'
+import type { Creep, CreepKind, Effect, Tower, Vec } from './types'
 
 export type Skin = 'steam' | 'lol'
 
@@ -30,6 +30,8 @@ export interface BuildGhost {
   range: number // радиус атаки выбранной башни
   glyph: string
   defId?: string
+  cells: Vec[] // все свободные клетки (центры) — подсвечиваются ромбами
+  color: string // цвет типа урона выбранной башни
 }
 
 /**
@@ -73,6 +75,17 @@ const CREEP_ART: Partial<Record<CreepKind, { name: AssetName; s: number }>> = {
   juggernaut: { name: 'creep-bruiser', s: 0.48 },
   golem: { name: 'creep-bruiser', s: 0.6 },
   titan: { name: 'creep-boss', s: 0.8 },
+}
+
+/** Враги с настоящей анимацией: лист ходьбы, лист гибели и масштаб; fps — кадров ходьбы в секунду */
+const CREEP_ANIM: Partial<Record<CreepKind, { walk: AssetName; death: AssetName; s: number; ds: number; fps: number }>> = {
+  scuttler: { walk: 'creep-scout-walk', death: 'creep-scout-death', s: 0.26, ds: 0.39, fps: 10 },
+  swarm: { walk: 'creep-runner-walk', death: 'creep-runner-death', s: 0.25, ds: 0.25, fps: 12 },
+  trooper: { walk: 'creep-shield-walk', death: 'creep-shield-death', s: 0.27, ds: 0.27, fps: 9 },
+  juggernaut: { walk: 'creep-bruiser-walk', death: 'creep-bruiser-death', s: 0.23, ds: 0.23, fps: 8 },
+  golem: { walk: 'creep-bruiser-walk', death: 'creep-bruiser-death', s: 0.29, ds: 0.29, fps: 7 },
+  rider: { walk: 'creep-wolf-walk', death: 'creep-wolf-death', s: 0.32, ds: 0.32, fps: 12 },
+  titan: { walk: 'creep-boss-walk', death: 'creep-boss-death', s: 0.33, ds: 0.33, fps: 6 },
 }
 
 /** Экранная высота врага — для полосы HP, ореолов и подписей */
@@ -201,6 +214,11 @@ function drawEntities(ctx: CanvasRenderingContext2D, game: Game, view: ViewState
     const p = pointAtLength(c.dist)
     const s = toScreen(p.x, p.y)
     items.push({ y: s.y, draw: () => drawCreep(ctx, game, c, p, s) })
+  }
+  for (const e of game.effects) {
+    if (e.kind !== 'corpse' || game.time < e.born) continue
+    const s = toScreen(e.x, e.y)
+    items.push({ y: s.y, draw: () => drawCorpse(ctx, game, e, s) })
   }
   const av = toScreen(game.avatar.x, game.avatar.y)
   items.push({ y: av.y, draw: () => drawAvatar(ctx, game, av) })
@@ -380,7 +398,9 @@ function drawCreep(ctx: CanvasRenderingContext2D, game: Game, c: Creep, p: Vec, 
   }
 
   const art = CREEP_ART[c.kind]
-  if (art && drawAssetCreep(ctx, art.name, art.s, s, left, stunned ? 0 : game.time, c.uid)) {
+  if (drawAnimCreep(ctx, c, s, left, stunned ? 0 : game.time)) {
+    // кадры ходьбы из листа анимации
+  } else if (art && drawAssetCreep(ctx, art.name, art.s, s, left, stunned ? 0 : game.time, c.uid)) {
     // спрайт из листа нарисован
   } else {
     drawSprite(ctx, c.kind, s.x, s.y, game.time, c.uid, left, stunned, armorBody(c.armor))
@@ -417,6 +437,30 @@ function drawCreep(ctx: CanvasRenderingContext2D, game: Game, c: Creep, p: Vec, 
       ctx.stroke()
     }
   }
+}
+
+/** Ходьба по кадрам листа; false — листа нет или он ещё грузится (рисуется статичный спрайт) */
+function drawAnimCreep(ctx: CanvasRenderingContext2D, c: Creep, s: Vec, left: boolean, t: number) {
+  const anim = CREEP_ANIM[c.kind]
+  const frames = anim && assetFrames(anim.walk)
+  if (!anim || !frames) return false
+  const m = ASSETS[anim.walk]
+  ctx.fillStyle = 'rgba(14,22,52,0.42)'
+  ctx.beginPath()
+  ctx.ellipse(s.x + 2, s.y, m.w * anim.s * 0.36, m.w * anim.s * 0.13, 0, 0, Math.PI * 2)
+  ctx.fill()
+  const frame = t === 0 ? 0 : (t * anim.fps + c.uid * 3) % frames.length
+  return drawAssetFrame(ctx, anim.walk, frame, s.x, s.y, anim.s, left)
+}
+
+/** Гибель по кадрам; последний кадр держится и растворяется */
+function drawCorpse(ctx: CanvasRenderingContext2D, game: Game, e: Effect, s: Vec) {
+  const anim = e.creep && CREEP_ANIM[e.creep]
+  const frames = anim && assetFrames(anim.death)
+  if (!anim || !frames) return
+  const t = Math.min(1, (game.time - e.born) / e.dur)
+  const left = facingLeft.get(e.uid ?? -1) ?? false
+  drawAssetFrame(ctx, anim.death, Math.min(frames.length - 1, t * frames.length), s.x, s.y, anim.ds, left, t < 0.7 ? 1 : 1 - (t - 0.7) / 0.3)
 }
 
 /** Враг-спрайт: синяя тень, шаг — покачивание и лёгкий наклон вперёд */
@@ -549,7 +593,7 @@ function drawProjectiles(ctx: CanvasRenderingContext2D, game: Game, skin: Skin) 
 /** Кольца на земле: взрывы, оглушение, лечение — эллипсы в проекции */
 function drawGroundEffects(ctx: CanvasRenderingContext2D, game: Game) {
   for (const e of game.effects) {
-    if (e.kind === 'chain' || e.kind === 'beam') continue
+    if (e.kind === 'chain' || e.kind === 'beam' || e.kind === 'corpse') continue
     const t = (game.time - e.born) / e.dur
     if (t < 0 || t > 1) continue
     groundPath(ctx, () => ctx.arc(e.x, e.y, e.r * (0.35 + 0.65 * t), 0, Math.PI * 2))
@@ -646,39 +690,58 @@ function drawAvatar(ctx: CanvasRenderingContext2D, game: Game, s: Vec) {
     if (Math.abs(ts.x - s.x) > 2) hunterLeft = ts.x < s.x
   }
   const moving = !!av.target
-  drawSprite(ctx, 'hunter', s.x, s.y, moving ? game.time : 0, 7, hunterLeft, !moving)
+  drawSprite(ctx, game.avatarId, s.x, s.y, moving ? game.time : 0, 7, hunterLeft, !moving)
 }
 
 // ─── Подсказки поверх ────────────────────────────────────────────────────
 function drawBuildGhost(ctx: CanvasRenderingContext2D, view: ViewState) {
   if (!view.buildGhost) return
-  const { x, y, valid, range, glyph, defId } = view.buildGhost
-  const s = toScreen(x, y)
+  const { x, y, valid, range, glyph, defId, cells, color } = view.buildGhost
 
-  // радиус атаки выбранной башни
+  // режим постройки: карта слегка темнеет
+  ctx.save()
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.fillStyle = 'rgba(5,8,14,0.4)'
+  ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height)
+  ctx.restore()
+
+  // все свободные клетки — ромбы с пунктиром; выбранная — заливка цветом типа урона
+  ctx.lineWidth = 1.5
+  ctx.setLineDash([4, 3])
+  ctx.fillStyle = 'rgba(255,255,255,0.07)'
+  ctx.strokeStyle = 'rgba(255,255,255,0.4)'
+  for (const c of cells) {
+    if (c.x === x && c.y === y) continue
+    groundPath(ctx, () => ctx.rect(c.x - CELL / 2 + 2, c.y - CELL / 2 + 2, CELL - 4, CELL - 4))
+    ctx.fill()
+    ctx.stroke()
+  }
+  ctx.setLineDash([])
+
+  // радиус атаки: изометрический овал вокруг выбранной клетки
   groundPath(ctx, () => ctx.arc(x, y, range, 0, Math.PI * 2))
-  ctx.fillStyle = valid ? 'rgba(255,190,110,0.08)' : 'rgba(224,82,82,0.06)'
+  ctx.fillStyle = 'rgba(255,255,255,0.07)'
   ctx.fill()
-  ctx.strokeStyle = valid ? 'rgba(255,190,110,0.6)' : 'rgba(224,82,82,0.5)'
+  ctx.strokeStyle = color
   ctx.lineWidth = 1.5
   ctx.setLineDash([6, 5])
   ctx.stroke()
   ctx.setLineDash([])
 
-  // ромб клетки: зелёный — можно, красный — нельзя (как на референсе)
-  groundPath(ctx, () => ctx.rect(x - CELL / 2 + 1, y - CELL / 2 + 1, CELL - 2, CELL - 2))
-  ctx.fillStyle = valid ? 'rgba(95,208,106,0.25)' : 'rgba(232,64,46,0.25)'
+  groundPath(ctx, () => ctx.rect(x - CELL / 2 + 2, y - CELL / 2 + 2, CELL - 4, CELL - 4))
+  ctx.fillStyle = color + '73'
   ctx.fill()
-  ctx.strokeStyle = valid ? '#5fd06a' : '#e8402e'
+  ctx.strokeStyle = color
   ctx.lineWidth = 2
   ctx.stroke()
 
-  // полупрозрачная башня, если спрайт есть; иначе значок
+  // полупрозрачный «призрак» башни прямо на земле, без рамки
+  const s = toScreen(x, y)
   const def = defId ? ALL_DEFS[defId] : undefined
   const spr = def ? towerSprite(def, towerArt(def)) : null
   if (spr) {
     ctx.save()
-    ctx.globalAlpha = valid ? 0.7 : 0.35
+    ctx.globalAlpha = valid ? 0.8 : 0.4
     crispDraw(ctx, spr.cv, s.x - spr.ax * TOWER_SCALE, s.y + TOWER_FOOT - spr.h * TOWER_SCALE, spr.cv.width * TOWER_SCALE, spr.h * TOWER_SCALE)
     ctx.restore()
   } else {
@@ -690,22 +753,12 @@ function drawBuildGhost(ctx: CanvasRenderingContext2D, view: ViewState) {
     ctx.textBaseline = 'alphabetic'
     ctx.globalAlpha = 1
   }
-  if (!valid) {
-    ctx.strokeStyle = '#e8402e'
-    ctx.lineWidth = 3
-    ctx.beginPath()
-    ctx.moveTo(s.x - 9, s.y - 5)
-    ctx.lineTo(s.x + 9, s.y + 5)
-    ctx.moveTo(s.x + 9, s.y - 5)
-    ctx.lineTo(s.x - 9, s.y + 5)
-    ctx.stroke()
-  }
 }
 
 /** Подписи: башня под курсором, Разлом и лагерь, Колосс, имя и уровень Охотницы */
 function drawOverlayLabels(ctx: CanvasRenderingContext2D, game: Game, view: ViewState) {
   const text = (str: string, x: number, y: number, color: string, size = 10) => {
-    ctx.font = `bold ${size * labelScale}px "Courier New", monospace`
+    ctx.font = `700 ${size * labelScale}px Rubik, system-ui, sans-serif`
     ctx.textAlign = 'center'
     ctx.lineWidth = 3 * labelScale
     ctx.strokeStyle = 'rgba(0,0,0,0.85)'
@@ -730,8 +783,7 @@ function drawOverlayLabels(ctx: CanvasRenderingContext2D, game: Game, view: View
     text('КОЛОСС РАЗЛОМА', s.x, s.y - creepHeight(c) - 14, '#a6f095')
   }
   const av = toScreen(game.avatar.x, game.avatar.y)
-  text('ОХОТНИЦА', av.x, av.y + 16, '#7fd0a0', 9)
-  text(`ур.${game.avatar.level}`, av.x + 18, av.y - 30, '#7fd0a0', 9)
+  text(game.av.name.toUpperCase(), av.x, av.y + 16, game.av.color, 9)
 }
 
 function drawFloats(ctx: CanvasRenderingContext2D, game: Game) {

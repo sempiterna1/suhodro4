@@ -109,15 +109,15 @@ export function buildBackground(map: GameMap): HTMLCanvasElement {
   const infection = (wx: number, wy: number) => {
     const d = Math.hypot(wx - rift.x, (wy - rift.y) * 1.3)
     const n = hash(Math.floor(wx / 40), Math.floor(wy / 40), seed + 61)
-    return Math.max(0, Math.min(1, (330 - d) / 230)) * (0.65 + 0.35 * n)
+    return Math.max(0, Math.min(1, (270 - d) / 220)) ** 1.4 * (0.5 + 0.5 * n)
   }
   const infect = (c: [number, number, number], wx: number, wy: number, k: number): [number, number, number] => {
     if (k <= 0.05) return c
     // жилы — пересечение двух изогнутых волн; ближе к Разлому толще и ярче
     const f = Math.sin(wx * 0.045 + 2.3 * Math.sin(wy * 0.031)) * Math.sin(wy * 0.052 + 1.7 * Math.sin(wx * 0.027))
-    if (Math.abs(f) < 0.04 + k * 0.05) return k > 0.45 ? [110, 235, 140] : [62, 150, 98]
-    const t = k * 0.75
-    return [c[0] + (58 - c[0]) * t, c[1] + (84 - c[1]) * t, c[2] + (82 - c[2]) * t]
+    if (Math.abs(f) < 0.025 + k * 0.03) return k > 0.45 ? [74, 150, 122] : [58, 104, 100]
+    const t = k * 0.5
+    return [c[0] + (52 - c[0]) * t, c[1] + (78 - c[1]) * t, c[2] + (90 - c[2]) * t]
   }
 
   // замёрзшее озеро — на самом дальнем от тропы и от Разлома месте поля
@@ -438,13 +438,14 @@ export function buildBackground(map: GameMap): HTMLCanvasElement {
       // поляны: крупный шум по экрану прореживает лес, чтобы он не сливался в ковёр
       const dense = hash(Math.floor(x / 90), Math.floor(y / 70), seed + 77)
       const roll = r() / (0.55 + dense * 0.6)
-      if (infection(w.x, w.y) > 0.3) {
-        // мёртвый лес у Разлома
-        if (roll < 0.14) {
-          props.push({ name: 'crystal', x, y, s: 0.55 + r() * 0.5 })
-          if (r() < 0.5) mapLights.push({ x, y: y - 10, kind: 'crystal', seed: Math.floor(x) })
-        } else if (roll < 0.45) props.push({ name: 'prop-deadtree', x, y, s: 0.3 + r() * 0.1, flip: r() > 0.5 })
-        else if (roll < 0.52) props.push({ name: 'prop-rock', x, y, s: 0.24, flip: r() > 0.5 })
+      if (infection(w.x, w.y) > 0.35) {
+        // мёртвый лес у Разлома: редкие друзы среди мёртвых деревьев и елей
+        if (roll < 0.07) {
+          props.push({ name: 'crystal', x, y, s: 0.4 + r() * 0.3 })
+          if (r() < 0.3) mapLights.push({ x, y: y - 10, kind: 'crystal', seed: Math.floor(x) })
+        } else if (roll < 0.3) props.push({ name: 'prop-deadtree', x, y, s: 0.3 + r() * 0.1, flip: r() > 0.5 })
+        else if (roll < 0.52) props.push({ name: 'prop-pine', x, y, s: 0.3 + r() * 0.14, flip: r() > 0.5 })
+        else if (roll < 0.58) props.push({ name: 'prop-rock', x, y, s: 0.24, flip: r() > 0.5 })
         continue
       }
       if (roll < 0.5) props.push({ name: 'prop-pine', x, y, s: 0.3 + r() * 0.16, flip: r() > 0.5 })
@@ -727,8 +728,8 @@ function drawCrystal(ctx: CanvasRenderingContext2D, x: number, y: number, s: num
   const pulse = 0.75 + 0.25 * Math.sin(t * 1.6 + seed)
   ctx.save()
   const g = ctx.createRadialGradient(x, y - 8 * s, 0, x, y - 8 * s, 22 * s)
-  g.addColorStop(0, `rgba(110,235,140,${0.35 * pulse})`)
-  g.addColorStop(1, 'rgba(110,235,140,0)')
+  g.addColorStop(0, `rgba(90,170,150,${0.2 * pulse})`)
+  g.addColorStop(1, 'rgba(90,170,150,0)')
   ctx.fillStyle = g
   ctx.fillRect(x - 22 * s, y - 30 * s, 44 * s, 44 * s)
   ctx.fillStyle = 'rgba(14,22,52,0.4)'
@@ -751,19 +752,19 @@ function drawCrystal(ctx: CanvasRenderingContext2D, x: number, y: number, s: num
     ctx.lineTo(tx, ty - 2)
     ctx.lineTo(bx + w / 2 + 1, y + 1)
     ctx.fill()
-    ctx.fillStyle = '#9af0a8'
+    ctx.fillStyle = '#6fae9c'
     ctx.beginPath()
     ctx.moveTo(bx - w / 2, y)
     ctx.lineTo(tx, ty)
     ctx.lineTo(bx, y)
     ctx.fill()
-    ctx.fillStyle = '#3aa866'
+    ctx.fillStyle = '#2f7a68'
     ctx.beginPath()
     ctx.moveTo(bx, y)
     ctx.lineTo(tx, ty)
     ctx.lineTo(bx + w / 2, y)
     ctx.fill()
-    ctx.fillStyle = `rgba(230,255,235,${0.6 * pulse})`
+    ctx.fillStyle = `rgba(200,235,225,${0.35 * pulse})`
     ctx.fillRect(tx - 1, ty + 2, 2, Math.max(2, h * 0.25))
   }
   ctx.restore()
@@ -800,12 +801,12 @@ export function drawDrift(ctx: CanvasRenderingContext2D, t: number) {
 export function drawPortal(ctx: CanvasRenderingContext2D, t: number) {
   const { x, y } = roadEnds.entry
   ctx.save()
-  ctx.fillStyle = 'rgba(8,14,20,0.9)'
+  ctx.fillStyle = 'rgba(8,14,22,0.82)'
   ctx.beginPath()
   ctx.ellipse(x, y, 30, 14, 0, 0, Math.PI * 2)
   ctx.fill()
   for (let i = 0; i < 3; i++) {
-    ctx.strokeStyle = `rgba(110,230,130,${0.55 - i * 0.15})`
+    ctx.strokeStyle = `rgba(96,176,150,${0.32 - i * 0.08})`
     ctx.lineWidth = 2
     ctx.beginPath()
     ctx.ellipse(x, y, 24 - i * 7, 10 - i * 3, 0, t * (1.5 + i) , t * (1.5 + i) + Math.PI * 1.3)
@@ -816,10 +817,10 @@ export function drawPortal(ctx: CanvasRenderingContext2D, t: number) {
     const a = (i / 7) * Math.PI * 2 + 0.3
     const cx = x + Math.cos(a) * 32
     const cy = y + Math.sin(a) * 15
-    ctx.fillStyle = i % 2 ? '#5ad07a' : '#a6f095'
+    ctx.fillStyle = i % 2 ? '#2f7a68' : '#5f9c88'
     ctx.beginPath()
     ctx.moveTo(cx - 3, cy)
-    ctx.lineTo(cx, cy - 10 - (i % 3) * 3)
+    ctx.lineTo(cx, cy - 7 - (i % 3) * 2)
     ctx.lineTo(cx + 3, cy)
     ctx.fill()
   }

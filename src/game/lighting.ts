@@ -73,13 +73,13 @@ function collectLights(game: Game, t: number): Light[] {
     else if (m.kind === 'window') lights.push({ x: m.x, y: m.y, r: 56, i: 0.6, color: WARM, glow: 0.35 * f })
     else if (m.kind === 'lantern') lights.push({ x: m.x, y: m.y, r: 44 * f, i: 0.7, color: [255, 170, 80], glow: 0.45 * f })
     else if (m.kind === 'furnace') lights.push({ x: m.x, y: m.y, r: 52 * f, i: 0.75, color: [255, 120, 40], glow: 0.55 * f })
-    else if (m.kind === 'crystal') lights.push({ x: m.x, y: m.y, r: 34 * (0.85 + 0.15 * Math.sin(t * 1.7 + m.seed)), i: 0.5, color: MINERAL_RGB, glow: 0.45 })
+    else if (m.kind === 'crystal') lights.push({ x: m.x, y: m.y, r: 28 * (0.85 + 0.15 * Math.sin(t * 1.7 + m.seed)), i: 0.3, color: MINERAL_RGB, glow: 0.22 })
     else if (m.kind === 'search') {
       const sp = searchSpot(m, t)
       lights.push({ x: sp.x, y: sp.y, r: 44, i: 0.75, color: [210, 225, 255], glow: 0.35 })
     } else if (m.kind === 'beacon') {
       if (Math.sin(t * 3) > 0.2) lights.push({ x: m.x, y: m.y, r: 26, i: 0.6, color: [255, 50, 40], glow: 0.8 })
-    } else if (m.kind === 'portal') lights.push({ x: m.x, y: m.y, r: 90, i: 0.9, color: [110, 230, 120], glow: 0.5 * f })
+    } else if (m.kind === 'portal') lights.push({ x: m.x, y: m.y, r: 70, i: 0.55, color: [96, 190, 150], glow: 0.28 * f })
     else if (m.kind !== 'chimney') lights.push({ x: m.x, y: m.y, r: 60, i: 0.8, color: WARM, glow: 0.5 * f })
   }
   for (const tw of game.towers) {

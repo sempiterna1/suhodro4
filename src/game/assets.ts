@@ -34,6 +34,50 @@ export function registerAsset(name: string, img: CanvasImageSource) {
   cache.set(name, img)
 }
 
+const frameCache = new Map<string, HTMLCanvasElement[]>()
+
+/** Кадры листа анимации (кадры одной ширины `w` подряд) — по отдельному холсту на кадр; null, пока лист грузится */
+export function assetFrames(name: AssetName): HTMLCanvasElement[] | null {
+  const hit = frameCache.get(name)
+  if (hit) return hit
+  const im = asset(name) as HTMLCanvasElement | null
+  if (!im || typeof document === 'undefined') return null
+  const m = ASSETS[name]
+  const frames: HTMLCanvasElement[] = []
+  for (let x = 0; x + m.w <= im.width; x += m.w) {
+    const cv = document.createElement('canvas')
+    cv.width = m.w
+    cv.height = m.h
+    cv.getContext('2d')!.drawImage(im, x, 0, m.w, m.h, 0, 0, m.w, m.h)
+    frames.push(cv)
+  }
+  frameCache.set(name, frames)
+  return frames
+}
+
+/** Кадр анимации опорой в (x, y) — как drawAsset; false, если лист ещё не загружен */
+export function drawAssetFrame(
+  ctx: CanvasRenderingContext2D, name: AssetName, frame: number, x: number, y: number, scale: number, flip = false, alpha = 1
+): boolean {
+  const frames = assetFrames(name)
+  if (!frames || !frames.length) return false
+  const f = frames[Math.max(0, Math.min(frames.length - 1, Math.floor(frame)))]
+  const m = ASSETS[name]
+  const w = m.w * scale
+  const h = m.h * scale
+  ctx.save()
+  if (alpha < 1) ctx.globalAlpha *= alpha
+  if (flip) {
+    ctx.translate(x, 0)
+    ctx.scale(-1, 1)
+    crispDraw(ctx, f, -m.ax * scale, y - h, w, h)
+  } else {
+    crispDraw(ctx, f, x - m.ax * scale, y - h, w, h)
+  }
+  ctx.restore()
+  return true
+}
+
 export function preloadAssets() {
   for (const n of Object.keys(ASSETS) as AssetName[]) asset(n)
 }

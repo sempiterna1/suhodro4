@@ -45,6 +45,16 @@ const PALETTE: Record<string, string> = {
   c: '#275040', // тень плаща
   T: '#e8b48a', // лицо
   H: '#c06a2a', // волосы
+  R: '#b03a32', // красное знамя
+  r: '#6e2220',
+  M: '#a9b8cf', // латы
+  m: '#5f7391',
+  V: '#6a5ac8', // мантия мага
+  v: '#3e3478',
+  Y: '#d9a441', // золочёная отделка
+  O: '#c8742e', // куртка инженера
+  o: '#8a4a1c',
+  Q: '#9fd2ff', // стёкла очков
 }
 
 // ─── Спрайты: строки символов палитры, «.» — прозрачно. Все смотрят вправо ─
@@ -54,7 +64,7 @@ interface SpriteDef {
   bob?: number // покачивание по вертикали, LOW-пиксели (парящие)
 }
 
-export const SPRITES: Record<CreepKind | 'hunter', SpriteDef> = {
+export const SPRITES: Record<CreepKind | 'hunter' | 'voevoda' | 'archmage' | 'engineer', SpriteDef> = {
   // паровой паук: котёл-брюшко на шести лапах, труба с паром
   scuttler: {
     fps: 8,
@@ -391,6 +401,114 @@ export const SPRITES: Record<CreepKind | 'hunter', SpriteDef> = {
       ],
     ],
   },
+  // Воевода: латы, красное знамя на древке
+  voevoda: {
+    fps: 8,
+    frames: [
+      [
+        '....KKK..bRR',
+        '...KMMMK.bRR',
+        '..KMmTTK.bRr',
+        '..KMTTTK.b..',
+        '...KTTK..b..',
+        '..KMMMMK.b..',
+        '.KMMPMMMKb..',
+        '.KMMPMMMKB..',
+        '.KmMPMMmKb..',
+        '..KmPPmK.b..',
+        '..KpKKpK.b..',
+        '..Kp..Kp.b..',
+        '.Kpp..Kpp.b.',
+      ],
+      [
+        '....KKK..bRR',
+        '...KMMMK.bRR',
+        '..KMmTTK.bRr',
+        '..KMTTTK.b..',
+        '...KTTK..b..',
+        '..KMMMMK.b..',
+        '.KMMPMMMKb..',
+        '.KMMPMMMKB..',
+        '.KmMPMMmKb..',
+        '..KmPPmK.b..',
+        '..KpKKpK.b..',
+        '...KpKp..b..',
+        '..KppKpp.b..',
+      ],
+    ],
+  },
+  // Архимаг: остроконечный колпак, фиолетовая мантия, посох с кристаллом
+  archmage: {
+    fps: 8,
+    frames: [
+      [
+        '....K....gLg',
+        '...KVK...bg.',
+        '..KVVVK..b..',
+        '.KVVTTVK.b..',
+        '..KVTTK..b..',
+        '..KVVVVK.b..',
+        '.KVVYVVVKb..',
+        '.KVVYVVVKB..',
+        '.KvVYVVvKb..',
+        '..KvVVvK.b..',
+        '.KvvvvvvKb..',
+        '..KpKKpK.b..',
+        '..Kp..Kp.b..',
+      ],
+      [
+        '....K....gLg',
+        '...KVK...bg.',
+        '..KVVVK..b..',
+        '.KVVTTVK.b..',
+        '..KVTTK..b..',
+        '..KVVVVK.b..',
+        '.KVVYVVVKb..',
+        '.KVVYVVVKB..',
+        '.KvVYVVvKb..',
+        '..KvVVvK.b..',
+        '.KvvvvvvKb..',
+        '...KpKp..b..',
+        '..KppKpp.b..',
+      ],
+    ],
+  },
+  // Инженер: очки-гогглы, латунный шлем, оранжевая куртка, гаечный ключ
+  engineer: {
+    fps: 8,
+    frames: [
+      [
+        '....KKK.....',
+        '...KYYYK....',
+        '..KYQQQYK...',
+        '..KTTTTK..B.',
+        '...KTTK..Bb.',
+        '..KOOOOK.b..',
+        '.KOOYOOOKb..',
+        '.KOOYOOOKb..',
+        '.KoOYOOoKB..',
+        '..KoYYoK.b..',
+        '..KpKKpK....',
+        '..Kp..Kp....',
+        '.Kpp..Kpp...',
+      ],
+      [
+        '....KKK.....',
+        '...KYYYK....',
+        '..KYQQQYK...',
+        '..KTTTTK..B.',
+        '...KTTK..Bb.',
+        '..KOOOOK.b..',
+        '.KOOYOOOKb..',
+        '.KOOYOOOKb..',
+        '.KoOYOOoKB..',
+        '..KoYYoK.b..',
+        '..KpKKpK....',
+        '...KpKp.....',
+        '..KppKpp....',
+      ],
+    ],
+  },
   // Охотница: капюшон-плащ, латунный лук
   hunter: {
     fps: 8,
@@ -449,6 +567,26 @@ function buildSprite(rows: string[], body: string, flip: boolean): HTMLCanvasEle
     }
   }
   return cv
+}
+
+const portraitCache = new Map<string, string>()
+/** Портрет аватара для HUD и выбора: первый кадр спрайта, крупно, без сглаживания (data URL) */
+export function avatarPortrait(id: 'hunter' | 'voevoda' | 'archmage' | 'engineer', scale = 4): string {
+  if (typeof document === 'undefined') return ''
+  const key = id + scale
+  let url = portraitCache.get(key)
+  if (!url) {
+    const src = buildSprite(SPRITES[id].frames[0], '#888888', false)
+    const cv = document.createElement('canvas')
+    cv.width = src.width * scale
+    cv.height = src.height * scale
+    const g = cv.getContext('2d')!
+    g.imageSmoothingEnabled = false
+    g.drawImage(src, 0, 0, cv.width, cv.height)
+    url = cv.toDataURL()
+    portraitCache.set(key, url)
+  }
+  return url
 }
 
 function sprite(id: keyof typeof SPRITES, frame: number, body: string, flip: boolean) {

@@ -228,5 +228,65 @@
   "w": 97,
   "h": 133,
   "ax": 50
+ },
+ "creep-scout-walk": {
+  "w": 176,
+  "h": 144,
+  "ax": 88
+ },
+ "creep-scout-death": {
+  "w": 136,
+  "h": 100,
+  "ax": 68
+ },
+ "creep-runner-walk": {
+  "w": 103,
+  "h": 143,
+  "ax": 50
+ },
+ "creep-runner-death": {
+  "w": 188,
+  "h": 131,
+  "ax": 150
+ },
+ "creep-shield-walk": {
+  "w": 107,
+  "h": 129,
+  "ax": 58
+ },
+ "creep-shield-death": {
+  "w": 169,
+  "h": 119,
+  "ax": 135
+ },
+ "creep-bruiser-walk": {
+  "w": 145,
+  "h": 136,
+  "ax": 61
+ },
+ "creep-bruiser-death": {
+  "w": 177,
+  "h": 124,
+  "ax": 142
+ },
+ "creep-wolf-walk": {
+  "w": 179,
+  "h": 68,
+  "ax": 75
+ },
+ "creep-wolf-death": {
+  "w": 161,
+  "h": 113,
+  "ax": 129
+ },
+ "creep-boss-walk": {
+  "w": 234,
+  "h": 171,
+  "ax": 115
+ },
+ "creep-boss-death": {
+  "w": 225,
+  "h": 156,
+  "ax": 180
  }
 }
