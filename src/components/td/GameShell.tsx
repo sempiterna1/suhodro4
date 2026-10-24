@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Game } from '@/game/engine'
 import { clampCamera, render, viewScale, type Skin, type ViewState } from '@/game/render'
-import { ALL_DEFS, AVATARS, AVATAR_IDS, CELL, MAP_DEFS, MAP_H, MAP_W, type AvatarId } from '@/game/config'
+import { ALL_DEFS, CELL, MAP_DEFS, MAP_H, MAP_W } from '@/game/config'
 import { GRID_H, GRID_W, snapToCell } from '@/game/map'
 import { insideField, toScreen, toWorld } from '@/game/iso'
 import { preloadAssets } from '@/game/assets'
@@ -27,8 +27,9 @@ import {
   Arsenal, BuildConfirmButton, CenterNotices, DMG_COLORS, HeroButtons, PricePlaque, StartButton, TopBar, WaveBanner, type MenuActions,
 } from './Hud'
 import { Sfx } from '@/game/audio'
-import { avatarPortrait, towerThumb } from '@/game/pixel'
+import { towerThumb } from '@/game/pixel'
 import { TowerInfoCard } from './TowerInfo'
+import { MainMenu } from './MainMenu'
 import { MoveIcon, TrashIcon } from './icons'
 import { useToast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
@@ -1153,125 +1154,25 @@ export default function GameShell() {
             aria-label={`Карта игры ${ui.mapName}`}
           />
 
-          {/* Интро (одиночка / хост без лобби) */}
+          {/* Интро (одиночка / хост без лобби) — пошаговое меню: главная → карта → герой */}
           {mpRole !== 'guest' && ui.phase === 'intro' && !showInvite && (
-            <div className="absolute inset-0 flex items-center justify-center bg-[#070a10]/85 p-4 backdrop-blur-[2px]">
-              <motion.div
-                initial={{ y: 16, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                className="relative max-h-full max-w-lg overflow-y-auto rounded-md border-2 border-[#7088a8] bg-gradient-to-b from-[#1b2433] to-[#0c111a] px-5 py-5 text-center shadow-[inset_0_0_0_2px_#2a3548,0_10px_30px_rgba(0,0,0,0.7)] sm:px-8 sm:py-7"
-                style={{ zoom: uiScale }}
-              >
-                <p className="mb-1 font-mono text-[10px] uppercase tracking-[0.3em] text-[#5b6f8c]">
-                  паропанк · tower defense · прототип
-                </p>
-                {/* логотип игры (public/logo-the-last-horizon.png) вместо текстового заголовка */}
-                <h1 className="mb-3 select-none">
-                  <img
-                    src="/logo-the-last-horizon.png"
-                    alt="Последний горизонт"
-                    className="mx-auto w-full max-w-[430px] drop-shadow-[0_8px_24px_rgba(0,0,0,0.85)]"
-                    draggable={false}
-                  />
-                </h1>
-                <p className="mb-4 text-xs leading-relaxed text-[#b8c6d8] sm:text-sm">
-                  Новый минерал убил восемь из десяти людей — и он живой: меняет зверей, лес и машины.
-                  Заражённые идут по тракту к лагерю беженцев. Ставьте башни, сливайте их
-                  в уникальные и продержитесь <b className="text-[#ffc46b]">20 волн</b> до Колосса Разлома.
-                  Иногда на связь выходит ИИ. Он помогает — но не говорит почему.
-                </p>
-                {/* выбор карты (GDD: «Карты и сложности»; у каждой карты 20 волн) */}
-                <div className="mb-4">
-                  <p className="mb-1.5 font-mono text-[10px] uppercase tracking-[0.25em] text-[#5b6f8c]">Карта · 20 волн</p>
-                  <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-                    {MAP_DEFS.map((m) => {
-                      const picked = ui.mapName === m.name
-                      return (
-                        <button
-                          key={m.id}
-                          type="button"
-                          onClick={() => {
-                            game.selectMap(m.seed)
-                            setUi(game.getUiState())
-                          }}
-                          className={`flex flex-col items-center gap-0.5 rounded border-2 bg-gradient-to-b from-[#172030] to-[#0a0f17] px-1.5 py-1.5 text-center transition-colors ${picked ? 'border-[#ffc46b] shadow-[0_0_12px_#ffd70055]' : 'border-[#2e3c52] opacity-75 hover:opacity-100'}`}
-                          title={m.feature}
-                        >
-                          <span className="font-serif text-xs font-black leading-tight text-[#ccd8e6]">{m.name}</span>
-                          <span className="text-[9px] leading-tight text-[#7088a8]">{m.feature}</span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-                {/* выбор аватара (GDD: 4 архетипа) */}
-                <div className="mb-4">
-                  <p className="mb-1.5 font-mono text-[10px] uppercase tracking-[0.25em] text-[#5b6f8c]">Выберите героя</p>
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    {AVATAR_IDS.map((id) => {
-                      const a = AVATARS[id]
-                      const picked = ui.avatar.id === id
-                      return (
-                        <button
-                          key={id}
-                          type="button"
-                          onClick={() => {
-                            game.setAvatar(id)
-                            setUi(game.getUiState())
-                          }}
-                          className={`flex flex-col items-center gap-1 rounded border-2 bg-gradient-to-b from-[#172030] to-[#0a0f17] px-1.5 py-2 text-center transition-colors ${picked ? 'shadow-[0_0_12px_#ffd70066]' : 'opacity-75 hover:opacity-100'}`}
-                          style={{ borderColor: picked ? a.color : '#2e3c52' }}
-                          title={`${a.abilityName}: ${a.abilityDesc}`}
-                        >
-                          <AvatarImg id={id} />
-                          <span className="font-serif text-sm font-black leading-none" style={{ color: a.color }}>{a.name}</span>
-                          <span className="text-[10px] leading-tight text-[#b9c6d8]">{a.role}</span>
-                          <span className="text-[9px] leading-tight text-[#7088a8]">{a.abilityName} · {a.abilityCd} с</span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                  <p className="mt-1.5 min-h-[2.4em] text-[11px] leading-snug text-[#94a3b8]">
-                    <b style={{ color: AVATARS[ui.avatar.id].color }}>{AVATARS[ui.avatar.id].abilityName}:</b> {AVATARS[ui.avatar.id].abilityDesc}.{' '}
-                    <span className="text-[#7088a8]">Пассивно: {AVATARS[ui.avatar.id].passive.toLowerCase()}.</span>
-                  </p>
-                </div>
-                <div className="mb-5 flex flex-wrap justify-center gap-2 text-[10px] text-[#94a3b8]">
-                  {['15 башен', 'ролл арсенала', 'слияние', '6 карт · 20 волн', 'кооп по ссылке'].map((t) => (
-                    <span key={t} className="rounded border border-[#5b6f8c55] px-2 py-1">{t}</span>
-                  ))}
-                </div>
-                <div className="flex flex-wrap justify-center gap-2">
-                  <Button
-                    onClick={() => game.beginPreview()}
-                    className="h-11 border-2 border-[#93a9c6] bg-gradient-to-b from-[#2e3c52] to-[#1f2a3b] px-6 font-serif text-base font-bold text-[#ffd700] hover:from-[#34475f]"
-                  >
-                    ⚙ Начать игру
-                  </Button>
-                  <Button
-                    onClick={doCreateLobby}
-                    variant="outline"
-                    className="h-11 border-2 border-[#7fd0a0] bg-[#1f2d24] px-5 text-sm font-bold text-[#7fd0a0] hover:bg-[#243a2c]"
-                  >
-                    ⚔ Играть вдвоём
-                  </Button>
-                  <Button
-                    onClick={() => setHelpOpen(true)}
-                    variant="outline"
-                    className="h-11 border-[#5b6f8c] bg-transparent px-4 text-sm text-[#ccd8e6] hover:bg-[#1f2a3b]"
-                  >
-                    Как играть
-                  </Button>
-                  <Button
-                    onClick={toggleFullscreen}
-                    variant="outline"
-                    className="h-11 border-[#5b6f8c] bg-transparent px-4 text-sm text-[#ccd8e6] hover:bg-[#1f2a3b]"
-                  >
-                    {fullscreen ? 'Окно' : 'На весь экран'}
-                  </Button>
-                </div>
-              </motion.div>
-            </div>
+            <MainMenu
+              ui={ui}
+              uiScale={uiScale}
+              fullscreen={fullscreen}
+              onPickMap={(seed) => {
+                game.selectMap(seed)
+                setUi(game.getUiState())
+              }}
+              onPickAvatar={(id) => {
+                game.setAvatar(id)
+                setUi(game.getUiState())
+              }}
+              onStart={() => game.beginPreview()}
+              onStartCoop={doCreateLobby}
+              onHelp={() => setHelpOpen(true)}
+              onToggleFullscreen={toggleFullscreen}
+            />
           )}
 
           {/* Лобби хоста (ожидание друга; onStart доступен и без друга) */}
@@ -1502,16 +1403,6 @@ export default function GameShell() {
 }
 
 
-
-/** Портрет аватара: рисуется на холсте, поэтому подставляется после монтирования (без расхождения при гидратации) */
-function AvatarImg({ id }: { id: AvatarId }) {
-  const [src, setSrc] = useState('')
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- холст доступен только в браузере
-    setSrc(avatarPortrait(id, 3))
-  }, [id])
-  return <img src={src || undefined} alt="" className="h-10 w-10 object-contain" style={{ imageRendering: 'pixelated' }} draggable={false} />
-}
 
 function Stats({ ui }: { ui: UiState }) {
   return (
