@@ -88,43 +88,85 @@ function cellsFromCorners(corners: Cell[]): Cell[] {
   return cells
 }
 
-const MIN_CELLS = 44 // тропа не короче (прототип: ~48 клеток)
-const MAX_CELLS = 70
+const MIN_CELLS = 56 // тропа не короче (поле 32×18, дорога длинная)
+const MAX_CELLS = 100
 // вторая тропа может быть короче: это дополнительная угроза, объявленная заранее
-const MIN_CELLS2 = 32
-const MAX_CELLS2 = 80
+const MIN_CELLS2 = 40
+const MAX_CELLS2 = 110
 
 /**
- * Карта по зерну. Тропа идёт слева направо «змейкой»: горизонтальные отрезки по 3–6 клеток
- * (между вертикалями остаётся минимум 2 свободных столбца под башни) и вертикальные
- * отрезки по 4–11 клеток, чередуя направление. Не пересекается сама с собой.
+ * Тропа «меандром» (v3): случайный обход по сетке с инерцией — любит идти прямо,
+ * поворачивает с шансом, тянет на восток, иногда заворачивает назад. Следующая клетка
+ * не может быть соседней с тропой (кроме клетки, откуда пришли), поэтому между витками
+ * всегда остаётся клетка под башню и тропа не касается себя. Вход — левый край, выход —
+ * правый; не меньше MIN_TURNS поворотов. null — попытка не удалась (вышла в тупик).
+ */
+const MIN_TURNS = 6
+const MAX_WALK = 130 // предохранитель длины одного обхода
+
+function meanderCells(rand: () => number): Cell[] | null {
+  const ri = (a: number, b: number) => a + Math.floor(rand() * (b - a + 1))
+  let x = 0
+  let y = ri(2, GRID_H - 3)
+  const cells: Cell[] = [{ cx: x, cy: y }]
+  const onPath = new Set<string>([x + ',' + y])
+  let dx = 1
+  let dy = 0
+  let turns = 0
+  while (x < GRID_W - 1 && cells.length < MAX_WALK) {
+    // выбор направления: на восток тянет сильнее, текущее направление — инерция
+    const options: { dx: number; dy: number; w: number }[] = [
+      { dx: 1, dy: 0, w: 10 },
+      { dx: -1, dy: 0, w: x >= 3 ? 2 : 0 },
+      { dx: 0, dy: -1, w: y > 1 ? 4 : 0 },
+      { dx: 0, dy: 1, w: y < GRID_H - 2 ? 4 : 0 },
+    ]
+    for (const o of options) if (o.dx === dx && o.dy === dy) o.w *= 3
+    const valid = options.filter((o) => {
+      if (o.w <= 0) return false
+      const nx = x + o.dx
+      const ny = y + o.dy
+      if (onPath.has(nx + ',' + ny)) return false
+      // не прижиматься к тропе боком: из четырёх соседей кандидата занят может быть только текущий
+      for (const [ax, ay] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const k = (nx + ax) + ',' + (ny + ay)
+        if (onPath.has(k) && !(nx + ax === x && ny + ay === y)) return false
+      }
+      return true
+    })
+    if (valid.length === 0) break // тупик
+    let pick = valid[0]
+    const total = valid.reduce((s, o) => s + o.w, 0)
+    let roll = rand() * total
+    for (const o of valid) {
+      roll -= o.w
+      if (roll <= 0) {
+        pick = o
+        break
+      }
+    }
+    if (pick.dx !== dx || pick.dy !== dy) turns++
+    dx = pick.dx
+    dy = pick.dy
+    x += dx
+    y += dy
+    cells.push({ cx: x, cy: y })
+    onPath.add(x + ',' + y)
+  }
+  if (x !== GRID_W - 1 || turns < MIN_TURNS) return null
+  return cells
+}
+
+/**
+ * Карта по зерну: тропа «меандром» от левого края к правому (см. meanderCells).
+ * У карт с MapDef.secondExitWave есть и вторая тропа (GDD «Второй выход»).
  */
 export function generateMap(seed: number): GameMap {
   if (seed === 0) return CLASSIC_MAP
   const rand = mulberry32(seed)
-  const ri = (a: number, b: number) => a + Math.floor(rand() * (b - a + 1))
-  for (let attempt = 0; attempt < 200; attempt++) {
-    let cy = ri(2, GRID_H - 3)
-    const corners: Cell[] = [{ cx: 0, cy }]
-    let cx = ri(2, 5)
-    corners.push({ cx, cy })
-    let dir = cy < GRID_H / 2 ? 1 : -1
-    while (cx < GRID_W - 1) {
-      // вертикаль: в пределах 1..GRID_H-2, чтобы у краёв оставались клетки под башни
-      const room = dir > 0 ? GRID_H - 2 - cy : cy - 1
-      if (room >= 4) {
-        cy += dir * ri(4, Math.min(11, room))
-        corners.push({ cx, cy })
-      }
-      dir = -dir
-      // горизонталь к следующей вертикали или к правому краю
-      const step = ri(3, 6)
-      cx = Math.min(GRID_W - 1, cx + step)
-      if (GRID_W - 1 - cx < 3) cx = GRID_W - 1 // не оставлять огрызок у края
-      corners.push({ cx, cy })
-    }
-    const cells = cellsFromCorners(corners)
-    if (cells.length < MIN_CELLS || cells.length > MAX_CELLS) continue
+  for (let attempt = 0; attempt < 500; attempt++) {
+    const cells = meanderCells(rand)
+    if (!cells || cells.length < MIN_CELLS || cells.length > MAX_CELLS) continue
     const map: GameMap = { seed, cells, points: pointsFromCells(cells) }
     if (mapDefBySeed(seed).secondExitWave) {
       const cells2 = secondPathCells(seed, cells)
@@ -238,7 +280,7 @@ function secondPathCells(seed: number, primary: Cell[]): Cell[] | null {
     // вход — верхняя кромка, выход — правая; желательно в двух клетках от первой тропы
     let entry: Cell | null = null
     for (let t = 0; t < 10 && !entry; t++) {
-      const c = { cx: ri(0, 12), cy: 0 }
+      const c = { cx: ri(0, Math.floor(GRID_W / 2)), cy: 0 }
       if (t < 9 ? far(c.cx, c.cy) : free(c.cx, c.cy)) entry = c
     }
     let exit: Cell | null = null
@@ -286,8 +328,8 @@ function secondPathCells(seed: number, primary: Cell[]): Cell[] | null {
 /** Классическая змейка прототипа на сетке (зерно 0) — для тестов и как запасная карта */
 export const CLASSIC_MAP: GameMap = (() => {
   const cells = cellsFromCorners([
-    { cx: 0, cy: 3 }, { cx: 6, cy: 3 }, { cx: 6, cy: 11 }, { cx: 12, cy: 11 },
-    { cx: 12, cy: 3 }, { cx: 18, cy: 3 }, { cx: 18, cy: 11 }, { cx: 23, cy: 11 },
+    { cx: 0, cy: 4 }, { cx: 8, cy: 4 }, { cx: 8, cy: 13 }, { cx: 16, cy: 13 },
+    { cx: 16, cy: 4 }, { cx: 24, cy: 4 }, { cx: 24, cy: 13 }, { cx: 31, cy: 13 },
   ])
   return { seed: 0, cells, points: pointsFromCells(cells) }
 })()

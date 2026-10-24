@@ -343,23 +343,27 @@ export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasEle
   }
 
   // лагерь беженцев за выходом (лор GDD): сердце паровой базы — генератор, вокруг палатки,
-  // лазарет, мастерская и склад базы, сани и ящики; частокол с воротами у дороги
-  const gen = add('bld-generator', 1080, 330, 0.72)
+  // лазарет, мастерская и склад базы, сани и ящики; частокол с воротами у дороги.
+  // Все координаты — относительно краёв поля (MAP_W/MAP_H), экранная зона лагеря — доли холста
+  const CAMP_X = MAP_W + 120 // генератор — сердце лагеря за правым краем поля
+  const CAMP_Y = Math.round(MAP_H * 0.55)
+  const gen = add('bld-generator', CAMP_X, CAMP_Y, 0.72)
   mapLights.push({ x: gen.x, y: gen.y - 58, kind: 'generator', seed: 7 })
   const houses: AssetName[] = ['prop-tent', 'bld-medical', 'prop-tent', 'bld-workshop', 'prop-cabin', 'prop-tent', 'bld-heater', 'prop-shed', 'bld-depot']
   // паровая база стоит рядом с генератором: на ней беженцы идут дальше (лор GDD)
-  const placed: { x: number; y: number }[] = [{ x: 1080, y: 330 }]
+  const placed: { x: number; y: number }[] = [{ x: CAMP_X, y: CAMP_Y }]
   const spots: [number, number][] = []
-  for (let by = 60; by < MAP_H; by += 20) for (let bx = 1000; bx < 1300; bx += 20) spots.push([bx, by])
+  for (let by = MAP_H * 0.1; by < MAP_H; by += 20)
+    for (let bx = MAP_W + 40; bx < MAP_W + 340; bx += 20) spots.push([bx, by])
   // ближе к зрителю и левее генератора — там её не загораживают дома
   const want = (q: [number, number]) => {
     const sp = toScreen(q[0], q[1])
-    return Math.abs(sp.x - 700) + Math.abs(sp.y - 520)
+    return Math.abs(sp.x - MAP_W * 0.727) + Math.abs(sp.y - MAP_H * 0.867)
   }
   spots.sort((a, b) => want(a) - want(b))
   for (const [bx, by] of spots) {
     const p = toScreen(bx, by)
-    if (p.x < 620 || p.x > 880 || p.y > 548 || nearExit(by, 70) || Math.hypot(bx - 1080, by - 330) < 130) continue
+    if (p.x < MAP_W * 0.646 || p.x > MAP_W * 0.917 || p.y > MAP_H * 0.913 || nearExit(by, 70) || Math.hypot(bx - CAMP_X, by - CAMP_Y) < 130) continue
     const sc = 0.6
     const base = steamBase()
     add('baked', bx, by, sc, { baked: base })
@@ -370,9 +374,9 @@ export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasEle
     break
   }
   // радиомачта лагеря: через неё выходит на связь ИИ
-  for (const [mx, my] of [[1010, 150], [1010, 520], [1040, 80]]) {
+  for (const [mx, my] of [[MAP_W + 50, MAP_H * 0.25], [MAP_W + 50, MAP_H * 0.867], [MAP_W + 80, MAP_H * 0.13]] as [number, number][]) {
     const p = toScreen(mx, my)
-    if (p.x > 930 || p.y > 590 || nearExit(my, 50) || placed.some((q) => Math.hypot(q.x - mx, q.y - my) < 50)) continue
+    if (p.x > MAP_W - 30 || p.y > MAP_H - 10 || p.x < MAP_W * 0.583 || nearExit(my, 50) || placed.some((q) => Math.hypot(q.x - mx, q.y - my) < 50)) continue
     const mast = radioMast()
     add('baked', mx, my, 0.8, { baked: mast })
     placed.push({ x: mx, y: my })
@@ -380,12 +384,12 @@ export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasEle
     break
   }
   let hi = Math.floor(r() * houses.length)
-  for (let wy = 60; wy < MAP_H; wy += 58) {
-    for (let wx = 1010; wx < 1400; wx += 64) {
+  for (let wy = MAP_H * 0.1; wy < MAP_H; wy += 58) {
+    for (let wx = MAP_W + 50; wx < MAP_W + 440; wx += 64) {
       const x = wx + (r() - 0.5) * 20
       const y = wy + (r() - 0.5) * 20
       const p = toScreen(x, y)
-      if (p.x > 930 || p.y > 590 || p.x < 560) continue
+      if (p.x > MAP_W - 30 || p.y > MAP_H - 10 || p.x < MAP_W * 0.583) continue
       if (nearExit(y, 48)) continue
       if (placed.some((q) => Math.hypot(q.x - x, q.y - y) < 70)) continue
       placed.push({ x, y })
@@ -396,10 +400,10 @@ export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasEle
   }
   // костры лагеря: вокруг них греются беженцы
   for (let i = 0, made = 0; i < 30 && made < 2; i++) {
-    const x = 1010 + r() * 220
-    const y = 60 + r() * 500
+    const x = MAP_W + 50 + r() * 220
+    const y = MAP_H * 0.1 + r() * MAP_H * 0.83
     const p = toScreen(x, y)
-    if (p.x > 920 || p.y > 586 || p.x < 600 || nearExit(y, 40)) continue
+    if (p.x > MAP_W - 40 || p.y > MAP_H - 14 || p.x < MAP_W * 0.625 || nearExit(y, 40)) continue
     if (placed.some((q) => Math.hypot(q.x - x, q.y - y) < 50)) continue
     placed.push({ x, y })
     add('fire', x, y, 1)
@@ -409,7 +413,7 @@ export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasEle
   // фонари вдоль дорог за краем поля — тропа к Разлому и к лагерю освещена
   const roadLamp = (x: number, y: number, i: number) => {
     const p = toScreen(x, y)
-    if (p.x < 6 || p.x > 950 || p.y < 20 || p.y > 594) return
+    if (p.x < 6 || p.x > MAP_W - 10 || p.y < 20 || p.y > MAP_H - 6) return
     if (placed.some((q) => Math.hypot(q.x - x, q.y - y) < 30)) return
     placed.push({ x, y })
     add('prop-lamp2', x, y, 0.32)
@@ -420,10 +424,10 @@ export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasEle
 
   // скарб беженцев между палатками
   for (let i = 0; i < 40 && placed.length < 26; i++) {
-    const x = 1000 + r() * 260
-    const y = 40 + r() * 540
+    const x = MAP_W + 40 + r() * 260
+    const y = MAP_H * 0.067 + r() * MAP_H * 0.9
     const p = toScreen(x, y)
-    if (p.x > 935 || p.y > 594 || p.x < 570 || nearExit(y, 30)) continue
+    if (p.x > MAP_W - 25 || p.y > MAP_H - 6 || p.x < MAP_W * 0.594 || nearExit(y, 30)) continue
     if (placed.some((q) => Math.hypot(q.x - x, q.y - y) < 34)) continue
     placed.push({ x, y })
     const name = pick<AssetName>(['prop-crate', 'prop-barrel', 'prop-crates', 'prop-sled', 'prop-box', 'prop-lamp'])

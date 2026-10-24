@@ -24,10 +24,10 @@ check('карт в реестре ≥ 6', MAP_DEFS.length >= 6, `${MAP_DEFS.leng
 check('зёрна карт уникальны', new Set(MAP_DEFS.map((m) => m.seed)).size === MAP_DEFS.length)
 for (const m of MAP_DEFS) {
   const map = generateMap(m.seed)
-  check(`карта «${m.name}» (seed=${m.seed}) генерируется`, map.cells.length >= 40 && map.cells.length <= 72, `${map.cells.length} клеток`)
+  check(`карта «${m.name}» (seed=${m.seed}) генерируется`, map.cells.length >= 55 && map.cells.length <= 100, `${map.cells.length} клеток`)
   check(`зерно ${m.seed} детерминировано`, JSON.stringify(generateMap(m.seed)) === JSON.stringify(map))
 }
-check('mapDefBySeed находит по зерну', mapDefBySeed(1).id === 'pass')
+check('mapDefBySeed находит по зерну', mapDefBySeed(3).id === 'pass' && mapDefBySeed(47).id === 'mill' && mapDefBySeed(8).id === 'valley')
 check('mapDefBySeed: чужое зерно → «Пограничный тракт»', mapDefBySeed(999999).id === 'tract')
 
 // ── Волны ──

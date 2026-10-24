@@ -635,9 +635,9 @@ export const ALL_DEFS: Record<string, TowerDef | MergeDef> = Object.fromEntries(
 
 // ─── Поле и сетка ────────────────────────────────────────────────────────
 // Тропа генерируется по зерну для каждой игры — см. map.ts (зерно 0 — классическая змейка)
-export const MAP_W = 960
-export const MAP_H = 600
-export const CELL = 40 // сетка 24×15 клеток; одна башня — одна клетка
+export const MAP_W = 1280
+export const MAP_H = 720
+export const CELL = 40 // сетка 32×18 клеток; одна башня — одна клетка
 
 export const PATH_WIDTH = 36 // ширина настила тропы (меньше клетки — видны края)
 
@@ -662,11 +662,11 @@ export interface MapDef {
 
 export const MAP_DEFS: MapDef[] = [
   { id: 'tract', name: 'Пограничный тракт', feature: 'обучающая: простая тропа, много мест', seed: 0, creepSpeedMult: 1, universalExtra: 0 },
-  { id: 'mill', name: 'Старая мельница', feature: 'длинная петля — простор для площадных башен', seed: 3, creepSpeedMult: 1, universalExtra: 0 },
-  { id: 'bridge', name: 'Каменный мост', feature: 'тропа извилиста, мест мало — сливайте башни', seed: 2, creepSpeedMult: 1, universalExtra: 0 },
-  { id: 'mines', name: 'Заброшенные шахты', feature: 'короткая тропа — максимум мест под стройку', seed: 10, creepSpeedMult: 1, universalExtra: 0 },
-  { id: 'pass', name: 'Ледяной перевал', feature: 'заражённые быстрее на 10%', seed: 1, creepSpeedMult: 1.1, universalExtra: 0 },
-  { id: 'valley', name: 'Пепельная долина', feature: 'универсальные враги в каждой волне; с 16-й волны — второй выход', seed: 6, creepSpeedMult: 1, universalExtra: 6, secondExitWave: 16 },
+  { id: 'mill', name: 'Старая мельница', feature: 'длинная петля — простор для площадных башен', seed: 47, creepSpeedMult: 1, universalExtra: 0 },
+  { id: 'bridge', name: 'Каменный мост', feature: 'тропа извилиста, мест мало — сливайте башни', seed: 1, creepSpeedMult: 1, universalExtra: 0 },
+  { id: 'mines', name: 'Заброшенные шахты', feature: 'короткая тропа — максимум мест под стройку', seed: 150, creepSpeedMult: 1, universalExtra: 0 },
+  { id: 'pass', name: 'Ледяной перевал', feature: 'заражённые быстрее на 10%', seed: 3, creepSpeedMult: 1.1, universalExtra: 0 },
+  { id: 'valley', name: 'Пепельная долина', feature: 'универсальные враги в каждой волне; с 16-й волны — второй выход', seed: 8, creepSpeedMult: 1, universalExtra: 6, secondExitWave: 16 },
 ]
 
 /** Определение карты по зерну (зерно уникально в рамках MAP_DEFS) */

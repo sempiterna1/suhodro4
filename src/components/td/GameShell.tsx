@@ -1135,10 +1135,10 @@ export default function GameShell() {
           : 'fixed inset-0 overflow-hidden bg-[#070b14]'
       }
     >
-      <div ref={fieldRef} className={desktop ? 'relative w-full lg:min-h-0 lg:flex-1' : 'absolute inset-0'}>
+      <div ref={fieldRef} className="absolute inset-0">
         <div
-          className={desktop ? 'relative mx-auto overflow-hidden lg:absolute lg:inset-0 lg:m-auto' : 'absolute inset-0 overflow-hidden'}
-          style={desktop ? { width: stage.w, height: stage.h } : undefined}
+          className="absolute inset-0 m-auto overflow-hidden"
+          style={{ width: stage.w, height: stage.h }}
         >
           <canvas
             ref={canvasRef}
@@ -1378,10 +1378,14 @@ export default function GameShell() {
         )}
       </div>
 
-      {/* нижняя стальная панель — под полем, не перекрывает его */}
+      {/* нижняя стальная панель — оверлей поверх поля (игра занимает весь экран) */}
       <AnimatePresence>
         {hudOn && desktop && (
-          <motion.div key="bottom" className="flex shrink-0 items-center justify-center gap-5 px-3 pb-2 pt-3" style={{ zoom: uiScale }}>
+          <motion.div
+            key="bottom"
+            className="pointer-events-auto absolute inset-x-0 bottom-0 z-10 flex items-center justify-center gap-5 px-3 pb-2 pt-3"
+            style={{ zoom: uiScale }}
+          >
             {heroButtons}
             <Arsenal ui={ui} armed={armed} onPick={pickTower} onRoll={doRoll} size="lg" />
             <div className="flex w-[150px] justify-start">{startButton}</div>

@@ -8,8 +8,10 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { AVATARS, AVATAR_IDS, CELL, MAP_DEFS, MAP_H, MAP_W, type AvatarId } from '@/game/config'
+import { AVATARS, AVATAR_IDS, MAP_DEFS, MAP_H, MAP_W, type AvatarId } from '@/game/config'
 import { generateMap } from '@/game/map'
+import { toScreen } from '@/game/iso'
+import { buildBackground, mapLights, props, roadEnds } from '@/game/world'
 import { avatarPortrait } from '@/game/pixel'
 import type { UiState, Vec } from '@/game/types'
 
@@ -174,60 +176,159 @@ function StepMap({
   )
 }
 
-/** Живой предпросмотр карты: тропа, вход РАЗЛОМ и выход ЛАГЕРЬ — по зерну карты.
- *  Внутреннее разрешение фиксировано, CSS растягивает канвас на ширину карточки. */
-function MapPreview({ seed, w = 320, h = 200 }: { seed: number; w?: number; h?: number }) {
+/** Живой предпросмотр карты: запечённый грунт настоящего мира (снег, настил тракта,
+ *  заражение минералом, озеро) + яркая линия маршрута со стрелками хода, вход РАЗЛОМ,
+ *  выход ЛАГЕРЬ и пунктирная вторая тропа. Грунт печётся по одному карте за кадр
+ *  (очередь), кэшируется по зерну; глобальные props мира сохраняются и восстанавливаются. */
+const groundCache = new Map<number, HTMLCanvasElement>()
+let bakeQueue: Promise<void> = Promise.resolve()
+
+function bakeGround(seed: number): HTMLCanvasElement {
+  const cached = groundCache.get(seed)
+  if (cached) return cached
+  // buildBackground переставляет глобальные props/mapLights/roadEnds под новую карту —
+  // сохраняем и возвращаем на место, чтобы мир за меню не подменился
+  const savedProps = props.slice()
+  const savedLights = mapLights.slice()
+  const savedEnds = { ...roadEnds }
+  const cv = buildBackground(generateMap(seed))
+  props.length = 0
+  props.push(...savedProps)
+  mapLights.length = 0
+  mapLights.push(...savedLights)
+  Object.assign(roadEnds, savedEnds)
+  groundCache.set(seed, cv)
+  return cv
+}
+
+/** Точка на ломаной по доле пути (для стрелок направления) */
+function pointAtFraction(points: Vec[], f: number): { p: Vec; dir: Vec } {
+  const lens: number[] = []
+  let total = 0
+  for (let i = 0; i < points.length - 1; i++) {
+    const l = Math.hypot(points[i + 1].x - points[i].x, points[i + 1].y - points[i].y)
+    lens.push(l)
+    total += l
+  }
+  let rest = total * f
+  for (let i = 0; i < lens.length; i++) {
+    if (rest <= lens[i]) {
+      const t = lens[i] === 0 ? 0 : rest / lens[i]
+      const a = points[i]
+      const b = points[i + 1]
+      return {
+        p: { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t },
+        dir: { x: Math.sign(b.x - a.x), y: Math.sign(b.y - a.y) },
+      }
+    }
+    rest -= lens[i]
+  }
+  const last = points[points.length - 1]
+  return { p: last, dir: { x: 1, y: 0 } }
+}
+
+function MapPreview({ seed, w = 320 }: { seed: number; w?: number }) {
+  const h = Math.round((w * MAP_H) / MAP_W)
   const ref = useRef<HTMLCanvasElement>(null)
   useEffect(() => {
-    const c = ref.current
-    if (!c) return
-    const dpr = Math.min(2, window.devicePixelRatio || 1)
-    c.width = w * dpr
-    c.height = h * dpr
-    const ctx = c.getContext('2d')
-    if (!ctx) return
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    const sx = w / MAP_W
-    const sy = h / MAP_H
-    // фон в духе ночного поля
-    ctx.fillStyle = '#0c111a'
-    ctx.fillRect(0, 0, w, h)
-    // шахматная сетка — намёк на клетки стройки
-    ctx.fillStyle = 'rgba(120,150,190,0.07)'
-    for (let gx = 0; gx < MAP_W / CELL; gx++)
-      for (let gy = 0; gy < MAP_H / CELL; gy++)
-        if ((gx + gy) % 2 === 0) ctx.fillRect(gx * CELL * sx, gy * CELL * sy, CELL * sx, CELL * sy)
-    const map = generateMap(seed)
-    const pts = map.points
-    const stroke = (width: number, color: string, line: Vec[] = pts, dash?: number[]) => {
-      ctx.beginPath()
-      line.forEach((p, i) => (i ? ctx.lineTo(p.x * sx, p.y * sy) : ctx.moveTo(p.x * sx, p.y * sy)))
-      ctx.lineWidth = width
-      ctx.strokeStyle = color
-      ctx.lineJoin = 'round'
-      ctx.lineCap = 'round'
-      if (dash) ctx.setLineDash(dash)
-      ctx.stroke()
-      ctx.setLineDash([])
+    let cancelled = false
+    // плейсхолдер, пока печётся грунт
+    const c0 = ref.current
+    if (c0) {
+      const dpr = Math.min(2, window.devicePixelRatio || 1)
+      c0.width = w * dpr
+      c0.height = h * dpr
+      const ph = c0.getContext('2d')
+      if (ph) {
+        ph.setTransform(dpr, 0, 0, dpr, 0, 0)
+        ph.fillStyle = '#0c111a'
+        ph.fillRect(0, 0, w, h)
+      }
     }
-    stroke(9, '#33291c') // тёмная обочина
-    stroke(6, '#b3a284') // настил тракта
-    stroke(1.4, 'rgba(255,255,255,0.16)') // блик
-    // второй выход (GDD): закрытая до своей волны тропа — пунктиром
-    if (map.points2) stroke(3.5, '#7fe0a8', map.points2, [10, 7])
-    // вход (РАЗЛОМ) и выход (ЛАГЕРЬ) — как подписи на поле
-    const dot = (x: number, y: number, color: string) => {
-      ctx.beginPath()
-      ctx.arc(x, y, 4, 0, Math.PI * 2)
-      ctx.fillStyle = color
-      ctx.fill()
-      ctx.lineWidth = 1.4
-      ctx.strokeStyle = 'rgba(0,0,0,0.7)'
-      ctx.stroke()
+    bakeQueue = bakeQueue
+      .then(() => new Promise<void>((r) => requestAnimationFrame(() => r())))
+      .then(() => {
+        if (cancelled) return
+        const c = ref.current
+        if (!c) return
+        const dpr = Math.min(2, window.devicePixelRatio || 1)
+        const ctx = c.getContext('2d')
+        if (!ctx) return
+        const ground = bakeGround(seed)
+        const map = generateMap(seed)
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+        ctx.imageSmoothingEnabled = false
+        ctx.drawImage(ground, 0, 0, w, h)
+        // настил тракта рисуем поверх ярче — маршрут читается с одного взгляда
+        ctx.save()
+        ctx.scale(w / MAP_W, h / MAP_H)
+        const stroke = (pts: Vec[], width: number, color: string, dash?: number[]) => {
+          ctx.beginPath()
+          pts.forEach((p, i) => {
+            const s = toScreen(p.x, p.y)
+            if (i) ctx.lineTo(s.x, s.y)
+            else ctx.moveTo(s.x, s.y)
+          })
+          ctx.lineWidth = width
+          ctx.strokeStyle = color
+          ctx.lineJoin = 'round'
+          ctx.lineCap = 'round'
+          if (dash) ctx.setLineDash(dash)
+          ctx.stroke()
+          ctx.setLineDash([])
+        }
+        stroke(map.points, 9, 'rgba(20,14,8,0.85)')
+        stroke(map.points, 5.5, '#e8c170')
+        stroke(map.points, 1.6, 'rgba(255,255,255,0.35)')
+        if (map.points2) stroke(map.points2, 4.5, '#7fe0a8', [12, 8])
+        // стрелки хода по тракту
+        for (const f of [0.35, 0.7]) {
+          const { p, dir } = pointAtFraction(map.points, f)
+          const s = toScreen(p.x, p.y)
+          const s2 = toScreen(p.x + dir.x * 40, p.y + dir.y * 40)
+          const ang = Math.atan2(s2.y - s.y, s2.x - s.x)
+          ctx.save()
+          ctx.translate(s.x, s.y)
+          ctx.rotate(ang)
+          ctx.fillStyle = 'rgba(20,14,8,0.9)'
+          ctx.beginPath()
+          ctx.moveTo(2, -7)
+          ctx.lineTo(12, 0)
+          ctx.lineTo(2, 7)
+          ctx.closePath()
+          ctx.fill()
+          ctx.fillStyle = '#ffe9b0'
+          ctx.beginPath()
+          ctx.moveTo(3, -5)
+          ctx.lineTo(10, 0)
+          ctx.lineTo(3, 5)
+          ctx.closePath()
+          ctx.fill()
+          ctx.restore()
+        }
+        // вход (РАЗЛОМ) и выход (ЛАГЕРЬ)
+        const dot = (pt: Vec, color: string) => {
+          const s = toScreen(pt.x, pt.y)
+          ctx.beginPath()
+          ctx.arc(s.x, s.y, 11, 0, Math.PI * 2)
+          ctx.fillStyle = 'rgba(10,8,6,0.55)'
+          ctx.fill()
+          ctx.beginPath()
+          ctx.arc(s.x, s.y, 6.5, 0, Math.PI * 2)
+          ctx.fillStyle = color
+          ctx.fill()
+          ctx.lineWidth = 2
+          ctx.strokeStyle = 'rgba(0,0,0,0.65)'
+          ctx.stroke()
+        }
+        dot(map.points[0], '#a6f095')
+        dot(map.points[map.points.length - 1], '#ffb347')
+        if (map.points2) dot(map.points2[0], '#7fe0a8')
+        ctx.restore()
+      })
+    return () => {
+      cancelled = true
     }
-    dot(pts[0].x * sx, pts[0].y * sy, '#a6f095')
-    dot(pts[pts.length - 1].x * sx, pts[pts.length - 1].y * sy, '#ffb347')
-    if (map.points2) dot(map.points2[0].x * sx, map.points2[0].y * sy, '#7fe0a8')
   }, [seed, w, h])
   return <canvas ref={ref} className="block h-auto w-full" aria-hidden />
 }

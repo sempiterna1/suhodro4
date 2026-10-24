@@ -123,10 +123,10 @@ function firstCreep(g: Game): Creep | undefined {
   g.useMap(CLASSIC_MAP) // карта случайна — тестам нужна классическая
   g.beginPreview()
   g.gold = 1e6
-  const a = g.build(300, 200, 'archer').towerId!
+  const a = g.build(420, 260, 'archer').towerId! // свободный блок между вертикалями классической карты
   const before = (g as unknown as { auraMult(t: unknown): number }).auraMult(g.towerById(a))
-  const b = g.build(360, 200, 'sentry').towerId!
-  const c = g.build(330, 260, 'mech_guard').towerId!
+  const b = g.build(480, 260, 'sentry').towerId!
+  const c = g.build(450, 320, 'mech_guard').towerId!
   for (const id of [b, c]) for (let i = 0; i < 2; i++) g.upgrade(id)
   const m = g.merge(b, c)
   const after = (g as unknown as { auraMult(t: unknown): number }).auraMult(g.towerById(a))
@@ -159,11 +159,11 @@ function firstCreep(g: Game): Creep | undefined {
     g.towerById(t)!.level = level
     return t
   }
-  const archer = at(300, 220, 'archer', 3)
-  const crossbow = at(340, 220, 'crossbow', 3)
-  const pyroLow = at(300, 260, 'pyro', 2)
+  const archer = at(420, 260, 'archer', 3)
+  const crossbow = at(460, 260, 'crossbow', 3)
+  const pyroLow = at(420, 300, 'pyro', 2)
   const pyroFar = at(860, 60, 'pyro', 3)
-  const archer2 = at(380, 220, 'archer', 3)
+  const archer2 = at(500, 260, 'archer', 3)
   const noRecipe = g.mergeError(archer, crossbow) ?? ''
   check('нет рецепта — так и сказано, с подсказкой партнёров', noRecipe.includes('Нет рецепта') && noRecipe.includes('Пиромант'), noRecipe)
   check('низкий уровень — названы уровни', (g.mergeError(archer, pyroLow) ?? '').includes('сейчас 3 и 2'))

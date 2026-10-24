@@ -38,7 +38,7 @@ function check(name: string, ok: boolean, info = '') {
     }
   }
   check('500 карт: от края до края, непрерывны, без повторов и самокасаний', bad.length === 0, bad.slice(0, 3).join('; '))
-  check('длина тропы 44–70 клеток', Math.min(...lengths) >= 44 && Math.max(...lengths) <= 70,
+  check('длина тропы 56–100 клеток', Math.min(...lengths) >= 56 && Math.max(...lengths) <= 100,
     `от ${Math.min(...lengths)} до ${Math.max(...lengths)}`)
   check('карты разные', new Set(Array.from({ length: 50 }, (_, i) => JSON.stringify(generateMap(i + 1).cells))).size > 40)
   check('одно зерно — одна карта', JSON.stringify(generateMap(777)) === JSON.stringify(generateMap(777)))
@@ -73,8 +73,13 @@ function check(name: string, ok: boolean, info = '') {
   const p = cellCenter(CLASSIC_MAP.cells[10])
   const onPath = g.build(p.x, p.y, 'sentry')
   check('на тропу строить нельзя', !onPath.ok, onPath.error)
-  const next = g.build(345, 215, 'sentry') // соседняя клетка (8,5)
-  check('в соседнюю клетку строить можно', next.ok)
+  // соседняя с тропой свободная клетка — ищется, а не захардкожена
+  const base = CLASSIC_MAP.cells[10]
+  const nb = ([[1, 0], [-1, 0], [0, 1], [0, -1]] as const)
+    .map(([dx, dy]) => ({ cx: base.cx + dx, cy: base.cy + dy }))
+    .find((q) => q.cx >= 0 && q.cy >= 0 && q.cx < GRID_W && q.cy < GRID_H && !isPathCell(q))!
+  const next = g.build(cellCenter(nb).x, cellCenter(nb).y, 'sentry')
+  check('в соседнюю клетку строить можно', next.ok, `клетка ${nb.cx},${nb.cy}`)
   let freeCells = 0
   for (let cx = 0; cx < GRID_W; cx++) for (let cy = 0; cy < GRID_H; cy++) if (!isPathCell({ cx, cy })) freeCells++
   check('клеток под башни', freeCells === GRID_W * GRID_H - CLASSIC_MAP.cells.length, String(freeCells))
