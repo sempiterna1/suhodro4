@@ -6,6 +6,7 @@
 // и не мешает стройке, после — крипы делятся между тропами поровну.
 
 import { CELL, MAP_H, MAP_W, mapDefBySeed } from './config'
+import { mulberry32 } from './rng'
 import type { Vec } from './types'
 
 export const GRID_W = MAP_W / CELL // 24
@@ -42,16 +43,7 @@ export function snapToCell(x: number, y: number): Vec {
 }
 
 // ─── Генерация ───────────────────────────────────────────────────────────
-function mulberry32(seed: number) {
-  let a = seed >>> 0
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0
-    let t = a
-    t = Math.imul(t ^ (t >>> 15), t | 1)
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
+// mulberry32 импортирован из ./rng — единый детерминированный генератор
 
 /** Ломаная по углам цепочки клеток; вход и выход продолжают крайние отрезки за край карты */
 function pointsFromCells(cells: Cell[]): Vec[] {

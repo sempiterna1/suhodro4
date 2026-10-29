@@ -53,6 +53,7 @@ import {
   waveSpeedMult,
   type MapDef,
 } from './config'
+import { mulberry32, randInt } from './rng'
 import {
   type GameMap,
   cellOf,
@@ -151,10 +152,10 @@ export function hybridMult(attacks: AttackType[], armor: ArmorType): { mult: num
 }
 
 /** Случайный пул арсенала: SHOP_SIZE разных боевых башен */
-export function rollPool(): string[] {
+export function rollPool(rng: () => number): string[] {
   const ids = TOWERS.map((t) => t.id)
   for (let i = ids.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
+    const j = randInt(rng, i + 1)
     ;[ids[i], ids[j]] = [ids[j], ids[i]]
   }
   return ids.slice(0, SHOP_SIZE)
@@ -177,9 +178,9 @@ interface SpawnOrder {
 }
 
 /** Случайный вид врага для брони волны */
-function kindFor(armor: ArmorType): CreepKind {
+function kindFor(armor: ArmorType, rng: () => number): CreepKind {
   const list = KINDS_BY_ARMOR[armor]
-  return list[Math.floor(Math.random() * list.length)]
+  return list[randInt(rng, list.length)]
 }
 
 // ─── Игровое состояние ──────────────────────────────────────────────────
@@ -228,8 +229,11 @@ export class Game {
   private waveTotal = 0
   private waveStart = 0
   private spawnAlt = 0 // чередование троп при открытом втором выходе (поровну)
+  /** Детерминированный генератор случайных чисел процесса (seed) */
+  private rng: () => number
 
-  constructor() {
+  constructor(seed: number = randomSeed()) {
+    this.rng = mulberry32(seed)
     this.reset()
   }
 
@@ -323,7 +327,7 @@ export class Game {
 
   beginPreview() {
     if (this.phase !== 'intro' && this.phase !== 'wave') return
-    if (this.phase === 'intro' && this.shop.length === 0) this.shop = rollPool() // первый пул бесплатный
+    if (this.phase === 'intro' && this.shop.length === 0) this.shop = rollPool(this.rng) // первый пул бесплатный
     this.phase = 'preview'
     this.previewRemaining = this.wave === 1 ? FIRST_PREVIEW_TIME : PREVIEW_TIME
   }
@@ -345,11 +349,11 @@ export class Game {
       const boss = BOSSES[def.n]
       this.spawnQueue.push({ t: 0, isBoss: true, armor: boss?.baseArmor ?? 'heavy', kind: 'titan' })
       for (let i = 0; i < BOSS_ESCORTS; i++) {
-        this.spawnQueue.push({ t: 3 + i * 1.2, isBoss: false, armor: 'medium', kind: kindFor('medium') })
+        this.spawnQueue.push({ t: 3 + i * 1.2, isBoss: false, armor: 'medium', kind: kindFor('medium', this.rng) })
       }
     } else {
       for (let i = 0; i < def.count; i++) {
-        this.spawnQueue.push({ t: i * def.spawnInterval, isBoss: false, armor: def.armor, kind: kindFor(def.armor) })
+        this.spawnQueue.push({ t: i * def.spawnInterval, isBoss: false, armor: def.armor, kind: kindFor(def.armor, this.rng) })
       }
       // Особенность карты («Пепельная долина»): дополнительные универсальные враги,
       // равномерно распределённые по волне
@@ -361,7 +365,7 @@ export class Game {
             t: 0.6 + (i * span) / extra,
             isBoss: false,
             armor: 'universal',
-            kind: kindFor('universal'),
+            kind: kindFor('universal', this.rng),
           })
         }
       }
@@ -388,7 +392,7 @@ export class Game {
     if (this.gold < ROLL_COST) return { ok: false, error: 'Не хватает золота' }
     this.gold -= ROLL_COST
     this.refillGold()
-    this.shop = rollPool()
+    this.shop = rollPool(this.rng)
     return { ok: true }
   }
 
@@ -767,7 +771,7 @@ export class Game {
           t: this.time - this.waveStart,
           isBoss: false,
           armor: cur.summon.armor,
-          kind: kindFor(cur.summon.armor),
+          kind: kindFor(cur.summon.armor, this.rng),
           atDist: Math.max(0, c.dist - 20 * (i + 1)),
           hpMult: cur.summon.hpMult,
           pathIdx: c.pathIdx,
@@ -1085,7 +1089,7 @@ export class Game {
       c.vulnUntil = this.time + h.vuln.dur
     }
     if (h.freeze) c.stunnedUntil = Math.max(c.stunnedUntil, this.time + h.freeze)
-    if (h.stunChance && Math.random() < h.stunChance) {
+    if (h.stunChance && this.rng() < h.stunChance) {
       c.stunnedUntil = Math.max(c.stunnedUntil, this.time + 1)
       if (h.stunSlow) this.applySlow(c, h.stunSlow.pct, c.stunnedUntil + h.stunSlow.dur - this.time)
     }
