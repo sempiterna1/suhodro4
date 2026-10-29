@@ -36,22 +36,22 @@ const LOOKS: Record<string, Look> = {
   // универсальные
   sentry: { art: 'tower-coal', parts: [['shield', 'front']] },
   mech_guard: { art: 'tower-coal', glow: '#ffd060', parts: [['gatling', 'right'], ['gear', 'left']] },
-  prism: { art: 'tower-frost', glow: '#7ff0e0', parts: [['prism', 'top']] },
+  prism: { art: 'art-prism', parts: [] },
   // пронзающие
-  archer: { art: 'tower-sniper', parts: [['bow', 'left']] },
-  crossbow: { art: 'tower-sniper', glow: '#fff0b0', parts: [['crossbow', 'left']] },
-  hunter: { art: 'tower-sniper', glow: '#8fe070', parts: [['net', 'left'], ['bow', 'right']] },
+  archer: { art: 'art-archer', parts: [] },
+  crossbow: { art: 'art-crossbow', parts: [] },
+  hunter: { art: 'art-hunter', parts: [] },
   ballista: { art: 'tower-cannon', glow: '#e8d090', parts: [['ballista', 'top']] },
   // сокрушающие
-  catapult: { art: 'tower-cannon', parts: [['catapult', 'left']] },
-  mauler: { art: 'tower-coal', glow: '#ffb060', parts: [['hammer', 'right']] },
+  catapult: { art: 'art-catapult', parts: [] },
+  mauler: { art: 'art-mauler', parts: [] },
   mortar: { art: 'tower-cannon', glow: '#ffc060', parts: [['mortar', 'left'], ['rod', 'right']] },
-  golem: { art: 'tower-coal', glow: '#ff8040', parts: [['ram', 'front'], ['gear', 'right']] },
+  golem: { art: 'art-golem', parts: [] },
   // магические
-  pyro: { art: 'tower-flame', parts: [] },
-  frost: { art: 'tower-frost', parts: [['ice', 'front']] },
+  pyro: { art: 'art-pyro', parts: [] },
+  frost: { art: 'art-frost', parts: [] },
   lightning: { art: 'tower-tesla', glow: '#b0a0ff', parts: [['rod', 'left']] },
-  chrono: { art: 'tower-tesla', glow: '#d090ff', parts: [['hourglass', 'left'], ['gear', 'right']] },
+  chrono: { art: 'art-chrono', parts: [] },
   // слитые: части обоих родителей
   flame_archer: { art: 'tower-flame', glow: '#ff7a2a', parts: [['bow', 'left']] },
   volcano: { art: 'tower-flame', glow: '#ff4a20', parts: [['catapult', 'left']] },
