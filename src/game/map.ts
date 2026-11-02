@@ -5,7 +5,7 @@
 // На картах со вторым выходом (GDD) есть вторая тропа: до волны открытия она невидима
 // и не мешает стройке, после — крипы делятся между тропами поровну.
 
-import { CELL, MAP_H, MAP_W, mapDefBySeed } from './config'
+import { CELL, MAP_H, MAP_W, mapDefBySeed } from './data/maps'
 import { mulberry32 } from './rng'
 import type { Vec } from './types'
 

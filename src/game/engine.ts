@@ -1,58 +1,33 @@
 // Игровой движок прототипа «Железный Разлом»
 // Чистый TypeScript без зависимости от React — в будущем переносится на Unity C#
 
+import { ALL_DEFS, CHAIN_FALLOFF, CHAIN_RANGE, LINE_WIDTH, MERGED_TOWERS, MIN_INTERVAL, SLAM_STUN, TOWERS } from './data/towers'
+import { DAMAGE_MATRIX, ARMOR_HP_MULT, ARMOR_SPEED } from './data/combat'
+import { AVATARS, SELL_RATIO_ENGINEER, VOEVODA_RADIUS, markBonusForLevel, type AvatarId } from './data/avatars'
+import { BOSS_ESCORTS, BOSSES, BOSS_HP_MULT, BOSS_LIVES_COST, BOSS_SPEED, TOTAL_WAVES, WAVES, bossForWave, waveSpeedMult } from './data/waves'
+import { MAP_H, MAP_W, MERGE_DIST, mapDefBySeed, type MapDef } from './data/maps'
 import {
-  ALL_DEFS,
-  ARMOR_HP_MULT,
-  ARMOR_SPEED,
-  AVATARS,
-  SELL_RATIO_ENGINEER,
-  VOEVODA_RADIUS,
-  type AvatarId,
-  BOSSES,
-  BOSS_ESCORTS,
   BOSS_GOLD_MULT,
-  BOSS_HP_MULT,
-  BOSS_LIVES_COST,
-  BOSS_SPEED,
-  CHAIN_FALLOFF,
-  CHAIN_RANGE,
   COOP_HP_MULT,
-  CREEP_KINDS,
-  DAMAGE_MATRIX,
   FIRST_PREVIEW_TIME,
+  goldForKill,
+  hpForWave,
   HP_PLAYTEST_MULT,
   INFINITE_GOLD,
-  KINDS_BY_ARMOR,
   LEVEL_MULT,
-  LINE_WIDTH,
-  MAP_H,
-  MAP_W,
-  MERGE_DIST,
   MERGE_MIN_LEVEL,
-  MERGED_TOWERS,
-  MIN_INTERVAL,
+  levelDamageMult,
+  levelIntervalMult,
+  levelRangeMult,
   PREVIEW_TIME,
   ROLL_COST,
   SELL_RATIO,
   SHOP_SIZE,
-  SLAM_STUN,
   START_GOLD,
   START_LIVES,
-  TOTAL_WAVES,
-  TOWERS,
-  WAVES,
-  goldForKill,
-  hpForWave,
-  levelDamageMult,
-  levelIntervalMult,
-  levelRangeMult,
-  mapDefBySeed,
-  markBonusForLevel,
   waveBonus,
-  waveSpeedMult,
-  type MapDef,
-} from './config'
+} from './data/economy'
+import { CREEP_KINDS, KINDS_BY_ARMOR } from './data/creeps'
 import { mulberry32, randInt } from './rng'
 import {
   type GameMap,
