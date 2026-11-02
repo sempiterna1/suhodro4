@@ -54,3 +54,6 @@ server.log
 /skills/
 # превью-скрипты
 /tools/preview/out/
+
+# отчёты headless-симулятора
+/reports/

@@ -18,7 +18,7 @@ for (let i = 0; i < 60; i++) g.update(0.05)
 const solo = g.creeps[0]
 // вид врага (паук/жук) случаен — HP сверяем с учётом его множителя
 const expectedSolo = hpForWave(1) * ARMOR_HP_MULT.light * HP_PLAYTEST_MULT * CREEP_KINDS[solo.kind].hpMult
-console.log(`соло: hp=${solo.hp.toFixed(1)} ожид=${expectedSolo.toFixed(1)} | ${Math.abs(solo.hp - expectedSolo) < 0.01 ? '✓' : '✗ РЕГРЕССИЯ'}`)
+console.log(`соло: hp=${solo.maxHp.toFixed(1)} ожид=${expectedSolo.toFixed(1)} | ${Math.abs(solo.maxHp - expectedSolo) < 0.01 ? '✓' : '✗ РЕГРЕССИЯ'}`)
 
 // Включаем кооп — новые волны должны спавниться с ×1.85
 g.setCoop(true)
@@ -31,8 +31,8 @@ for (let i = 0; i < 60; i++) g.update(0.05)
 const coop = g.creeps[0]
 const baseCoop = hpForWave(1) * ARMOR_HP_MULT.light * HP_PLAYTEST_MULT * CREEP_KINDS[coop.kind].hpMult
 const expectedCoop = baseCoop * COOP_HP_MULT
-console.log(`кооп: hp=${coop.hp.toFixed(1)} ожид=${expectedCoop.toFixed(1)} | соотношение=${(coop.hp / baseCoop).toFixed(2)} (надо 1.85)`)
-console.log(Math.abs(coop.hp - expectedCoop) < 0.1 ? '✓ Кооп-множитель работает' : '✗ РЕГРЕССИЯ коопа')
+console.log(`кооп: hp=${coop.maxHp.toFixed(1)} ожид=${expectedCoop.toFixed(1)} | соотношение=${(coop.maxHp / baseCoop).toFixed(2)} (надо 1.85)`)
+console.log(Math.abs(coop.maxHp - expectedCoop) < 0.1 ? '✓ Кооп-множитель работает' : '✗ РЕГРЕССИЯ коопа')
 
 // Сериализация снапшота — размер и состав
 const snap = g.serialize()
@@ -57,7 +57,8 @@ h.useMap(CLASSIC_MAP) // карта случайна — тестам нужна
 h.beginPreview()
 if (h.phase !== 'preview') { console.error('✗ нет preview'); process.exit(1) }
 const err = h.applyGuestCmd({ t: 'startWave' })
-console.log(`startWave от гостя: фаза=${h.phase} ${h.phase === 'wave' && err === null ? '✓' : '✗ РЕГРЕССИЯ'}`)
+const phaseAfter: string = h.phase
+console.log(`startWave от гостя: фаза=${phaseAfter} ${phaseAfter === 'wave' && err === null ? '✓' : '✗ РЕГРЕССИЯ'}`)
 
 // upgrade командой: строим башню как хост, гость качает
 const tid = h.build(300, 300, 'archer').towerId!

@@ -202,6 +202,42 @@ export interface GameStats {
   goldEarned: number
   merges: number
   bossKills: number
+  /** Фактически нанесённый урон (без overkill) — для DPS в симуляторе и статистике */
+  damageDealt: number
+}
+
+/** Тип события в журнале партии (этап 1: разбор баланса и реплеи) */
+export type GameEventType =
+  | 'build'
+  | 'upgrade'
+  | 'sell'
+  | 'merge'
+  | 'roll'
+  | 'leak'
+  | 'bossPhase'
+  | 'waveStart'
+  | 'waveEnd'
+  | 'win'
+  | 'lose'
+
+/**
+ * Одно событие партии. Журнал живёт в Game.events, ограничен по длине
+ * и не попадает в кооп-снапшоты (это отладочные данные хоста).
+ */
+export interface GameEvent {
+  t: number // игровое время, с
+  wave: number // номер волны на момент события
+  type: GameEventType
+  defId?: string // башня/результат слияния
+  towerId?: number
+  level?: number
+  x?: number
+  y?: number
+  amount?: number // цена, возврат, бонус, урон/потеря жизней
+  creepKind?: CreepKind
+  armor?: ArmorType
+  phase?: number // номер фазы босса
+  text?: string // человекочитаемая подпись (фаза, рецепт)
 }
 
 export interface UiState {

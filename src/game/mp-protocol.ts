@@ -5,7 +5,7 @@
 
 import type { AvatarId } from './config'
 import type {
-  ArmorType, AvatarState, Creep, Effect, FloatText, Phase, Projectile, Tower,
+  ArmorType, AvatarState, Creep, Effect, FloatText, GameStats, Phase, Projectile, Tower,
 } from './types'
 
 /** Снапшот состояния мира: хост → гость, 10 Гц */
@@ -25,7 +25,7 @@ export interface Snap {
   waveSpawned: number
   waveTotal: number
   coop: boolean
-  stats: { kills: number; leaked: number; goldEarned: number; merges: number; bossKills: number }
+  stats: GameStats
   avatarId: AvatarId
   avatar: Pick<AvatarState, 'x' | 'y' | 'target' | 'level' | 'xp' | 'cooldown' | 'attackCd'>
   towers: Array<Pick<Tower, 'id' | 'x' | 'y' | 'defId' | 'level' | 'invested' | 'cooldown' | 'shotCount' | 'hammerCd'

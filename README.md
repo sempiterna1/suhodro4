@@ -38,9 +38,12 @@ npx next dev -p 3000
 ## Тесты движка
 
 ```bash
+npx tsx scripts/test-formulas.ts   # золотые тесты формул: HP, золото, матрица урона
+npx tsx scripts/test-sim.ts        # headless-симулятор: политики, отчёт, детерминизм
 npx tsx scripts/test-maps.ts       # карты, фичи, 20 волн, победа на 20-й
 npx tsx scripts/test-second-exit.ts # второй выход: генерация тропы, спавн поровну, снапшоты
 npx tsx scripts/test-towers.ts     # башни, матрица урона, слияния
+npx tsx scripts/test-bosses.ts     # фазы боссов, призывы, кооп-снапшоты
 npx tsx scripts/test-merge-ids.ts  # защита от краша при повторных слияниях
 npx tsx scripts/test-map.ts        # сетка, стройка, синхронизация тропы по зерну
 npx tsx scripts/test-coop.ts       # кооп-множитель, снапшоты, команды гостя
@@ -50,12 +53,28 @@ npx tsx scripts/test-shop-pause.ts # арсенал, ролл, пауза
 
 Скрипт `scripts/pick-maps.ts` — подбор фиксированных зёрен для новых карт по длине и извилистости тропы.
 
+## Симулятор баланса
+
+Полная миссия без браузера и рендера — за доли секунды:
+
+```bash
+npx tsx scripts/sim.ts --policy scripted --seed 20261029
+npx tsx scripts/sim.ts --policy none --seed 7
+npx tsx scripts/sim.ts --shop pool --json reports/run.json --csv reports/run.csv
+```
+
+Политики `none` / `random` / `scripted`, отчёт по волнам (золото, утечки, урон,
+DPS, постройки, слияния, фазы боссов), event-log и побайтно воспроизводимый JSON
+при одном seed. Подробности — `docs/simulator.md`.
+
 ## Устройство
 
 | Где | Что |
 |-----|-----|
-| `src/game/engine.ts` | Движок: волны, башни, слияния, снаряды, кооп-снапшоты |
-| `src/game/config.ts` | Весь баланс: башни, рецепты, броня, волны, враги, реестр карт |
+| `src/game/engine.ts` | Движок: волны, башни, слияния, снаряды, кооп-снапшоты, event-log |
+| `src/game/config.ts` | Точка входа баланса — re-export из `src/game/data/*` |
+| `src/game/data/` | Источник правды: башни, слияния, броня, волны, враги, карты, экономика |
+| `src/game/sim.ts` | Headless-симулятор и политики (без DOM) |
 | `src/game/map.ts` | Сетка и генерация троп «меандром» по зерну; второй выход — маршрутом Дейкстрой мимо первой тропы |
 | `src/game/pixel.ts` | Пиксельные спрайты, фон, декор, башни |
 | `src/game/render.ts` | Отрисовка кадра |

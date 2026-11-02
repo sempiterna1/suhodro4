@@ -51,6 +51,7 @@ import type {
   CreepKind,
   Effect,
   FloatText,
+  GameEvent,
   MergeDef,
   Phase,
   Projectile,
@@ -192,7 +193,14 @@ export class Game {
     attackCd: 0,
   }
 
-  stats = { kills: 0, leaked: 0, goldEarned: 0, merges: 0, bossKills: 0 }
+  stats = { kills: 0, leaked: 0, goldEarned: 0, merges: 0, bossKills: 0, damageDealt: 0 }
+
+  /**
+   * Журнал событий партии (build/upgrade/merge/sell/leak/bossPhase/волны).
+   * Это отладочный лог хоста: в снапшоты не входит, ограничен MAX_EVENTS.
+   */
+  events: GameEvent[] = []
+  private static readonly MAX_EVENTS = 5000
 
   /** Зерно текущей карты (0 — классическая змейка). Хост передаёт его гостю в снапшоте */
   mapSeed = 0
@@ -230,7 +238,8 @@ export class Game {
     this.effects = []
     this.floats = []
     this.avatar = { x: 90, y: 260, target: null, level: 1, xp: 0, cooldown: 0, attackCd: 0 }
-    this.stats = { kills: 0, leaked: 0, goldEarned: 0, merges: 0, bossKills: 0 }
+    this.stats = { kills: 0, leaked: 0, goldEarned: 0, merges: 0, bossKills: 0, damageDealt: 0 }
+    this.events = []
     this.spawnQueue = []
     this.waveSpawned = 0
     this.waveTotal = 0
@@ -346,6 +355,7 @@ export class Game {
       }
     }
     this.waveTotal = this.spawnQueue.length
+    this.logEvent({ type: 'waveStart', armor: def.armor, amount: this.waveTotal, text: def.kind })
   }
 
   setSpeed(s: number) {
@@ -368,6 +378,7 @@ export class Game {
     this.gold -= ROLL_COST
     this.refillGold()
     this.shop = rollPool(this.rng)
+    this.logEvent({ type: 'roll', amount: ROLL_COST, text: this.shop.join(',') })
     return { ok: true }
   }
 
@@ -413,6 +424,7 @@ export class Game {
       aim: -Math.PI / 2,
     }
     this.towers.push(tower)
+    this.logEvent({ type: 'build', defId, towerId: tower.id, x: at.x, y: at.y, amount: def.price })
     return { ok: true, towerId: tower.id }
   }
 
@@ -426,6 +438,7 @@ export class Game {
     this.refillGold()
     tw.invested += cost
     tw.level += 1
+    this.logEvent({ type: 'upgrade', defId: tw.defId, towerId: tw.id, level: tw.level, x: tw.x, y: tw.y, amount: cost })
     return { ok: true }
   }
 
@@ -435,6 +448,7 @@ export class Game {
     const refund = Math.floor(tw.invested * (this.avatarId === 'engineer' ? SELL_RATIO_ENGINEER : SELL_RATIO))
     this.gold += refund
     this.towers = this.towers.filter((t) => t.id !== id)
+    this.logEvent({ type: 'sell', defId: tw.defId, towerId: tw.id, level: tw.level, x: tw.x, y: tw.y, amount: refund })
     this.addFloat(tw.x, tw.y - 24, `+${refund}`, '#e8c170')
     return { ok: true }
   }
@@ -493,6 +507,8 @@ export class Game {
     const tb = this.towerById(b)!
     const level = Math.min(ta.level, tb.level)
     const invested = ta.invested + tb.invested
+    const aDef = ALL_DEFS[ta.defId]
+    const bDef = ALL_DEFS[tb.defId]
     tb.defId = recipe.id
     tb.level = level
     tb.invested = invested
@@ -504,6 +520,16 @@ export class Game {
     tb.focusStacks = 0
     this.towers = this.towers.filter((t) => t.id !== a)
     this.stats.merges++
+    this.logEvent({
+      type: 'merge',
+      defId: recipe.id,
+      towerId: tb.id,
+      level: tb.level,
+      x: tb.x,
+      y: tb.y,
+      amount: invested,
+      text: `${aDef.name} + ${bDef.name}`,
+    })
     this.addFloat(tb.x, tb.y - 30, recipe.glyph + ' ' + recipe.name, '#f0a44a')
     this.effects.push({ x: tb.x, y: tb.y, r: 46, born: this.time, dur: 0.8, color: '#f0a44a', kind: 'blast' })
     return { ok: true }
@@ -602,6 +628,17 @@ export class Game {
     const p = pointAtLength(best.dist, best.pathIdx)
     this.effects.push({ x: p.x, y: p.y, r: 30, born: this.time, dur: 0.7, color: '#e8c170', kind: 'mark' })
     return { ok: true }
+  }
+
+  /** Записать событие партии (журнал ограничен, старые события вытесняются) */
+  private logEvent(ev: Omit<GameEvent, 't' | 'wave'>) {
+    this.events.push({ t: Math.round(this.time * 1000) / 1000, wave: this.wave, ...ev })
+    if (this.events.length > Game.MAX_EVENTS) this.events.splice(0, this.events.length - Game.MAX_EVENTS)
+  }
+
+  /** Очистить журнал (симулятор/тесты); на игру не влияет */
+  clearEvents() {
+    this.events = []
   }
 
   addFloat(x: number, y: number, text: string, color: string) {
@@ -734,6 +771,7 @@ export class Game {
       c.armor = ph.armor
       c.speed = BOSS_SPEED * this.mapDef.creepSpeedMult * ph.speedMult
       const p = pointAtLength(c.dist, c.pathIdx)
+      this.logEvent({ type: 'bossPhase', phase: c.bossPhase, armor: ph.armor, x: p.x, y: p.y, text: `${boss.name}: ${ph.name}` })
       this.addFloat(p.x, p.y - 36, `${boss.name}: ${ph.name}!`, '#ff8a4a')
       if (ph.summon) c.nextSummonAt = this.time + 1.2 // первый призыв почти сразу
     }
@@ -775,10 +813,12 @@ export class Game {
         this.lives -= c.livesCost
         this.stats.leaked++
         const exit = pointAtLength(len - 30, c.pathIdx)
+        this.logEvent({ type: 'leak', creepKind: c.kind, armor: c.armor, amount: c.livesCost, x: exit.x, y: exit.y })
         this.addFloat(exit.x, exit.y - 20, `−${c.livesCost} ♥`, '#e05252')
         if (this.lives <= 0) {
           this.lives = 0
           this.phase = 'over'
+          this.logEvent({ type: 'lose' })
           return
         }
         continue
@@ -799,6 +839,8 @@ export class Game {
     }
     if (this.time < c.markedUntil) dmg *= 1 + c.markedBonus
     if (this.time < c.vulnUntil) dmg *= 1 + c.vulnBonus
+    const dealt = Math.min(dmg, Math.max(0, c.hp))
+    if (dealt > 0) this.stats.damageDealt += dealt
     c.hp -= dmg
     if (c.hp <= 0) this.killCreep(c)
   }
@@ -1234,6 +1276,7 @@ export class Game {
     this.gold += bonus
     this.stats.goldEarned += bonus
     this.addFloat(MAP_W / 2, 60, `Волна ${def.n} пройдена! +${bonus} золота`, '#e8c170')
+    this.logEvent({ type: 'waveEnd', amount: bonus, text: `волна ${def.n}` })
     // разгон Автоматического арсенала действует только до конца волны
     for (const tw of this.towers) tw.rampMult = 1
     this.wave++
@@ -1241,6 +1284,7 @@ export class Game {
     setSecondPathActive(this.secondExitOpen)
     if (this.wave > TOTAL_WAVES) {
       this.phase = 'won'
+      this.logEvent({ type: 'win' })
     } else {
       this.phase = 'preview'
       this.previewRemaining = PREVIEW_TIME
