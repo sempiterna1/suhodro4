@@ -4,7 +4,7 @@
 // (выстрел = изменился lastShotAt башни, гибель = враг пропал без потери жизней, и т.д.).
 // Поэтому звук работает и у гостя в коопе, которому мир приходит снапшотами.
 
-import { ALL_DEFS, MAP_W } from './config'
+import { ALL_DEFS, MAP_W, bossForWave } from './config'
 import { pointAtLength, type Game } from './engine'
 import type { CreepKind, TowerDefinition } from './types'
 import { windAt } from './wind'
@@ -23,13 +23,13 @@ const readAmbientVolume = () => {
 /** Логические звуки: у каждого — свой физический источник; без файла играет синтез-запасной (SYNTH) */
 type Sound =
   | 'bow' | 'crossbow' | 'catapult' | 'mortar' | 'thud' | 'boom' | 'fire' | 'frost' | 'spark' | 'time' | 'prism' | 'steam' | 'clank'
-  | 'die' | 'leak' | 'horn' | 'build' | 'roll'
-type Synth = 'twang' | 'thud' | 'boom' | 'zap' | 'fire' | 'chime' | 'warp' | 'clank' | 'die' | 'leak' | 'horn' | 'build' | 'roll'
+  | 'die' | 'leak' | 'smash' | 'roar' | 'horn' | 'build' | 'roll' | 'victory' | 'defeat'
+type Synth = 'twang' | 'thud' | 'boom' | 'zap' | 'fire' | 'chime' | 'warp' | 'clank' | 'die' | 'leak' | 'smash' | 'roar' | 'horn' | 'build' | 'roll' | 'victory' | 'defeat'
 
 /** Запасной синтез, пока файла нет или он ещё грузится */
 const SYNTH: Record<Sound, Synth> = {
   bow: 'twang', crossbow: 'clank', catapult: 'thud', mortar: 'boom', thud: 'thud', boom: 'boom', fire: 'fire', frost: 'chime',
-  spark: 'zap', time: 'warp', prism: 'chime', steam: 'fire', clank: 'clank', die: 'die', leak: 'leak', horn: 'horn', build: 'build', roll: 'roll',
+  spark: 'zap', time: 'warp', prism: 'chime', steam: 'fire', clank: 'clank', die: 'die', leak: 'leak', smash: 'smash', roar: 'roar', horn: 'horn', build: 'build', roll: 'roll', victory: 'victory', defeat: 'defeat',
 }
 
 /** Звук выстрела по башне: камнемёт — скрип и глухой «бух», арбалет — тугая тетива, лук — тетива и свист, огонь — «фух», мороз — звон… */
@@ -82,6 +82,10 @@ const SAMPLES: Record<Sound, { files: string[]; gain: number }> = {
   build: { files: wavs('build', 2), gain: 0.5 },
   roll: { files: wavs('roll', 1), gain: 0.35 },
   leak: { files: wavs('leak', 1), gain: 0.5 },
+  smash: { files: [], gain: 0.55 },
+  roar: { files: [], gain: 0.3 },
+  victory: { files: [], gain: 0.2 },
+  defeat: { files: [], gain: 0.25 },
   horn: { files: wavs('horn', 1), gain: 0.5 },
   die: { files: wavs('monster', 10), gain: 0.4 },
 }
@@ -91,6 +95,7 @@ const MAX_VOICES = 8 // сэмплов одновременно — чтобы �
 
 const MIN_GAP: Partial<Record<Sound, number>> = {
   die: 0.05, clank: 0.06, bow: 0.05, crossbow: 0.06, spark: 0.08, boom: 0.12, catapult: 0.1, mortar: 0.12, thud: 0.1, fire: 0.08, frost: 0.08,
+  leak: 0.3, smash: 0.8, roar: 2.5, victory: 2, defeat: 2,
 }
 
 /** Шаги мобов: чем тяжелее — тем глуше и ниже; тише выстрелов в 2–4 раза. stride — сколько пикселей пути между шагами */
@@ -492,11 +497,11 @@ export class Sfx {
     for (const id of this.shots.keys()) if (!ids.has(id)) this.shots.delete(id)
     this.towerIds = ids
 
-    // гибель врагов и прорывы
+    // гибель врагов и урон зданию: обычная утечка — гудок, тяжёлый удар (босс или сразу толпа) — глухой удар по зданию
     const alive = new Map(game.creeps.map((c) => [c.uid, c.kind] as const))
-    const leaked = this.buildingHp >= 0 && game.buildingHp < this.buildingHp
-    for (const [uid, kind] of this.creeps) if (!alive.has(uid) && !leaked) play('die', MAP_W / 2, DIE_RATE[kind] ?? 1)
-    if (leaked) play('leak', MAP_W)
+    const dmg = this.buildingHp >= 0 ? Math.max(0, this.buildingHp - game.buildingHp) : 0
+    for (const [uid, kind] of this.creeps) if (!alive.has(uid) && dmg <= 0) play('die', MAP_W / 2, DIE_RATE[kind] ?? 1)
+    if (dmg > 0) play(dmg >= 50 ? 'smash' : 'leak', MAP_W)
     this.creeps = alive
     this.buildingHp = game.buildingHp
 
@@ -520,11 +525,22 @@ export class Sfx {
     }
     for (const uid of this.stepLast.keys()) if (!seen.has(uid)) { this.stepLast.delete(uid); this.stepAcc.delete(uid) }
 
-    // начало волны и ролл арсенала
+    // начало волны: боссовая — рёв вместо рога, музыка уходит в тишину подольше
     if (game.phase === 'wave' && (this.phase !== 'wave' || game.wave !== this.wave)) {
-      play('horn')
-      if (!fresh) this.duckMusic()
+      const boss = bossForWave(game.wave)
+      if (!fresh) {
+        if (boss) {
+          play('roar')
+          this.duckMusic(4)
+        } else {
+          play('horn')
+          this.duckMusic()
+        }
+      }
     }
+    // итог миссии: фанфары победы / падающий тон поражения
+    if (!fresh && game.phase === 'won' && this.phase !== 'won') this.play('victory')
+    if (!fresh && game.phase === 'over' && this.phase !== 'over') this.play('defeat')
     const shop = game.shop.join()
     if (this.shop && shop && shop !== this.shop) play('roll')
     this.shop = shop
@@ -532,7 +548,7 @@ export class Sfx {
     this.wave = game.wave
   }
 
-  private play(s: Sound, x: number, rate = 1) {
+  private play(s: Sound, x = MAP_W / 2, rate = 1) {
     const ctx = this.ctx
     if (!ctx || !this.master || this.muted || ctx.state !== 'running') return
     const now = ctx.currentTime
@@ -632,6 +648,27 @@ export class Sfx {
         tone('sawtooth', 110, 105, 0.9, 0.07)
         tone('sawtooth', 165, 160, 0.9, 0.05)
         hiss('lowpass', 1200, 0.6, 0.05)
+        break
+      case 'roar': // босс выходит на тропу: низкий рёв с подъёмом
+        tone('sawtooth', 58, 125, 1.6, 0.16)
+        tone('sawtooth', 87, 168, 1.6, 0.1)
+        hiss('lowpass', 480, 1.3, 0.1)
+        break
+      case 'smash': // босс врезался в здание: двойной глухой удар и звон металла
+        tone('sine', 95, 28, 0.5, 0.5)
+        hiss('lowpass', 350, 0.5, 0.28)
+        tone('square', 130, 45, 0.28, 0.18, now + 0.12)
+        break
+      case 'victory': // победа: подъём из четырёх нот
+        tone('triangle', 523, 523, 0.35, 0.1)
+        tone('triangle', 659, 659, 0.35, 0.1, now + 0.18)
+        tone('triangle', 784, 784, 0.45, 0.11, now + 0.36)
+        tone('triangle', 1046, 1046, 0.7, 0.08, now + 0.54)
+        break
+      case 'defeat': // поражение: падающий тон и сдув пара
+        tone('sawtooth', 220, 55, 1.8, 0.12)
+        tone('sine', 110, 40, 2.0, 0.12)
+        hiss('highpass', 900, 1.2, 0.05)
         break
       case 'build': // постройка: стук и звонкая заклёпка
         tone('sine', 180, 70, 0.15, 0.25)
