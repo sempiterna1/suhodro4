@@ -4,6 +4,7 @@
 // mini-services/mp-service (socket.io, порт 3003, только relay).
 
 import type { AvatarId } from './config'
+import type { DifficultyId } from './data/difficulties'
 import type {
   ArmorType, AvatarState, Creep, Effect, FloatText, GameStats, Phase, Projectile, Tower,
 } from './types'
@@ -14,7 +15,9 @@ export interface Snap {
   phase: Phase
   wave: number
   gold: number
-  lives: number
+  buildingHp: number
+  buildingMaxHp: number
+  difficulty: DifficultyId
   speed: number
   paused: boolean
   infiniteGold: boolean
@@ -33,12 +36,14 @@ export interface Snap {
   creeps: Array<
     Pick<Creep, 'uid' | 'kind' | 'armor' | 'hp' | 'maxHp' | 'speed' | 'dist' | 'pathIdx' | 'size' | 'isBoss'
       | 'burnDps' | 'burnUntil' | 'stunnedUntil' | 'markedUntil' | 'markedBonus'
-      | 'slowPct' | 'slowUntil' | 'vulnBonus' | 'vulnUntil'>
+      | 'slowPct' | 'slowUntil' | 'vulnBonus' | 'vulnUntil'
+      | 'bossPhase' | 'nextSummonAt' | 'nightmareSummonAt'>
   >
   projectiles: Projectile[]
   effects: Effect[]
   floats: FloatText[]
   nextWaveArmor: ArmorType
+  nextWaveArmors: ArmorType[]
   /** последнее отклонённое действие гостя (для тоста) */
   lastReject?: string
 }

@@ -13,6 +13,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { parseArgs } from 'node:util'
 import { MAP_DEFS } from '../src/game/data/maps'
+import { DIFFICULTIES, DIFFICULTY_IDS, type DifficultyId } from '../src/game/data/difficulties'
 import { TOTAL_WAVES } from '../src/game/data/waves'
 import { AVATAR_IDS } from '../src/game/data/avatars'
 import {
@@ -37,6 +38,7 @@ function usage() {
   --seed <число>                   зерно мира и RNG (по умолчанию 20261029)
   --map <id>                       карта из реестра (по умолчанию tract)
   --shop <all|pool>                all — все башни, pool — случайный арсенал (по умолчанию all)
+  --difficulty <id>                recruit|veteran|nightmare (по умолчанию veteran)
   --coop                           кооп-режим, HP волн ×1.85
   --avatar <id>                    hunter|voevoda|archmage|engineer (по умолчанию hunter)
   --dt <сек>                       шаг симуляции, максимум 0.05 (по умолчанию 1/30)
@@ -49,6 +51,7 @@ function usage() {
   -h, --help                       эта справка
 
 Карты: ${MAP_DEFS.map((m) => `${m.id} (${m.name})`).join(', ')}
+Сложности: ${DIFFICULTY_IDS.map((id) => `${id} (${DIFFICULTIES[id].name})`).join(', ')}
 Волн в текущей миссии: ${TOTAL_WAVES}`)
 }
 
@@ -88,7 +91,7 @@ function printSummary(r: SimReport) {
       `боёв ${fmtTime(r.combatSeconds)}, с паузами ~${fmtTime(r.estimatedMissionSeconds)}`
   )
   console.log(
-    `жизни ${r.lives} · золото ${r.gold} · убито ${s.kills} (боссов ${s.bossKills}) · ` +
+    `жизни здания ${r.buildingHp}/${r.buildingMaxHp} · золото ${r.gold} · убито ${s.kills} (боссов ${s.bossKills}) · ` +
       `прорвалось ${s.leaked} · урон ${Math.round(s.damageDealt)} · DPS ${(s.damageDealt / Math.max(1, r.combatSeconds)).toFixed(1)}`
   )
   const ev = (t: string) => r.events.filter((e) => e.type === t).length
@@ -124,7 +127,7 @@ function toCsv(r: SimReport): string {
     'spawned',
     'killed',
     'leaked',
-    'livesLost',
+    'buildingDamage',
     'damage',
     'dps',
     'duration',
@@ -148,7 +151,7 @@ function toCsv(r: SimReport): string {
       w.spawned,
       w.killed,
       w.leaked,
-      w.livesLost,
+      w.buildingDamage,
       w.damage,
       w.dps,
       w.duration,
@@ -176,6 +179,7 @@ function main() {
       seed: { type: 'string', default: '20261029' },
       map: { type: 'string', default: 'tract' },
       shop: { type: 'string', default: 'all' },
+      difficulty: { type: 'string', default: 'veteran' },
       coop: { type: 'boolean', default: false },
       avatar: { type: 'string', default: 'hunter' },
       dt: { type: 'string', default: String(1 / 30) },
@@ -202,6 +206,9 @@ function main() {
   if (!MAP_DEFS.some((m) => m.id === values.map)) {
     throw new Error(`Неизвестная карта «${values.map}» (${MAP_DEFS.map((m) => m.id).join(', ')})`)
   }
+  if (!DIFFICULTY_IDS.includes(values.difficulty as DifficultyId)) {
+    throw new Error(`Неизвестная сложность «${values.difficulty}» (${DIFFICULTY_IDS.join(', ')})`)
+  }
   if (!AVATAR_IDS.includes(values.avatar as (typeof AVATAR_IDS)[number])) {
     throw new Error(`Неизвестный аватар «${values.avatar}» (${AVATAR_IDS.join(', ')})`)
   }
@@ -221,6 +228,7 @@ function main() {
     policy,
     mapId: values.map,
     shop: values.shop as 'all' | 'pool',
+    difficulty: values.difficulty as DifficultyId,
     coop: values.coop,
     avatarId: values.avatar as (typeof AVATAR_IDS)[number],
     dt,
@@ -255,10 +263,10 @@ function main() {
   const jsonToStdout = values.json === '-'
   const csvToStdout = values.csv === '-'
   if (!values.quiet && !jsonToStdout && !csvToStdout) {
-    console.log('Последний горизонт — headless-симулятор (этап 1)')
+    console.log('Последний горизонт — headless-симулятор (этап 2)')
     console.log(
-      `seed=${report.seed} · policy=${report.policy} · map=${report.map.name} (${report.map.id}) · ` +
-        `shop=${report.shop} · coop=${report.coop ? 'да' : 'нет'} · avatar=${report.avatarId} · dt=${report.dt.toFixed(4)}`
+      `seed=${report.seed} · policy=${report.policy} · difficulty=${report.difficulty} (${report.difficultyName}) · ` +
+        `map=${report.map.name} (${report.map.id}) · shop=${report.shop} · coop=${report.coop ? 'да' : 'нет'} · avatar=${report.avatarId} · dt=${report.dt.toFixed(4)}`
     )
     printTable(report)
     printSummary(report)

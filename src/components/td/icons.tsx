@@ -28,6 +28,11 @@ export const HeartIcon = (p: IconProps) => (
     <path d="M12 20s-7-4.4-8.8-8.6C1.9 8.2 4 5 7.2 5c1.9 0 3.4 1 4.8 2.8C13.4 6 14.9 5 16.8 5 20 5 22.1 8.2 20.8 11.4 19 15.6 12 20 12 20z" />
   </Svg>
 )
+export const BuildingIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M3 20h18M5 20V9l7-5 7 5v11M9 20v-5h6v5M9 10h.01M15 10h.01" />
+  </Svg>
+)
 export const CoinIcon = (p: IconProps) => (
   <Svg {...p}>
     <circle cx="12" cy="12" r="8" />

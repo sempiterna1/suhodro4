@@ -56,6 +56,8 @@ export const roadEnds = {
   exit: { x: 0, y: 0 },
   entry2: { x: 0, y: 0 },
   exit2: { x: 0, y: 0 },
+  /** Генератор главного здания в лагере (экранная точка основания) */
+  camp: { x: 0, y: 0 },
 }
 
 /** Экранная глубина точки под передним левым краем поля (y = MAP_H); <0 — над краем */
@@ -348,6 +350,7 @@ export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasEle
   const CAMP_X = MAP_W + 120 // генератор — сердце лагеря за правым краем поля
   const CAMP_Y = Math.round(MAP_H * 0.55)
   const gen = add('bld-generator', CAMP_X, CAMP_Y, 0.72)
+  roadEnds.camp = { x: gen.x, y: gen.y }
   mapLights.push({ x: gen.x, y: gen.y - 58, kind: 'generator', seed: 7 })
   const houses: AssetName[] = ['prop-tent', 'bld-medical', 'prop-tent', 'bld-workshop', 'prop-cabin', 'prop-tent', 'bld-heater', 'prop-shed', 'bld-depot']
   // паровая база стоит рядом с генератором: на ней беженцы идут дальше (лор GDD)

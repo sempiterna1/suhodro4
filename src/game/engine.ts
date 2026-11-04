@@ -4,16 +4,20 @@
 import { ALL_DEFS, CHAIN_FALLOFF, CHAIN_RANGE, LINE_WIDTH, MERGED_TOWERS, MIN_INTERVAL, SLAM_STUN, TOWERS } from './data/towers'
 import { DAMAGE_MATRIX, ARMOR_HP_MULT, ARMOR_SPEED } from './data/combat'
 import { AVATARS, SELL_RATIO_ENGINEER, VOEVODA_RADIUS, markBonusForLevel, type AvatarId } from './data/avatars'
-import { BOSS_ESCORTS, BOSSES, BOSS_HP_MULT, BOSS_LIVES_COST, BOSS_SPEED, TOTAL_WAVES, WAVES, bossForWave, waveSpeedMult } from './data/waves'
+import { BOSS_ESCORTS, BOSSES, BOSS_HP_MULT, BOSS_SPEED, TOTAL_WAVES, WAVES, armorsForWave, waveSpeedMult } from './data/waves'
+import { DEFAULT_DIFFICULTY, DIFFICULTIES, type DifficultyId } from './data/difficulties'
 import { MAP_H, MAP_W, MERGE_DIST, mapDefBySeed, type MapDef } from './data/maps'
 import {
+  BOSS_BUILDING_DAMAGE,
   BOSS_GOLD_MULT,
+  BUILDING_BASE_HP,
   COOP_HP_MULT,
   FIRST_PREVIEW_TIME,
   goldForKill,
   hpForWave,
   HP_PLAYTEST_MULT,
   INFINITE_GOLD,
+  LEAK_BUILDING_DAMAGE,
   LEVEL_MULT,
   MERGE_MIN_LEVEL,
   levelDamageMult,
@@ -23,8 +27,6 @@ import {
   ROLL_COST,
   SELL_RATIO,
   SHOP_SIZE,
-  START_GOLD,
-  START_LIVES,
   waveBonus,
 } from './data/economy'
 import { CREEP_KINDS, KINDS_BY_ARMOR } from './data/creeps'
@@ -162,8 +164,12 @@ function kindFor(armor: ArmorType, rng: () => number): CreepKind {
 // ─── Игровое состояние ──────────────────────────────────────────────────
 export class Game {
   phase: Phase = 'intro'
-  gold = START_GOLD
-  lives = START_LIVES
+  /** Сложность выбирается в меню до старта и живёт после рестарта */
+  difficulty: DifficultyId = DEFAULT_DIFFICULTY
+  gold = DIFFICULTIES[DEFAULT_DIFFICULTY].startGold
+  /** HP главного здания: поражение при 0 (утечки и боссы) */
+  buildingMaxHp = Math.round(BUILDING_BASE_HP * DIFFICULTIES[DEFAULT_DIFFICULTY].buildingHpMult)
+  buildingHp = this.buildingMaxHp
   wave = 1 // 1-базный номер текущей/следующей волны
   speed = 1
   paused = false // пауза: время стоит, но строить/улучшать/роллить можно
@@ -182,6 +188,20 @@ export class Game {
   avatarId: AvatarId = 'hunter'
   get av() {
     return AVATARS[this.avatarId]
+  }
+  get difficultyDef() {
+    return DIFFICULTIES[this.difficulty]
+  }
+
+  /**
+   * Множитель HP врагов на волне. На Кошмаре растёт с 1.0 до полного ×1.4
+   * к 10-й волне: иначе старт с 120 золота превращается в стену.
+   */
+  creepHpMultForWave(n: number): number {
+    const d = this.difficultyDef
+    if (d.creepHpMult <= 1 || d.hpRampWaves <= 0) return d.creepHpMult
+    const t = Math.min(1, Math.max(0, (n - 1) / d.hpRampWaves))
+    return 1 + (d.creepHpMult - 1) * t
   }
   avatar = {
     x: 90,
@@ -222,8 +242,9 @@ export class Game {
 
   reset() {
     this.phase = 'intro'
-    this.gold = START_GOLD
-    this.lives = START_LIVES
+    this.gold = this.difficultyDef.startGold
+    this.buildingMaxHp = Math.round(BUILDING_BASE_HP * this.difficultyDef.buildingHpMult)
+    this.buildingHp = this.buildingMaxHp
     this.wave = 1
     this.speed = 1
     this.paused = false
@@ -259,6 +280,21 @@ export class Game {
   selectMap(seed: number) {
     this.selectedSeed = seed
     this.loadMap(generateMap(seed))
+  }
+
+  /**
+   * Выбор сложности до старта миссии. Меняет стартовое золото и запас HP
+   * главного здания; после первой волны сложность зафиксирована.
+   */
+  setDifficulty(id: DifficultyId): ActionResult {
+    const def = DIFFICULTIES[id]
+    if (!def) return { ok: false, error: 'Нет такой сложности' }
+    if (this.phase !== 'intro') return { ok: false, error: 'Сложность меняется только до старта миссии' }
+    this.difficulty = id
+    this.gold = def.startGold
+    this.buildingMaxHp = Math.round(BUILDING_BASE_HP * def.buildingHpMult)
+    this.buildingHp = this.buildingMaxHp
+    return { ok: true }
   }
 
   private loadMap(m: GameMap) {
@@ -336,8 +372,11 @@ export class Game {
         this.spawnQueue.push({ t: 3 + i * 1.2, isBoss: false, armor: 'medium', kind: kindFor('medium', this.rng) })
       }
     } else {
+      // смешанные волны: типы брони чередуются внутри волны (на Кошмаре — уже с 11-й)
+      const armors = armorsForWave(def, this.difficultyDef.mixedWavesFrom)
       for (let i = 0; i < def.count; i++) {
-        this.spawnQueue.push({ t: i * def.spawnInterval, isBoss: false, armor: def.armor, kind: kindFor(def.armor, this.rng) })
+        const armor = armors[i % armors.length]
+        this.spawnQueue.push({ t: i * def.spawnInterval, isBoss: false, armor, kind: kindFor(armor, this.rng) })
       }
       // Особенность карты («Пепельная долина»): дополнительные универсальные враги,
       // равномерно распределённые по волне
@@ -355,7 +394,7 @@ export class Game {
       }
     }
     this.waveTotal = this.spawnQueue.length
-    this.logEvent({ type: 'waveStart', armor: def.armor, amount: this.waveTotal, text: def.kind })
+    this.logEvent({ type: 'waveStart', armor: def.armor, amount: this.waveTotal, text: def.armors.join('+') })
   }
 
   setSpeed(s: number) {
@@ -698,13 +737,14 @@ export class Game {
       let speed: number
       let size: number
       let gold: number
-      let livesCost: number
+      let buildingDamage: number
+      const hpDifficultyMult = this.creepHpMultForWave(def.n)
       if (o.isBoss) {
-        hp = hpForWave(def.n) * BOSS_HP_MULT * HP_PLAYTEST_MULT * this.coopMult()
+        hp = hpForWave(def.n) * BOSS_HP_MULT * def.hpMult * HP_PLAYTEST_MULT * this.coopMult() * hpDifficultyMult
         speed = BOSS_SPEED * this.mapDef.creepSpeedMult
         size = 26
         gold = goldForKill(def.n) * BOSS_GOLD_MULT
-        livesCost = BOSS_LIVES_COST
+        buildingDamage = BOSS_BUILDING_DAMAGE
         const bd = BOSSES[def.n]
         if (bd) {
           const p0 = pointAtLength(o.atDist ?? 0, o.pathIdx ?? 0)
@@ -712,12 +752,19 @@ export class Game {
         }
       } else {
         const kd = CREEP_KINDS[o.kind]
-        hp = hpForWave(def.n) * ARMOR_HP_MULT[o.armor] * (o.hpMult ?? def.hpMult) * kd.hpMult * HP_PLAYTEST_MULT * this.coopMult()
+        hp =
+          hpForWave(def.n) *
+          ARMOR_HP_MULT[o.armor] *
+          (o.hpMult ?? def.hpMult) *
+          kd.hpMult *
+          HP_PLAYTEST_MULT *
+          this.coopMult() *
+          hpDifficultyMult
         // GDD: скорость +1% за волну (макс +25%) × особенность карты (Ледяной перевал ×1.1)
         speed = ARMOR_SPEED[o.armor] * kd.speedMult * waveSpeedMult(def.n) * this.mapDef.creepSpeedMult
         size = kd.size
         gold = goldForKill(def.n) * def.goldMult
-        livesCost = 1
+        buildingDamage = LEAK_BUILDING_DAMAGE
       }
       // призванные боссом идут по его тропе; входящие делятся между тропами поровну (GDD)
       const pathIdx =
@@ -734,7 +781,7 @@ export class Game {
         size,
         isBoss: o.isBoss,
         gold,
-        livesCost,
+        buildingDamage,
         burnDps: 0,
         burnUntil: 0,
         burnSource: '',
@@ -790,8 +837,33 @@ export class Game {
           pathIdx: c.pathIdx,
         })
       }
+      // призыв должен выйти сразу, а не ждать сопровождающих, стоящих в очереди раньше
+      this.spawnQueue.sort((a, b) => a.t - b.t)
       const p = pointAtLength(c.dist, c.pathIdx)
       this.addFloat(p.x, p.y - 16, 'Призыв!', '#c58aff')
+    }
+    // Кошмар: вторая способность босса — дополнительный призыв вне фаз
+    const extra = this.difficultyDef.bossExtraAbility ? boss.nightmare : undefined
+    if (extra) {
+      if (c.nightmareSummonAt === undefined) c.nightmareSummonAt = this.time + extra.firstDelay
+      if (this.time >= c.nightmareSummonAt) {
+        c.nightmareSummonAt = this.time + extra.every
+        for (let i = 0; i < extra.count; i++) {
+          this.spawnQueue.push({
+            t: this.time - this.waveStart,
+            isBoss: false,
+            armor: extra.armor,
+            kind: kindFor(extra.armor, this.rng),
+            atDist: Math.max(0, c.dist - 24 * (i + 1)),
+            hpMult: extra.hpMult,
+            pathIdx: c.pathIdx,
+          })
+        }
+        this.spawnQueue.sort((a, b) => a.t - b.t)
+        const p = pointAtLength(c.dist, c.pathIdx)
+        this.logEvent({ type: 'bossAbility', phase: c.bossPhase ?? 0, armor: extra.armor, x: p.x, y: p.y, text: `${boss.name}: ${extra.name}` })
+        this.addFloat(p.x, p.y - 30, `${extra.name}!`, '#ff6b6b')
+      }
     }
   }
 
@@ -809,14 +881,14 @@ export class Game {
       }
       const len = pathLength(c.pathIdx)
       if (c.dist >= len) {
-        // прорвался — у каждой тропы свой выход
-        this.lives -= c.livesCost
+        // прорвался — у каждой тропы свой выход, урон идёт по главному зданию
+        this.buildingHp -= c.buildingDamage
         this.stats.leaked++
         const exit = pointAtLength(len - 30, c.pathIdx)
-        this.logEvent({ type: 'leak', creepKind: c.kind, armor: c.armor, amount: c.livesCost, x: exit.x, y: exit.y })
-        this.addFloat(exit.x, exit.y - 20, `−${c.livesCost} ♥`, '#e05252')
-        if (this.lives <= 0) {
-          this.lives = 0
+        this.logEvent({ type: 'leak', creepKind: c.kind, armor: c.armor, amount: c.buildingDamage, x: exit.x, y: exit.y })
+        this.addFloat(exit.x, exit.y - 20, `−${c.buildingDamage} HP`, '#e05252')
+        if (this.buildingHp <= 0) {
+          this.buildingHp = 0
           this.phase = 'over'
           this.logEvent({ type: 'lose' })
           return
@@ -1294,11 +1366,23 @@ export class Game {
   // ─── Снимок для UI ────────────────────────────────────────────────────
   getUiState(): UiState {
     const def = WAVES[Math.min(this.wave, TOTAL_WAVES) - 1]
+    const diff = this.difficultyDef
+    const armors = armorsForWave(def, diff.mixedWavesFrom)
+    const armorForecast: UiState['armorForecast'] = []
+    for (let i = 0; i < diff.armorForecastWaves; i++) {
+      const n = this.wave + i
+      if (n > TOTAL_WAVES) break
+      const wd = WAVES[n - 1]
+      armorForecast.push({ wave: n, armors: armorsForWave(wd, diff.mixedWavesFrom), kind: wd.kind })
+    }
     const lvl = this.avatar.level
     return {
       phase: this.phase,
       gold: Math.floor(this.gold),
-      lives: this.lives,
+      buildingHp: Math.max(0, this.buildingHp),
+      buildingMaxHp: this.buildingMaxHp,
+      difficulty: this.difficulty,
+      difficultyName: diff.name,
       wave: this.wave,
       totalWaves: TOTAL_WAVES,
       coop: this.coop,
@@ -1320,7 +1404,9 @@ export class Game {
         cooldown: this.avatar.cooldown,
         id: this.avatarId,
       },
-      nextWaveArmor: def.armor,
+      nextWaveArmor: armors[0],
+      nextWaveArmors: armors,
+      armorForecast,
       nextWaveIsBoss: def.kind === 'boss',
       nextWaveBossName: def.kind === 'boss' ? (BOSSES[def.n]?.name ?? null) : null,
       nextWaveIsMoney: def.kind === 'money',
@@ -1351,12 +1437,15 @@ export class Game {
   /** Полный снимок мира для гостя (JSON-совместимый) */
   serialize(): Snap {
     const def = WAVES[Math.min(this.wave, TOTAL_WAVES) - 1]
+    const armors = armorsForWave(def, this.difficultyDef.mixedWavesFrom)
     return {
       seq: this.snapSeq++,
       phase: this.phase,
       wave: this.wave,
       gold: Math.floor(this.gold),
-      lives: this.lives,
+      buildingHp: Math.max(0, this.buildingHp),
+      buildingMaxHp: this.buildingMaxHp,
+      difficulty: this.difficulty,
       speed: this.speed,
       paused: this.paused,
       infiniteGold: this.infiniteGold,
@@ -1387,11 +1476,13 @@ export class Game {
         burnDps: c.burnDps, burnUntil: c.burnUntil,
         stunnedUntil: c.stunnedUntil, markedUntil: c.markedUntil, markedBonus: c.markedBonus,
         slowPct: c.slowPct, slowUntil: c.slowUntil, vulnBonus: c.vulnBonus, vulnUntil: c.vulnUntil,
+        bossPhase: c.bossPhase, nextSummonAt: c.nextSummonAt, nightmareSummonAt: c.nightmareSummonAt,
       })),
       projectiles: this.projectiles.map((p) => ({ ...p })),
       effects: this.effects.map((e) => ({ ...e })),
       floats: this.floats.map((f) => ({ ...f })),
-      nextWaveArmor: def.armor,
+      nextWaveArmor: armors[0],
+      nextWaveArmors: armors,
       lastReject: this.lastReject,
     }
   }
@@ -1407,7 +1498,9 @@ export class Game {
     this.phase = s.phase
     this.wave = s.wave
     this.gold = s.gold
-    this.lives = s.lives
+    this.buildingHp = s.buildingHp
+    this.buildingMaxHp = s.buildingMaxHp
+    this.difficulty = s.difficulty ?? DEFAULT_DIFFICULTY
     this.speed = s.speed
     this.paused = s.paused
     this.infiniteGold = s.infiniteGold
@@ -1427,11 +1520,12 @@ export class Game {
     this.creeps = s.creeps.map((c) => ({
       uid: c.uid, kind: c.kind, armor: c.armor, hp: c.hp, maxHp: c.maxHp, speed: c.speed,
       dist: c.dist, pathIdx: c.pathIdx ?? 0, size: c.size, isBoss: c.isBoss,
-      gold: 0, livesCost: 1, burnSource: '',
+      gold: 0, buildingDamage: LEAK_BUILDING_DAMAGE, burnSource: '',
       burnDps: c.burnDps, burnUntil: c.burnUntil,
       stunnedUntil: c.stunnedUntil, markedUntil: c.markedUntil, markedBonus: c.markedBonus,
       goldMult: 1,
       slowPct: c.slowPct, slowUntil: c.slowUntil, vulnBonus: c.vulnBonus, vulnUntil: c.vulnUntil,
+      bossPhase: c.bossPhase, nextSummonAt: c.nextSummonAt, nightmareSummonAt: c.nightmareSummonAt,
     }))
     this.projectiles = s.projectiles.map((p) => ({ ...p }))
     this.effects = s.effects.map((e) => ({ ...e }))

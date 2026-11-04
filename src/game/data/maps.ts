@@ -33,7 +33,7 @@ export const MAP_DEFS: MapDef[] = [
   { id: 'bridge', name: 'Каменный мост', feature: 'тропа извилиста, мест мало — сливайте башни', seed: 1, creepSpeedMult: 1, universalExtra: 0 },
   { id: 'mines', name: 'Заброшенные шахты', feature: 'короткая тропа — максимум мест под стройку', seed: 150, creepSpeedMult: 1, universalExtra: 0 },
   { id: 'pass', name: 'Ледяной перевал', feature: 'заражённые быстрее на 10%', seed: 3, creepSpeedMult: 1.1, universalExtra: 0 },
-  { id: 'valley', name: 'Пепельная долина', feature: 'универсальные враги в каждой волне; с 16-й волны — второй выход', seed: 8, creepSpeedMult: 1, universalExtra: 6, secondExitWave: 16 },
+  { id: 'valley', name: 'Пепельная долина', feature: 'универсальные враги в каждой волне; с 16-й волны — второй выход', seed: 8, creepSpeedMult: 1, universalExtra: 3, secondExitWave: 16 },
 ]
 
 /** Определение карты по зерну (зерно уникально в рамках MAP_DEFS) */

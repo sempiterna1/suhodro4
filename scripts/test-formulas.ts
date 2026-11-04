@@ -7,9 +7,13 @@ import {
   ARMOR_HP_MULT,
   ARMOR_SPEED,
   ATTACK_NAMES,
+  BOSS_BUILDING_DAMAGE,
   BOSS_HP_MULT,
+  BUILDING_BASE_HP,
   DAMAGE_MATRIX,
+  DIFFICULTIES,
   HP_PLAYTEST_MULT,
+  LEAK_BUILDING_DAMAGE,
   LEVEL_MULT,
   MAX_LEVEL,
   TOTAL_WAVES,
@@ -77,11 +81,23 @@ const hybridLight = hybridMult(['pierce', 'magic'], 'light')
 check('гибрид pierce+magic по лёгкой выбирает pierce ×1.5', hybridLight.mult === 1.5 && hybridLight.attack === 'pierce')
 
 // ─── Золото ─────────────────────────────────────────────────────────────
-const goldExpect: Array<[number, number]> = [[1, 2], [2, 2], [3, 3], [9, 5], [10, 5], [19, 8], [20, 8]]
+const goldExpect: Array<[number, number]> = [[1, 2], [2, 2], [3, 3], [9, 5], [10, 5], [19, 8], [20, 8], [29, 11], [30, 12]]
 for (const [wave, expected] of goldExpect) eq(`золото за убийство волны ${wave}`, goldForKill(wave), expected)
-const bonusExpect: Array<[number, number]> = [[1, 31], [9, 79], [10, 85], [19, 139], [20, 145]]
+const bonusExpect: Array<[number, number]> = [[1, 31], [9, 79], [10, 85], [19, 139], [20, 145], [29, 199], [30, 205]]
 for (const [wave, expected] of bonusExpect) eq(`бонус волны ${wave}`, waveBonus(wave), expected)
 eq('бонус денежной 9-й ×2', waveBonus(9) * 2, 158)
+eq('бонус денежной 29-й ×2', waveBonus(29) * 2, 398)
+
+// ─── Главное здание и сложности ─────────────────────────────────────────
+eq('база здания 200 HP', BUILDING_BASE_HP, 200)
+eq('утечка обычного крипа — 10 HP', LEAK_BUILDING_DAMAGE, 10)
+eq('прорыв босса — 100 HP', BOSS_BUILDING_DAMAGE, 100)
+eq('Новобранец: здание ×1.4', DIFFICULTIES.recruit.buildingHpMult, 1.4)
+eq('Ветеран: здание ×1.0', DIFFICULTIES.veteran.buildingHpMult, 1.0)
+eq('Кошмар: здание ×0.75', DIFFICULTIES.nightmare.buildingHpMult, 0.75)
+check('Новобранец: HP врагов ×0.75 и 200 золота', DIFFICULTIES.recruit.creepHpMult === 0.75 && DIFFICULTIES.recruit.startGold === 200)
+check('Ветеран: базовые HP и 150 золота', DIFFICULTIES.veteran.creepHpMult === 1 && DIFFICULTIES.veteran.startGold === 150)
+check('Кошмар: HP ×1.4, 120 золота, смешение с 11-й', DIFFICULTIES.nightmare.creepHpMult === 1.4 && DIFFICULTIES.nightmare.startGold === 120 && DIFFICULTIES.nightmare.mixedWavesFrom === 11)
 
 // ─── Уровни башен ───────────────────────────────────────────────────────
 const levels = [1, 1.9, 3.2, 5.0, 7.5]
@@ -117,13 +133,13 @@ if (boss) {
 }
 
 // ─── Структура волн ─────────────────────────────────────────────────────
-// Не фиксируем 20: этап 2 расширит миссию до 30 волн, и тест должен
-// проверить структуру данных, а не конкретную длину.
 check('TOTAL_WAVES совпадает с длиной WAVES', TOTAL_WAVES === WAVES.length, `${TOTAL_WAVES} / ${WAVES.length}`)
 check('номера волн идут подряд с 1', WAVES.every((w, i) => w.n === i + 1))
 check('WAVES 1..8 — обычные, 9 — денежная, 10 — босс', WAVES.slice(0, 8).every((w) => w.kind === 'normal') && WAVES[8].kind === 'money' && WAVES[9].kind === 'boss')
+check('19 — денежная, 20 — босс', WAVES[18].kind === 'money' && WAVES[19].kind === 'boss')
+check('21–28 — смешанные обычные волны', WAVES.slice(20, 28).every((w) => w.kind === 'normal' && w.armors.length === 2))
 check(
-  'последняя волна — босс, предпоследняя — денежная',
+  'последняя волна 30 — босс, 29 — денежная',
   WAVES[WAVES.length - 1].kind === 'boss' && WAVES[WAVES.length - 2].kind === 'money'
 )
 

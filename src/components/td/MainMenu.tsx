@@ -3,26 +3,39 @@
 // Пошаговое главное меню «Последнего горизонта» (в духе больших игр):
 //   Этап 1 — главная: арт, лор, «Играть»;
 //   Этап 2 — выбор карты: 6 карт с живым предпросмотром тропы (рисуется по зерну);
-//   Этап 3 — выбор героя: портреты, способности, «В бой» / «Вдвоём».
+//   Этап 3 — выбор сложности: Новобранец / Ветеран / Кошмар;
+//   Этап 4 — выбор героя: портреты, способности, «В бой» / «Вдвоём».
 // Состояние шага живёт внутри меню: после партии меню монтируется заново — с главной.
 
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { AVATARS, AVATAR_IDS, MAP_DEFS, MAP_H, MAP_W, type AvatarId } from '@/game/config'
+import {
+  AVATARS,
+  AVATAR_IDS,
+  BUILDING_BASE_HP,
+  DIFFICULTIES,
+  DIFFICULTY_IDS,
+  MAP_DEFS,
+  MAP_H,
+  MAP_W,
+  type AvatarId,
+  type DifficultyId,
+} from '@/game/config'
 import { generateMap } from '@/game/map'
 import { toScreen } from '@/game/iso'
 import { buildBackground, mapLights, props, roadEnds } from '@/game/world'
 import { avatarPortrait } from '@/game/pixel'
 import type { UiState, Vec } from '@/game/types'
 
-type Step = 0 | 1 | 2
-const STEP_TITLES = ['ГЛАВНАЯ', 'ВЫБОР КАРТЫ', 'ВЫБОР ГЕРОЯ']
+type Step = 0 | 1 | 2 | 3
+const STEP_TITLES = ['ГЛАВНАЯ', 'ВЫБОР КАРТЫ', 'СЛОЖНОСТЬ', 'ВЫБОР ГЕРОЯ']
 
 interface MainMenuProps {
   ui: UiState
   uiScale: number
   fullscreen: boolean
   onPickMap: (seed: number) => void
+  onPickDifficulty: (id: DifficultyId) => void
   onPickAvatar: (id: AvatarId) => void
   onStart: () => void
   onStartCoop: () => void
@@ -74,10 +87,18 @@ export function MainMenu(props: MainMenuProps) {
               />
             )}
             {step === 2 && (
+              <StepDifficulty
+                ui={ui}
+                onPickDifficulty={props.onPickDifficulty}
+                onBack={() => go(1)}
+                onNext={() => go(3)}
+              />
+            )}
+            {step === 3 && (
               <StepHero
                 ui={ui}
                 onPickAvatar={props.onPickAvatar}
-                onBack={() => go(1)}
+                onBack={() => go(2)}
                 onStart={props.onStart}
                 onStartCoop={props.onStartCoop}
               />
@@ -106,7 +127,7 @@ function StepMain({ onPlay, onHelp, onToggleFullscreen, fullscreen }: MainMenuPr
         />
       </h1>
       <div className="mb-9 flex flex-wrap justify-center gap-2 text-[10px] text-[#94a3b8]">
-        {['15 башен', 'слияние', '6 карт · 20 волн', 'кооп по ссылке'].map((t) => (
+        {['15 башен', 'слияние', '6 карт · 30 волн', 'кооп по ссылке'].map((t) => (
           <span key={t} className="rounded border border-[#5b6f8c55] px-2 py-1">{t}</span>
         ))}
       </div>
@@ -143,7 +164,7 @@ function StepMap({
   return (
     <div className="mx-auto w-full max-w-4xl">
       <p className="mb-1 text-center font-serif text-2xl font-black tracking-wide text-[#ffc46b]">ВЫБОР КАРТЫ</p>
-      <p className="mb-5 text-center text-[11px] text-[#7088a8]">тропа фиксирована и видна заранее · 20 волн · боссы на 10-й и 20-й</p>
+      <p className="mb-5 text-center text-[11px] text-[#7088a8]">тропа фиксирована и видна заранее · 30 волн · боссы на 10-й, 20-й и 30-й</p>
       <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {MAP_DEFS.map((m) => {
           const picked = ui.mapName === m.name
@@ -171,7 +192,7 @@ function StepMap({
           )
         })}
       </div>
-      <MenuFooter onBack={onBack} nextLabel="ДАЛЕЕ: ГЕРОЙ →" onNext={onNext} />
+      <MenuFooter onBack={onBack} nextLabel="ДАЛЕЕ: СЛОЖНОСТЬ →" onNext={onNext} />
     </div>
   )
 }
@@ -333,7 +354,66 @@ function MapPreview({ seed, w = 320 }: { seed: number; w?: number }) {
   return <canvas ref={ref} className="block h-auto w-full" aria-hidden />
 }
 
-// ─── Этап 3: выбор героя ─────────────────────────────────────────────────
+// ─── Этап 3: выбор сложности ──────────────────────────────────────────────
+
+function StepDifficulty({
+  ui,
+  onPickDifficulty,
+  onBack,
+  onNext,
+}: {
+  ui: UiState
+  onPickDifficulty: (id: DifficultyId) => void
+  onBack: () => void
+  onNext: () => void
+}) {
+  return (
+    <div className="mx-auto w-full max-w-4xl">
+      <p className="mb-1 text-center font-serif text-2xl font-black tracking-wide text-[#ffc46b]">СЛОЖНОСТЬ</p>
+      <p className="mb-5 text-center text-[11px] text-[#7088a8]">от неё зависят HP заражённых, стартовое золото и прочность главного здания</p>
+      <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {DIFFICULTY_IDS.map((id) => {
+          const d = DIFFICULTIES[id]
+          const picked = ui.difficulty === id
+          const buildingHp = Math.round(BUILDING_BASE_HP * d.buildingHpMult)
+          return (
+            <motion.button
+              key={id}
+              type="button"
+              whileHover={{ y: -3 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={() => onPickDifficulty(id)}
+              className={`flex flex-col rounded-md border-2 bg-gradient-to-b from-[#172030] to-[#0a0f17] px-4 py-4 text-left transition-colors ${
+                picked ? 'shadow-[0_0_18px_#ffd70044]' : 'border-[#2e3c52] opacity-85 hover:opacity-100'
+              }`}
+              style={{ borderColor: picked ? d.color : undefined }}
+              title={d.desc}
+            >
+              <span className="font-serif text-xl font-black" style={{ color: d.color }}>
+                {picked ? '▸ ' : ''}{d.name}
+              </span>
+              <span className="mt-1 min-h-[3.5em] text-[11px] leading-snug text-[#aebdd2]">{d.desc}</span>
+              <span className="mt-3 grid grid-cols-2 gap-1 font-mono text-[10px] text-[#8fa2bd]">
+                <span>HP врагов <b className="text-[#e8ecf4]">×{d.creepHpMult.toFixed(2).replace(/0$/, '')}</b></span>
+                <span>золото <b className="text-[#f2c94c]">{d.startGold}</b></span>
+                <span>здание <b className="text-[#ff9a7a]">{buildingHp} HP</b></span>
+                <span>победа ~<b className="text-[#e8ecf4]">{d.targetWinRate}%</b></span>
+              </span>
+              <span className="mt-2 flex flex-wrap gap-1 text-[9px] uppercase tracking-[0.05em] text-[#7088a8]">
+                {d.armorForecastWaves > 1 && <span className="rounded border border-[#59c27a55] px-1.5 py-0.5 text-[#7fd0a0]">броня на 2 волны</span>}
+                {d.mixedWavesFrom !== null && <span className="rounded border border-[#e0525255] px-1.5 py-0.5 text-[#e05252]">смешанная броня с {d.mixedWavesFrom}-й</span>}
+                {d.bossExtraAbility && <span className="rounded border border-[#e0525255] px-1.5 py-0.5 text-[#e05252]">боссы: 2-я способность</span>}
+              </span>
+            </motion.button>
+          )
+        })}
+      </div>
+      <MenuFooter onBack={onBack} nextLabel="ДАЛЕЕ: ГЕРОЙ →" onNext={onNext} />
+    </div>
+  )
+}
+
+// ─── Этап 4: выбор героя ─────────────────────────────────────────────────
 
 function StepHero({
   ui,
@@ -385,7 +465,7 @@ function StepHero({
           <span className="text-[#7088a8]">Пассивно: {a.passive.toLowerCase()}.</span>
         </p>
         <p className="mt-1 font-mono text-[10px] text-[#5b6f8c]">
-          карта: {ui.mapName} · {ui.mapFeature}
+          карта: {ui.mapName} · сложность: {ui.difficultyName} · {ui.mapFeature}
         </p>
       </div>
       <div className="flex flex-wrap items-center justify-center gap-2.5">

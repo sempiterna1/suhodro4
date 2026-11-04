@@ -4,6 +4,7 @@
 export type ArmorType = 'light' | 'medium' | 'heavy' | 'universal'
 export type AttackType = 'pierce' | 'crush' | 'magic' | 'universal'
 export type Phase = 'intro' | 'preview' | 'wave' | 'over' | 'won'
+export type WaveKind = 'normal' | 'money' | 'boss'
 
 export interface Vec {
   x: number
@@ -102,7 +103,8 @@ export interface Creep {
   size: number
   isBoss: boolean
   gold: number
-  livesCost: number
+  /** Урон по главному зданию при прорыве (обычный крип/босс) */
+  buildingDamage: number
   burnDps: number
   burnUntil: number
   burnSource: string
@@ -116,6 +118,7 @@ export interface Creep {
   vulnUntil: number
   bossPhase?: number // индекс текущей фазы босса (0 = базовая), только для isBoss
   nextSummonAt?: number // time следующего призыва (фазы с summon)
+  nightmareSummonAt?: number // time следующего призыва второй способности (Кошмар)
 }
 
 export interface Tower {
@@ -215,6 +218,7 @@ export type GameEventType =
   | 'roll'
   | 'leak'
   | 'bossPhase'
+  | 'bossAbility'
   | 'waveStart'
   | 'waveEnd'
   | 'win'
@@ -243,7 +247,11 @@ export interface GameEvent {
 export interface UiState {
   phase: Phase
   gold: number
-  lives: number
+  /** HP главного здания (поражение при 0) */
+  buildingHp: number
+  buildingMaxHp: number
+  difficulty: import('./data/difficulties').DifficultyId
+  difficultyName: string
   wave: number // номер текущей/следующей волны (1-базный)
   totalWaves: number
   coop: boolean // подключён второй игрок (HP ×1.85)
@@ -266,6 +274,10 @@ export interface UiState {
     id: import('./config').AvatarId
   }
   nextWaveArmor: ArmorType
+  /** Все типы брони ближайшей волны (на смешанных волнах — два) */
+  nextWaveArmors: ArmorType[]
+  /** Прогноз брони: 1 волна на Ветеране/Кошмаре, 2 — на Новобранце */
+  armorForecast: Array<{ wave: number; armors: ArmorType[]; kind: WaveKind }>
   nextWaveIsBoss: boolean
   nextWaveBossName: string | null // имя босса с фазами (BOSSES), для боссовых волн
   nextWaveIsMoney: boolean

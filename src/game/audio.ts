@@ -139,7 +139,7 @@ export class Sfx {
   private stepAcc = new Map<number, number>()
   private music: { gain: GainNode; bufs: (AudioBuffer | null)[]; factors: number[]; idx: number; nextAt: number } | null = null
   musicVolume = 0.35
-  private lives = -1
+  private buildingHp = -1
   private wave = -1
   private phase = ''
   private shop = ''
@@ -469,7 +469,7 @@ export class Sfx {
     this.ambientTick(game)
     // рестарт или новая игра — запоминаем состояние молча (иначе исчезнувшие враги «погибнут» хором)
     const restarted = game.wave < this.wave || (game.phase === 'intro' && this.phase !== 'intro')
-    const fresh = this.lives < 0 || restarted
+    const fresh = this.buildingHp < 0 || restarted
     let budget = 6 // не больше 6 звуков за кадр
     const play = (s: Sound, x = MAP_W / 2, rate = 1) => {
       if (fresh || budget <= 0) return
@@ -494,11 +494,11 @@ export class Sfx {
 
     // гибель врагов и прорывы
     const alive = new Map(game.creeps.map((c) => [c.uid, c.kind] as const))
-    const leaked = this.lives >= 0 && game.lives < this.lives
+    const leaked = this.buildingHp >= 0 && game.buildingHp < this.buildingHp
     for (const [uid, kind] of this.creeps) if (!alive.has(uid) && !leaked) play('die', MAP_W / 2, DIE_RATE[kind] ?? 1)
     if (leaked) play('leak', MAP_W)
     this.creeps = alive
-    this.lives = game.lives
+    this.buildingHp = game.buildingHp
 
     // шаги: каждые stride пикселей пройденного пути — один шаг (по разнице dist между кадрами, поэтому слышно и у гостя коопа)
     let stepBudget = MAX_STEPS_PER_FRAME

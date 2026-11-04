@@ -38,6 +38,37 @@ check(
 )
 check('scripted: event-log содержит фазу босса', scripted.events.some((e) => e.type === 'bossPhase'))
 check('scripted: отчёт сериализуется в JSON', typeof JSON.stringify(scripted) === 'string')
+check(
+  'scripted: HP здания в отчёте и в допустимых границах',
+  scripted.buildingMaxHp === 200 && scripted.buildingHp >= 0 && scripted.buildingHp <= scripted.buildingMaxHp,
+  `${scripted.buildingHp}/${scripted.buildingMaxHp}`
+)
+check(
+  'scripted: урон по зданию по волнам неотрицателен',
+  scripted.waves.every((w) => w.buildingDamage >= 0 && Number.isFinite(w.buildingDamage))
+)
+check(
+  'scripted: у смешанных волн в отчёте два типа брони',
+  scripted.waves.every((w) => w.armors.length === (w.armor.includes('+') ? 2 : 1))
+)
+
+// ─── Сложности в симуляторе ──────────────────────────────────────────────
+const recruit = runSimulation({ seed: 20261029, policy: 'scripted', maxWaves: 10, difficulty: 'recruit' })
+check('recruit: сложность в отчёте', recruit.difficulty === 'recruit' && recruit.difficultyName === 'Новобранец')
+check('recruit: здание 280 HP', recruit.buildingMaxHp === 280, `${recruit.buildingMaxHp}`)
+const nightmare = runSimulation({ seed: 20261029, policy: 'scripted', maxWaves: 11, difficulty: 'nightmare' })
+check('nightmare: сложность в отчёте', nightmare.difficulty === 'nightmare' && nightmare.difficultyName === 'Кошмар')
+check('nightmare: здание 150 HP', nightmare.buildingMaxHp === 150, `${nightmare.buildingMaxHp}`)
+check(
+  'nightmare: с 11-й волны броня смешана',
+  nightmare.waves.some((w) => w.wave >= 11 && w.armors.length > 1),
+  nightmare.waves.map((w) => `${w.wave}:${w.armor}`).join(', ')
+)
+check(
+  'сложности влияют на HP врагов (recruit легче nightmare)',
+  recruit.stats.damageDealt < nightmare.stats.damageDealt,
+  `${Math.round(recruit.stats.damageDealt)} vs ${Math.round(nightmare.stats.damageDealt)}`
+)
 
 // ─── Детерминизм: два одинаковых прогона — один и тот же JSON ────────────
 const a = runSimulation({ seed: 42, policy: 'scripted', maxWaves: 5, dt: 1 / 30 })

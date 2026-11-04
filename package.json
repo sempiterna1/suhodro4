@@ -8,6 +8,7 @@
     "start": "NODE_ENV=production bun .next/standalone/server.js 2>&1 | tee server.log",
     "lint": "eslint .",
     "sim": "npx tsx scripts/sim.ts",
+    "balance": "npx tsx scripts/balance.ts",
     "test:formulas": "npx tsx scripts/test-formulas.ts",
     "test:sim": "npx tsx scripts/test-sim.ts",
     "db:push": "prisma db push --accept-data-loss",

@@ -1,9 +1,11 @@
-// Тест карт и 20 волн: реестр MAP_DEFS, фиксированные зёрна, фичи карт,
-// структура волн (боссы 10/20, денежные 9/19) и победа на 20-й волне.
+// Тест карт и 30 волн: реестр MAP_DEFS, фиксированные зёрна, фичи карт,
+// структура волн (боссы 10/20/30, денежные 9/19/29, смешанные 21–28),
+// сложности и победа на 30-й волне.
 
 import {
   ARMOR_SPEED,
   CREEP_KINDS,
+  DIFFICULTIES,
   MAP_DEFS,
   TOTAL_WAVES,
   WAVES,
@@ -31,11 +33,25 @@ check('mapDefBySeed находит по зерну', mapDefBySeed(3).id === 'pas
 check('mapDefBySeed: чужое зерно → «Пограничный тракт»', mapDefBySeed(999999).id === 'tract')
 
 // ── Волны ──
-check('всего волн 20', WAVES.length === 20 && TOTAL_WAVES === 20)
-check('денежные волны 9 и 19', WAVES[8].kind === 'money' && WAVES[18].kind === 'money')
-check('босс на 10 и 20', WAVES[9].kind === 'boss' && WAVES[19].kind === 'boss')
-check('в 11–20 есть универсальная броня', WAVES.slice(10, 20).some((w) => w.armor === 'universal'))
-check('скорость: +1%/волна, потолок +25%', waveSpeedMult(1) === 1 && waveSpeedMult(20) === 1.19 && waveSpeedMult(40) === 1.25)
+check('всего волн 30', WAVES.length === 30 && TOTAL_WAVES === 30)
+check('денежные волны 9, 19 и 29', WAVES[8].kind === 'money' && WAVES[18].kind === 'money' && WAVES[28].kind === 'money')
+check('боссы на 10, 20 и 30', WAVES[9].kind === 'boss' && WAVES[19].kind === 'boss' && WAVES[29].kind === 'boss')
+check('в 11–20 есть универсальная броня', WAVES.slice(10, 20).some((w) => w.armors.includes('universal')))
+check(
+  'волны 21–28 смешаны из двух типов брони',
+  WAVES.slice(20, 28).every((w) => w.armors.length === 2 && w.armors[0] !== w.armors[1]),
+  WAVES.slice(20, 28).map((w) => w.armors.join('+')).join(', ')
+)
+check('скорость: +1%/волна, потолок +25%', waveSpeedMult(1) === 1 && waveSpeedMult(20) === 1.19 && waveSpeedMult(30) === 1.25 && waveSpeedMult(40) === 1.25)
+
+// ── Сложности: золото, HP здания, доступность ──
+const diff = new Game()
+check('по умолчанию Ветеран', diff.difficulty === 'veteran' && diff.buildingMaxHp === 200 && diff.gold === 150)
+check('Новобранец: 200 золота и 280 HP здания', diff.setDifficulty('recruit').ok && diff.gold === 200 && diff.buildingMaxHp === 280)
+check('Кошмар: 120 золота и 150 HP здания', diff.setDifficulty('nightmare').ok && diff.gold === 120 && diff.buildingMaxHp === 150)
+diff.beginPreview()
+check('после старта сложность не меняется', !diff.setDifficulty('veteran').ok && diff.difficulty === 'nightmare')
+check('DIFFICULTIES: три режима', Object.keys(DIFFICULTIES).length === 3)
 
 // ── Движок: выбор карты и рестарт ──
 const g = new Game()
@@ -50,8 +66,8 @@ valley.selectMap(MAP_DEFS.find((m) => m.id === 'valley')!.seed)
 valley.beginPreview()
 valley.startWave()
 const q = valley['spawnQueue'] as Array<{ armor: string }>
-check('Пепельная долина: 20 обычных + 6 универсальных', q.length === 26, `${q.length} в очереди`)
-check('Пепельная долина: универсалы в очереди', q.filter((o) => o.armor === 'universal').length === 6)
+check('Пепельная долина: 20 обычных + 3 универсальных', q.length === 23, `${q.length} в очереди`)
+check('Пепельная долина: универсалы в очереди', q.filter((o) => o.armor === 'universal').length === 3)
 
 // ── Ледяной перевал: крипы +10% скорости ──
 const pass = new Game()
@@ -68,15 +84,15 @@ check(
   `${pass['creeps'].length} крипов`
 )
 
-// ── Победа наступает на 20-й волне, не раньше ──
+// ── Победа наступает на 30-й волне, не раньше ──
 const fin = new Game()
 fin.selectMap(0)
 fin.beginPreview()
-for (let w = 1; w <= 20; w++) {
+for (let w = 1; w <= 30; w++) {
   fin['finishWave']()
-  if (w < 20) check(`после волны ${w} игра продолжается`, fin.phase !== 'won')
+  if (w < 30) check(`после волны ${w} игра продолжается`, fin.phase !== 'won')
 }
-check('после 20-й волны — победа', fin.phase === 'won')
+check('после 30-й волны — победа', fin.phase === 'won')
 
 console.log(fails === 0 ? '\nВсе проверки пройдены ✓' : `\nПровалено проверок: ${fails}`)
 process.exitCode = fails === 0 ? 0 : 1

@@ -14,8 +14,13 @@ export const COOP_HP_MULT = 1.85
 export const goldForKill = (n: number) => Math.floor(2 + n / 3)
 export const waveBonus = (n: number) => 25 + 6 * n
 
-export const START_GOLD = 150
-export const START_LIVES = 20
+// ─── Главное здание и утечки (этап 2: HP вместо общих жизней) ─────────────
+// База 200 HP: обычный прорыв — 10, босс — 100. Сложность меняет запас
+// здания множителем (Новобранец 1.4, Ветеран 1.0, Кошмар 0.75).
+export const BUILDING_BASE_HP = 200
+export const LEAK_BUILDING_DAMAGE = 10
+export const BOSS_BUILDING_DAMAGE = 100
+
 export const BOSS_GOLD_MULT = 20
 
 // ─── Уровни башен (GDD: «Башни и уровни») ───────────────────────────────
@@ -44,5 +49,5 @@ export const ROLL_COST = 10
 export const INFINITE_GOLD = 99999
 
 // Пауза между волнами (GDD: «Пауза 20 секунд»)
-export const PREVIEW_TIME = 20
+export const PREVIEW_TIME = 30
 export const FIRST_PREVIEW_TIME = 12

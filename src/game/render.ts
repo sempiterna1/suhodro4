@@ -788,6 +788,21 @@ function drawOverlayLabels(ctx: CanvasRenderingContext2D, game: Game, view: View
   }
   text('РАЗЛОМ', roadEnds.entry.x, roadEnds.entry.y - 34, '#a6f095')
   text('ЛАГЕРЬ', roadEnds.exit.x + 10, roadEnds.exit.y - 46, '#ffb347')
+  // HP главного здания над генератором лагеря: видно, куда прорываются крипы
+  if (roadEnds.camp.y > 0) {
+    const pct = game.buildingMaxHp > 0 ? Math.max(0, Math.min(1, game.buildingHp / game.buildingMaxHp)) : 0
+    const color = pct <= 0.3 ? '#ff3b3b' : pct <= 0.6 ? '#f0a44a' : '#7fd0a0'
+    const w = 86
+    const x = roadEnds.camp.x - w / 2
+    const y = roadEnds.camp.y - 82
+    text(`ЗДАНИЕ ${Math.ceil(game.buildingHp)}/${game.buildingMaxHp}`, roadEnds.camp.x, y - 5, color, 9)
+    ctx.fillStyle = 'rgba(8,12,18,0.85)'
+    ctx.fillRect(x - 2, y, w + 4, 9)
+    ctx.fillStyle = '#3a2024'
+    ctx.fillRect(x, y + 2, w, 5)
+    ctx.fillStyle = color
+    ctx.fillRect(x, y + 2, w * pct, 5)
+  }
   if (game.secondExitOpen && roadEnds.entry2.y) {
     text('РАЗЛОМ II', roadEnds.entry2.x, roadEnds.entry2.y - 34, '#a6f095')
     text('ЛАГЕРЬ II', roadEnds.exit2.x + 10, roadEnds.exit2.y - 46, '#ffb347')

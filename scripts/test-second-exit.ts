@@ -59,13 +59,13 @@ const p = pointAtLength(first1.dist, 1)
 check('крип второй тропы стоит на ней', isPathCell(cellOf(p.x, p.y)))
 check('длины троп независимы', pathLength(0) > 0 && pathLength(1) > 0 && Math.abs(pathLength(0) - pathLength(1)) < 2600)
 
-// ── Утечка по своей тропе: крип второй тропы уносит жизни у её выхода ──
-const livesBefore = g.lives
+// ── Утечка по своей тропе: крип второй тропы бьёт по главному зданию у её выхода ──
+const hpBefore = g.buildingHp
 const far1 = pathLength(1) + 1
 g.creeps = g.creeps.filter((c) => c.pathIdx === 1)
 for (const c of g.creeps) c.dist = far1
 g.update(0.05)
-check('утечка по второй тропе снимает жизни', g.lives < livesBefore, `${livesBefore} → ${g.lives}`)
+check('утечка по второй тропе снимает HP здания', g.buildingHp < hpBefore, `${hpBefore} → ${g.buildingHp}`)
 
 // ── Кооп: pathIdx в снапшоте ──
 const host = new Game()
@@ -85,7 +85,7 @@ check('позиции хоста и гостя совпадают',
   Math.hypot(pointAtLength(g1.dist, g1.pathIdx).x - pointAtLength(g2.dist, g2.pathIdx).x,
     pointAtLength(g1.dist, g1.pathIdx).y - pointAtLength(g2.dist, g2.pathIdx).y) < 0.001)
 
-// ── Призыв боссом наследует тропу босса (волна 20 — Сердце Разлома) ──
+// ── Призыв боссом наследует тропу босса (волна 20 — Матка Разлома) ──
 const b = new Game()
 b.selectMap(valleyDef.seed)
 for (let w = 0; w < 19; w++) b['finishWave']()
@@ -93,7 +93,7 @@ b.startWave()
 for (let i = 0; i < 40; i++) b.update(0.05)
 const boss = b.creeps.find((c) => c.isBoss)!
 check('босс 20-й волны на поле', !!boss)
-boss.hp = boss.maxHp * 0.4 // фаза «Заражённый призыв» (atHp 0.5, summon)
+boss.hp = boss.maxHp * 0.4 // фаза «Зов выводка» (atHp 0.6, summon)
 // призыв попадает в очередь между тиками — ловим его там, чтобы проверить тропу
 let summons: Array<{ atDist?: number; pathIdx?: number }> = []
 for (let i = 0; i < 600 && summons.length === 0; i++) {

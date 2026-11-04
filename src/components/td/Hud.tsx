@@ -13,7 +13,7 @@ import type { AttackType, TowerDef, UiState } from '@/game/types'
 import type { MpRole, MpStatus } from './Panels'
 import { DAMAGE_TYPE, TOWER_CARD_W, TowerInfoCard } from './TowerInfo'
 import {
-  BoltIcon, CheckIcon, CloseIcon, CoinIcon, DiceIcon, ExitFullscreenIcon, FullscreenIcon, HeartIcon, HelpIcon, InfinityIcon,
+  BoltIcon, BuildingIcon, CheckIcon, CloseIcon, CoinIcon, DiceIcon, ExitFullscreenIcon, FullscreenIcon, HelpIcon, InfinityIcon,
   MaskIcon, MenuIcon, PauseIcon, PlayIcon, RestartIcon, SoundIcon, SoundOffIcon, SunIcon, SwordsIcon, UsersIcon,
 } from './icons'
 
@@ -76,23 +76,33 @@ export function RoundButton({
 
 // ─── Верх-лево: жизни · золото · волна ────────────────────────────────────
 export function ResourceBar({ ui }: { ui: UiState }) {
-  const lives = useAnimationControls()
+  const building = useAnimationControls()
   const gold = useAnimationControls()
-  const prevLives = useRef(ui.lives)
+  const prevBuilding = useRef(ui.buildingHp)
   const prevGold = useRef(ui.gold)
   useEffect(() => {
-    if (ui.lives < prevLives.current) lives.start({ x: [0, -5, 5, -3, 3, 0], transition: { duration: 0.4 } })
-    prevLives.current = ui.lives
-  }, [ui.lives, lives])
+    if (ui.buildingHp < prevBuilding.current) building.start({ x: [0, -5, 5, -3, 3, 0], transition: { duration: 0.4 } })
+    prevBuilding.current = ui.buildingHp
+  }, [ui.buildingHp, building])
   useEffect(() => {
     if (ui.gold !== prevGold.current && !ui.infiniteGold) gold.start({ scale: [1, 1.2, 1], transition: { duration: 0.25 } })
     prevGold.current = ui.gold
   }, [ui.gold, ui.infiniteGold, gold])
+  const hpPct = ui.buildingMaxHp > 0 ? Math.max(0, Math.min(1, ui.buildingHp / ui.buildingMaxHp)) : 0
+  const hpColor = hpPct <= 0.3 ? '#ff3b3b' : hpPct <= 0.6 ? '#f0a44a' : '#e05252'
 
   return (
-    <motion.div {...slideDown} className={`${PILL} flex h-11 items-center gap-4 rounded-full px-4 text-[15px] font-bold leading-none`}>
-      <motion.span animate={lives} className="flex items-center gap-1.5 text-[#ff7a7a]" title="Жизни">
-        <HeartIcon size={18} /> {ui.lives}
+    <motion.div {...slideDown} className={`${PILL} flex h-11 items-center gap-3 rounded-full px-4 text-[15px] font-bold leading-none`}>
+      <motion.span
+        animate={building}
+        className="flex items-center gap-1.5 text-[#ff9a7a]"
+        title={`Главное здание: ${ui.buildingHp} / ${ui.buildingMaxHp} HP`}
+      >
+        <BuildingIcon size={18} />
+        <span className="h-2 w-12 overflow-hidden rounded-full bg-[#4a1f24]">
+          <span className="block h-full rounded-full transition-[width] duration-200" style={{ width: `${hpPct * 100}%`, background: hpColor }} />
+        </span>
+        <span className="font-mono text-[12px] tabular-nums text-[#ffb0a0]">{ui.buildingHp}</span>
       </motion.span>
       <motion.span animate={gold} className="flex items-center gap-1.5 text-[#f2c94c]" title="Золото">
         <CoinIcon size={18} /> {ui.infiniteGold ? '∞' : ui.gold}
@@ -116,12 +126,45 @@ export function WaveChip({ ui, build }: { ui: UiState; build: { name: string; co
     title = `Волна ${ui.wave}`
     if (ui.phase === 'wave') tag = <Tag color={UI.gold}>на поле {ui.creepsAlive}</Tag>
     else if (ui.nextWaveIsBoss) tag = <Tag color="#ff7a7a">босс{ui.nextWaveBossName ? ` · ${ui.nextWaveBossName}` : ''}</Tag>
+    else if (ui.nextWaveArmors.length > 1)
+      tag = (
+        <>
+          {ui.nextWaveArmors.map((a) => (
+            <Tag key={a} color={ARMOR_COLORS[a]} title="Броня следующей волны">
+              {ARMOR_NAMES[a]}
+            </Tag>
+          ))}
+        </>
+      )
     else tag = <Tag color={ARMOR_COLORS[ui.nextWaveArmor]} title="Броня следующей волны">{ARMOR_NAMES[ui.nextWaveArmor]}</Tag>
   }
   return (
     <motion.div {...slideDown} className={`${PILL} flex h-11 items-center gap-2.5 whitespace-nowrap rounded-full pl-4 pr-3 text-[15px] font-bold leading-none text-[#f4ead2]`}>
       <span>{title}</span>
       {tag}
+    </motion.div>
+  )
+}
+
+/** Прогноз брони на волну вперёд (Новобранец): вторая строка под плашкой волны */
+export function ArmorForecastChip({ ui }: { ui: UiState }) {
+  const next = ui.armorForecast[1]
+  if (!next) return null
+  return (
+    <motion.div
+      {...slideDown}
+      className="pointer-events-none flex items-center gap-1 rounded-full border border-[#3a4660] bg-[rgba(14,19,31,0.72)] px-2.5 py-0.5 text-[10px] leading-none text-[#8fa2bd]"
+    >
+      <span className="uppercase tracking-[0.08em]">через волну {next.wave}:</span>
+      {next.kind === 'boss' ? (
+        <b className="text-[#ff9a7a]">босс</b>
+      ) : (
+        next.armors.map((a) => (
+          <span key={a} className="font-bold" style={{ color: ARMOR_COLORS[a] }}>
+            {ARMOR_NAMES[a]}
+          </span>
+        ))
+      )}
     </motion.div>
   )
 }
@@ -212,8 +255,9 @@ export function TopBar({
       <div className="flex justify-start">
         <ResourceBar ui={ui} />
       </div>
-      <div className={stacked ? 'order-last flex w-full justify-center' : 'flex justify-center'}>
+      <div className={stacked ? 'order-last flex w-full flex-col items-center gap-1' : 'flex flex-col items-center gap-1'}>
         <WaveChip ui={ui} build={build} />
+        <ArmorForecastChip ui={ui} />
       </div>
       <div ref={rightRef} className="relative flex justify-end gap-2">
         <RoundButton onClick={onSpeed} label="Скорость игры" active={ui.speed > 1}>×{ui.speed}</RoundButton>

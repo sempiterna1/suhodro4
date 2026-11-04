@@ -13,8 +13,9 @@
 import { Game, findRecipe, upgradeCost } from './engine'
 import { ALL_DEFS } from './data/towers'
 import { CELL, MAP_DEFS, MAP_H, MAP_W, MERGE_DIST, type MapDef } from './data/maps'
-import { MAX_LEVEL, MERGE_MIN_LEVEL } from './data/economy'
-import { TOTAL_WAVES, WAVES } from './data/waves'
+import { FIRST_PREVIEW_TIME, MAX_LEVEL, MERGE_MIN_LEVEL, PREVIEW_TIME } from './data/economy'
+import { TOTAL_WAVES, WAVES, armorsForWave } from './data/waves'
+import { DEFAULT_DIFFICULTY, DIFFICULTIES, type DifficultyId } from './data/difficulties'
 import { mulberry32, randInt } from './rng'
 import { pathLength, pointAtLength } from './map'
 import type { AvatarId } from './data/avatars'
@@ -29,6 +30,8 @@ export interface SimOptions {
   policy?: SimPolicyId
   /** all — все башни открыты (лаборатория баланса); pool — случайный арсенал с роллами */
   shop?: 'all' | 'pool'
+  /** Сложность миссии: Новобранец / Ветеран / Кошмар */
+  difficulty?: DifficultyId
   coop?: boolean
   avatarId?: AvatarId
   /** Шаг симуляции, с (не больше 0.05 — ограничение движка) */
@@ -42,12 +45,15 @@ export interface SimOptions {
 export interface SimWaveRow {
   wave: number
   kind: string
-  armor: ArmorType
+  /** Типы брони волны: «light» или «light+heavy» */
+  armor: string
+  armors: ArmorType[]
   planned: number
   spawned: number
   killed: number
   leaked: number
-  livesLost: number
+  /** Урон, нанесённый главному зданию за волну */
+  buildingDamage: number
   damage: number
   dps: number
   duration: number
@@ -76,6 +82,8 @@ export interface SimTowerUsage {
 export interface SimReport {
   seed: number
   policy: SimPolicyId
+  difficulty: DifficultyId
+  difficultyName: string
   map: { id: string; name: string; seed: number }
   shop: 'all' | 'pool'
   coop: boolean
@@ -86,10 +94,11 @@ export interface SimReport {
   totalWaves: number
   waves: SimWaveRow[]
   combatSeconds: number
-  /** Боевое время + паузы между волнами (12 с перед первой, 20 с перед остальными) */
+  /** Боевое время + паузы между волнами (первая и последующие — из economy.ts) */
   estimatedMissionSeconds: number
   gold: number
-  lives: number
+  buildingHp: number
+  buildingMaxHp: number
   stats: GameStats
   towerUsage: Record<string, SimTowerUsage>
   events: GameEvent[]
@@ -98,10 +107,11 @@ export interface SimReport {
 interface WaveRun {
   wave: number
   def: (typeof WAVES)[number]
+  armors: ArmorType[]
   planned: number
   startTime: number
   startGold: number
-  startLives: number
+  startBuildingHp: number
   startStats: GameStats
   eventIndex: number
 }
@@ -117,6 +127,11 @@ const round2 = (n: number) => Math.round(n * 100) / 100
 
 // ─── Кандидаты под застройку ─────────────────────────────────────────────
 
+interface PlacementHelper {
+  samples: Vec[]
+  cells: Vec[]
+}
+
 function samplePolyline(points: Vec[], step = 20): Vec[] {
   const out: Vec[] = []
   for (let i = 0; i < points.length - 1; i++) {
@@ -130,11 +145,6 @@ function samplePolyline(points: Vec[], step = 20): Vec[] {
     }
   }
   return out
-}
-
-interface PlacementHelper {
-  samples: Vec[]
-  cells: Vec[]
 }
 
 function placementHelper(g: Game): PlacementHelper {
@@ -376,6 +386,12 @@ function makeScriptedPolicy(): Policy {
     }
     if (a && !b) {
       const def = ALL_DEFS[db]
+      const upCost = upgradeCost(ALL_DEFS[a.defId])
+      // Если напарник пока не по карману вместе с прокачкой — сначала усиливаем
+      // уже стоящую башню: один L3 держит ранние волны лучше двух L1.
+      if (a.level < MERGE_MIN_LEVEL && g.gold < def.price + upCost && g.gold >= upCost) {
+        if (g.upgrade(a.id).ok) return true
+      }
       if (g.gold < def.price) return false
       if (buildNear(g, db, a, h)) return true
       skipped.add(idx)
@@ -383,6 +399,10 @@ function makeScriptedPolicy(): Policy {
     }
     if (!a && b) {
       const def = ALL_DEFS[da]
+      const upCost = upgradeCost(ALL_DEFS[b.defId])
+      if (b.level < MERGE_MIN_LEVEL && g.gold < def.price + upCost && g.gold >= upCost) {
+        if (g.upgrade(b.id).ok) return true
+      }
       if (g.gold < def.price) return false
       if (buildNear(g, da, b, h)) return true
       skipped.add(idx)
@@ -458,12 +478,13 @@ function recordWave(run: WaveRun, g: Game, completed: boolean): SimWaveRow {
   return {
     wave: run.wave,
     kind: run.def.kind,
-    armor: run.def.armor,
+    armor: run.armors.join('+'),
+    armors: [...run.armors],
     planned: run.planned,
     spawned: ui.waveSpawned,
     killed,
     leaked,
-    livesLost: run.startLives - g.lives,
+    buildingDamage: run.startBuildingHp - g.buildingHp,
     damage: round2(damage),
     dps: round2(duration > 0 ? damage / duration : 0),
     duration: round2(duration),
@@ -523,6 +544,8 @@ export function runSimulation(opts: SimOptions = {}): SimReport {
   const policyId = opts.policy ?? 'scripted'
   const map: MapDef = MAP_DEFS.find((m) => m.id === (opts.mapId ?? 'tract')) ?? MAP_DEFS[0]
   const shop = opts.shop ?? 'all'
+  const difficulty = opts.difficulty ?? DEFAULT_DIFFICULTY
+  if (!DIFFICULTIES[difficulty]) throw new Error(`Неизвестная сложность: ${difficulty}`)
   const coop = opts.coop ?? false
   const avatarId = opts.avatarId ?? 'hunter'
   if (!AVATAR_IDS.includes(avatarId)) throw new Error(`Неизвестный аватар: ${avatarId}`)
@@ -530,8 +553,10 @@ export function runSimulation(opts: SimOptions = {}): SimReport {
   const maxSeconds = opts.maxSeconds ?? 3 * 60 * 60
   const maxWaves = Math.max(1, Math.min(TOTAL_WAVES, opts.maxWaves ?? TOTAL_WAVES))
   const policy = makePolicy(policyId, seed)
+  const diff = DIFFICULTIES[difficulty]
 
   const g = new Game(seed)
+  if (!g.setDifficulty(difficulty).ok) throw new Error(`Сложность ${difficulty} недоступна`)
   g.selectMap(map.seed)
   g.setCoop(coop)
   g.setAvatar(avatarId)
@@ -569,13 +594,15 @@ export function runSimulation(opts: SimOptions = {}): SimReport {
         break
       }
       policy.beforeWave(g)
+      const def = WAVES[g.wave - 1]
       const run: WaveRun = {
         wave: g.wave,
-        def: WAVES[g.wave - 1],
+        def,
+        armors: armorsForWave(def, diff.mixedWavesFrom),
         planned: 0,
         startTime: g.time,
         startGold: g.gold,
-        startLives: g.lives,
+        startBuildingHp: g.buildingHp,
         startStats: liveStats(g),
         eventIndex: g.events.length,
       }
@@ -599,13 +626,16 @@ export function runSimulation(opts: SimOptions = {}): SimReport {
 
   if (current) waves.push(recordWave(current, g, false))
   const combatSeconds = waves.reduce((s, w) => s + w.duration, 0)
-  // Первая пауза 12 с, каждая следующая — 20 с (даже если симулятор их пропускает)
+  // Первая пауза и каждая следующая — как в игре (симулятор их пропускает)
   const estimatedMissionSeconds =
-    combatSeconds + (waves.length > 0 ? 12 + Math.max(0, waves.length - 1) * 20 : 0)
+    combatSeconds +
+    (waves.length > 0 ? FIRST_PREVIEW_TIME + Math.max(0, waves.length - 1) * PREVIEW_TIME : 0)
 
   return {
     seed,
     policy: policyId,
+    difficulty,
+    difficultyName: diff.name,
     map: { id: map.id, name: map.name, seed: map.seed },
     shop,
     coop,
@@ -618,7 +648,8 @@ export function runSimulation(opts: SimOptions = {}): SimReport {
     combatSeconds: round2(combatSeconds),
     estimatedMissionSeconds: round2(estimatedMissionSeconds),
     gold: g.gold,
-    lives: g.lives,
+    buildingHp: g.buildingHp,
+    buildingMaxHp: g.buildingMaxHp,
     stats: { ...g.stats },
     towerUsage: towerUsage(g),
     events: g.events.map((e) => ({ ...e })),

@@ -812,7 +812,32 @@ export default function GameShell() {
     setSelectedTower(null)
     setArmed(null)
     setMergeFrom(null)
+    setUi(game.getUiState())
     toast({ title: 'Новая попытка', description: `${game.mapDef.name} снова под атакой.` })
+  }
+
+  /** Повторить миссию сразу, без прохода по меню (та же карта, герой и сложность) */
+  const doRetry = () => {
+    game.reset()
+    game.beginPreview()
+    setSelectedTower(null)
+    setArmed(null)
+    setMergeFrom(null)
+    setUi(game.getUiState())
+    toast({ title: 'Миссия заново', description: `${game.mapDef.name} · ${game.difficultyDef.name}.` })
+  }
+
+  /** Следующая миссия: соседняя карта реестра, та же сложность, выбор героя заново */
+  const doNextMission = () => {
+    const idx = MAP_DEFS.findIndex((m) => m.name === ui.mapName)
+    const next = MAP_DEFS[(idx + 1 + MAP_DEFS.length) % MAP_DEFS.length]
+    game.selectMap(next.seed)
+    game.reset()
+    setSelectedTower(null)
+    setArmed(null)
+    setMergeFrom(null)
+    setUi(game.getUiState())
+    toast({ title: 'Следующая миссия', description: `${next.name}: ${next.feature}` })
   }
 
   // ─── Создание лобби (хост) ─────────────────────────────────────────────
@@ -1164,6 +1189,10 @@ export default function GameShell() {
                 game.selectMap(seed)
                 setUi(game.getUiState())
               }}
+              onPickDifficulty={(id) => {
+                game.setDifficulty(id)
+                setUi(game.getUiState())
+              }}
               onPickAvatar={(id) => {
                 game.setAvatar(id)
                 setUi(game.getUiState())
@@ -1205,21 +1234,41 @@ export default function GameShell() {
                 style={{ zoom: uiScale }}
               >
                 <h2 className={`mb-2 font-serif text-4xl font-black ${ui.phase === 'won' ? 'text-[#ffd700]' : 'text-[#e05252]'}`}>
-                  {ui.phase === 'won' ? 'ТРАКТ УДЕРЖАН!' : 'ОБОРОНА ПАЛА'}
+                  {ui.phase === 'won' ? 'ГОРИЗОНТ УДЕРЖАН!' : 'ЗДАНИЕ РАЗРУШЕНО'}
                 </h2>
+                <p className="mb-1 font-mono text-[10px] uppercase tracking-[0.18em] text-[#7088a8]">
+                  {ui.mapName} · {ui.difficultyName}
+                </p>
                 <p className="mb-4 text-sm text-[#b8c6d8]">
                   {ui.phase === 'won'
-                    ? `Колосс Разлома пал на карте «${ui.mapName}» — лагерь может идти дальше, к убежищу, о котором говорит ИИ. Попробуйте остальные карты: всего их ${MAP_DEFS.length}.`
-                    : `Заражённые прорвались к лагерю на волне ${ui.wave}. Минерал забирает тракт...`}
+                    ? `Сердце Разлома пало на ${Math.min(ui.wave, ui.totalWaves)}-й волне — лагерь может идти дальше, к убежищу, о котором говорит ИИ.`
+                    : `Заражённые прорвались к главному зданию на ${Math.min(ui.wave, ui.totalWaves)}-й волне. Минерал забирает тракт...`}
                 </p>
                 <Stats ui={ui} />
                 {mpRole !== 'guest' && (
-                  <Button
-                    onClick={doRestart}
-                    className="mt-4 h-10 border-2 border-[#93a9c6] bg-gradient-to-b from-[#2e3c52] to-[#1f2a3b] px-6 font-serif font-bold text-[#ffd700]"
-                  >
-                    Играть снова
-                  </Button>
+                  <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                    <Button
+                      onClick={doRetry}
+                      className="h-10 border-2 border-[#93a9c6] bg-gradient-to-b from-[#2e3c52] to-[#1f2a3b] px-5 font-serif font-bold text-[#ffd700]"
+                    >
+                      ↻ Повторить миссию
+                    </Button>
+                    {ui.phase === 'won' ? (
+                      <Button
+                        onClick={doNextMission}
+                        className="h-10 border-2 border-[#7fd0a0] bg-[#1f2d24] px-5 font-serif font-bold text-[#7fd0a0]"
+                      >
+                        Следующая миссия →
+                      </Button>
+                    ) : (
+                      <Button
+                        onClick={doRestart}
+                        className="h-10 border border-[#5b6f8c] bg-transparent px-4 font-serif text-xs font-bold text-[#ccd8e6]"
+                      >
+                        Сменить сложность
+                      </Button>
+                    )}
+                  </div>
                 )}
               </motion.div>
             </div>
@@ -1409,12 +1458,18 @@ export default function GameShell() {
 
 
 function Stats({ ui }: { ui: UiState }) {
+  const mins = Math.floor(ui.time / 60)
+  const secs = Math.floor(ui.time % 60)
   return (
-    <div className="mx-auto grid max-w-[260px] grid-cols-2 gap-1.5 font-mono text-xs text-[#ccd8e6]">
+    <div className="mx-auto grid max-w-[300px] grid-cols-2 gap-1.5 font-mono text-xs text-[#ccd8e6]">
+      <div className="rounded border border-[#5b6f8c55] bg-[#141b27] px-2 py-1">Волн: {Math.min(ui.wave, ui.totalWaves)}/{ui.totalWaves}</div>
+      <div className="rounded border border-[#5b6f8c55] bg-[#141b27] px-2 py-1">Здание: {ui.buildingHp}/{ui.buildingMaxHp}</div>
       <div className="rounded border border-[#5b6f8c55] bg-[#141b27] px-2 py-1">Убито: {ui.stats.kills}</div>
       <div className="rounded border border-[#5b6f8c55] bg-[#141b27] px-2 py-1">Боссов: {ui.stats.bossKills}</div>
       <div className="rounded border border-[#5b6f8c55] bg-[#141b27] px-2 py-1">Золота: {ui.stats.goldEarned}</div>
       <div className="rounded border border-[#5b6f8c55] bg-[#141b27] px-2 py-1">Слияний: {ui.stats.merges}</div>
+      <div className="rounded border border-[#5b6f8c55] bg-[#141b27] px-2 py-1">Урон: {Math.round(ui.stats.damageDealt)}</div>
+      <div className="rounded border border-[#5b6f8c55] bg-[#141b27] px-2 py-1">Время: {mins}:{String(secs).padStart(2, '0')}</div>
       <div className="col-span-2 rounded border border-[#5b6f8c55] bg-[#141b27] px-2 py-1">
         Прорвалось заражённых: {ui.stats.leaked}
       </div>

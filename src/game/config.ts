@@ -6,6 +6,7 @@
 
 export * from './data/combat'
 export * from './data/creeps'
+export * from './data/difficulties'
 export * from './data/economy'
 export * from './data/maps'
 export * from './data/towers'

@@ -8,7 +8,7 @@ const g = new Game()
 g.unlockAllTowers() // арсенал случаен — тестам нужны все башни
 
 g.useMap(CLASSIC_MAP) // карта случайна — тестам нужна классическая
-console.log('phase:', g.phase, 'gold:', g.gold, 'lives:', g.lives)
+console.log('phase:', g.phase, 'gold:', g.gold, 'buildingHp:', g.buildingHp, '/', g.buildingMaxHp)
 
 g.beginPreview()
 g.previewRemaining = 0
@@ -22,7 +22,7 @@ for (let i = 0; i < 60 * 30; i++) {
     const c = g.creeps[0]
     console.log(
       `t=${(i / 60).toFixed(1)}s phase=${g.phase} creeps=${g.creeps.length} ` +
-        `dist0=${c ? c.dist.toFixed(0) : '—'} lives=${g.lives} kills=${g.stats.kills}`
+        `dist0=${c ? c.dist.toFixed(0) : '—'} buildingHp=${g.buildingHp} kills=${g.stats.kills}`
     )
   }
   if (g.phase === 'over') {

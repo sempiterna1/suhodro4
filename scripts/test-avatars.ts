@@ -23,7 +23,7 @@ const addCreeps = (g: Game, n: number, dist: number) => {
   for (let i = 0; i < n; i++) {
     g.creeps.push({
       uid: 9000 + i, kind: 'scuttler', armor: 'light', hp: 500, maxHp: 500, speed: 0, dist: dist + i * 4, size: 11,
-      isBoss: false, gold: 1, livesCost: 1, burnDps: 0, burnUntil: 0, burnSource: '', stunnedUntil: 0,
+      isBoss: false, gold: 1, buildingDamage: 10, burnDps: 0, burnUntil: 0, burnSource: '', stunnedUntil: 0,
       markedUntil: 0, markedBonus: 0, goldMult: 1, slowPct: 0, slowUntil: 0, vulnBonus: 0, vulnUntil: 0,
     } as never)
   }
