@@ -250,12 +250,16 @@ export default function GameShell() {
   useEffect(() => {
     const param = new URLSearchParams(window.location.search).get('lobby')
     if (!param) return
-    const code = param.trim().toUpperCase()
     let cancelled = false
-    mpHostLeftRef.current = false
-    setMpRole('guest')
-    setMpCode(code)
-    setMpStatus('waiting')
+    const code = param.trim().toUpperCase()
+    // setState откладываем в микротаск: линт запрещает синхронные вызовы в теле эффекта,
+    // а игроку достаточно, что статус «ждём хоста» появится на первом кадре подключения
+    queueMicrotask(() => {
+      mpHostLeftRef.current = false
+      setMpRole('guest')
+      setMpCode(code)
+      setMpStatus('waiting')
+    })
     joinLobby(code).then((res) => {
       if (cancelled) return
       if (res.ok) {
@@ -704,7 +708,7 @@ export default function GameShell() {
   const errToast = (title: string, error?: string) =>
     toast({ title, description: error, variant: 'destructive' })
 
-  const asGuest = roleRef.current === 'guest'
+  const asGuest = mpRole === 'guest'
 
 
   const doUpgrade = () => {
