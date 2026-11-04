@@ -102,7 +102,10 @@ export function ResourceBar({ ui }: { ui: UiState }) {
         <span className="h-2 w-12 overflow-hidden rounded-full bg-[#4a1f24]">
           <span className="block h-full rounded-full transition-[width] duration-200" style={{ width: `${hpPct * 100}%`, background: hpColor }} />
         </span>
-        <span className="font-mono text-[12px] tabular-nums text-[#ffb0a0]">{ui.buildingHp}</span>
+        <span className="font-mono text-[12px] tabular-nums text-[#ffb0a0]">
+          {ui.buildingHp}
+          <span className="text-[10px] opacity-60">/{ui.buildingMaxHp}</span>
+        </span>
       </motion.span>
       <motion.span animate={gold} className="flex items-center gap-1.5 text-[#f2c94c]" title="Золото">
         <CoinIcon size={18} /> {ui.infiniteGold ? '∞' : ui.gold}
@@ -358,17 +361,24 @@ export function HeroButtons({ ui, role, onAbility }: { ui: UiState; role: MpRole
 export function StartButton({ ui, onStart }: { ui: UiState; onStart: () => void }) {
   if (ui.phase !== 'preview') return null
   const left = Math.ceil(ui.previewRemaining)
+  const boss = ui.nextWaveIsBoss
   return (
     <motion.button
       type="button"
       onClick={onStart}
       initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      aria-label={`Начать волну, авто через ${left} секунд`}
+      animate={{ opacity: 1, y: 0, ...(boss ? { boxShadow: ['0 0 0 rgba(224,82,82,0)', '0 0 14px rgba(224,82,82,0.7)', '0 0 0 rgba(224,82,82,0)'] } : {}) }}
+      transition={{ duration: boss ? 1.4 : 0.3, repeat: boss ? Infinity : 0 }}
+      aria-label={`Начать волну${boss ? ` с боссом${ui.nextWaveBossName ? ` ${ui.nextWaveBossName}` : ''}` : ``}, авто через ${left} секунд`}
       className="pointer-events-auto flex h-11 items-center gap-2 whitespace-nowrap rounded-full border-0 bg-[#f2c94c] pl-3.5 pr-[18px] text-[15px] font-bold leading-none text-[#1a1408] active:scale-95"
     >
       <PlayIcon stroke="#1a1408" />
       <span>Начать · {left}с</span>
+      {boss && (
+        <span className="rounded-full bg-[#2b0d0d] px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-[#ff9a7a]">
+          {ui.nextWaveBossName ?? 'босс'}
+        </span>
+      )}
     </motion.button>
   )
 }
