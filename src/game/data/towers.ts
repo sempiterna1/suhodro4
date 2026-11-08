@@ -477,6 +477,15 @@ export const MERGED_TOWERS: MergeDef[] = [
   },
 ]
 
+// Цена карточки слитой башни в магазине = сумма цен родителей: копии из магазина
+// нужны, чтобы качать слитую башню копией из «руки» (решение о прокачке 03.11.2026).
+// Дешёвая «цена слияния» остаётся в invested двух построенных башен — это не затрагивается.
+for (const m of MERGED_TOWERS) {
+  const pa = TOWERS.find((t) => t.id === m.parents[0])
+  const pb = TOWERS.find((t) => t.id === m.parents[1])
+  if (pa && pb) m.price = pa.price + pb.price
+}
+
 // Параметры механик (общие для всех башен)
 export const CHAIN_RANGE = 90 // дальность прыжка молнии
 export const CHAIN_FALLOFF = 0.8 // каждый прыжок — ×0.8 урона

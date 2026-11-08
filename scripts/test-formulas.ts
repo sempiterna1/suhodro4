@@ -26,7 +26,7 @@ import {
   waveBonus,
   waveSpeedMult,
 } from '../src/game/config'
-import { Game, hybridMult, upgradeCost } from '../src/game/engine'
+import { Game, hybridMult } from '../src/game/engine'
 import { CLASSIC_MAP } from '../src/game/map'
 import { ALL_DEFS } from '../src/game/data/towers'
 
@@ -109,7 +109,12 @@ eq('радиус: ур.2 ×1.05', levelRangeMult(2), 1.05)
 eq('радиус: ур.4 ×1.1', levelRangeMult(4), 1.1)
 eq('интервал: ур.3 ×0.9', levelIntervalMult(3), 0.9)
 eq('интервал: ур.1 ×1.0', levelIntervalMult(1), 1)
-eq('цена апгрейда слитой = min(родителей)', upgradeCost(ALL_DEFS.flame_archer), Math.min(50, 70))
+// цена покупки копии слитой = сумма цен родителей (новая модель прокачки копиями)
+check(
+  'цена карточки слитой = сумма родителей',
+  ALL_DEFS.flame_archer.price === ALL_DEFS.archer.price + ALL_DEFS.pyro.price,
+  `${ALL_DEFS.archer.price}+${ALL_DEFS.pyro.price}=${ALL_DEFS.flame_archer.price}`
+)
 
 // ─── Скорость крипов ────────────────────────────────────────────────────
 eq('скорость волны 1 = 1.0', waveSpeedMult(1), 1)

@@ -4,7 +4,22 @@
 
 import { Game } from '../src/game/engine'
 import { CLASSIC_MAP } from '../src/game/map'
-import { ROLL_COST, SHOP_SIZE, TOWERS } from '../src/game/config'
+import { ROLL_COST, SHOP_SIZE, TOWERS, MERGED_TOWERS } from '../src/game/config'
+
+/** Тестовая застройка новой механикой: купить в арсенал → взять из руки → поставить */
+const buildTower = (g: Game, x: number, y: number, defId: string) => {
+  const r = g.buy(defId)
+  if (!r.ok) return r
+  return g.placeFromHand(g.hand.length - 1, x, y)
+}
+/** Прокачка новой механикой: купить копию → навести из руки на башню */
+const levelTower = (g: Game, towerId: number) => {
+  const tw = g.towerById(towerId)
+  if (!tw || tw.level >= 5) return { ok: false, error: 'не найдена или макс. уровень' }
+  const r = g.buy(tw.defId)
+  if (!r.ok) return r
+  return g.levelFromHand(g.hand.length - 1, towerId)
+}
 
 let failed = 0
 function check(name: string, ok: boolean, info = '') {
@@ -33,15 +48,15 @@ function check(name: string, ok: boolean, info = '') {
   // строить можно только из пула
   g.gold = 1e6
   const outside = TOWERS.find((t) => !g.shop.includes(t.id))!
-  const bad = g.build(300, 200, outside.id)
-  check('башню не из пула построить нельзя', !bad.ok, bad.error)
-  const good = g.build(300, 200, g.shop[0])
+  const bad = g.buy(outside.id)
+  check('башню не из пула купить нельзя', !bad.ok, bad.error)
+  const good = buildTower(g, 300, 200, g.shop[0])
   check('башню из пула построить можно', good.ok)
-  check('купленная башня остаётся в пуле', g.shop.includes(g.towerById(good.towerId!)!.defId))
+  check('купленная башня уходит из пула до ролла', !g.shop.includes(g.towerById(good.towerId!)!.defId))
 
-  // улучшение не зависит от пула
+  // прокачка копией: если карточки башни нет в арсенале — копию не купить
   g.shop = g.shop.filter((id) => id !== g.towerById(good.towerId!)!.defId)
-  check('улучшение работает, даже если башни уже нет в пуле', g.upgrade(good.towerId!).ok)
+  check('прокачка без карточки в арсенале отклонена', !levelTower(g, good.towerId!).ok)
 
   // разные роллы дают разные пулы (вероятность совпадения 50 роллов подряд ничтожна)
   const seen = new Set<string>()
@@ -61,7 +76,7 @@ function check(name: string, ok: boolean, info = '') {
   u.useMap(CLASSIC_MAP) // координаты построек — под классическую змейку
   u.unlockAllTowers()
   u.beginPreview()
-  check('unlockAllTowers переживает старт игры', u.shop.length === TOWERS.length)
+  check('unlockAllTowers переживает старт игры', u.shop.length === TOWERS.length + MERGED_TOWERS.length)
 }
 
 // ─── Пауза ───
@@ -82,7 +97,7 @@ function check(name: string, ok: boolean, info = '') {
   const goldBefore = g.gold
   check('на паузе можно роллить', g.roll().ok && g.gold === goldBefore - ROLL_COST)
   g.gold = 1e6
-  check('на паузе можно строить', g.build(300, 200, g.shop[0]).ok)
+  check('на паузе можно строить', buildTower(g, 300, 200, g.shop[0]).ok)
 
   g.setPaused(false)
   for (let i = 0; i < 10; i++) g.update(0.05)
@@ -110,9 +125,9 @@ function check(name: string, ok: boolean, info = '') {
   g.setInfiniteGold(true)
   const full = g.gold
   check('чит включает много золота', full >= 99999, String(full))
-  const b = g.build(300, 200, g.shop[0])
+  const b = buildTower(g, 300, 200, g.shop[0])
   g.roll()
-  if (b.ok) g.upgrade(b.towerId!)
+  if (b.ok) levelTower(g, b.towerId!)
   check('траты не уменьшают золото', b.ok && g.gold === full, String(g.gold))
   g.reset()
   check('чит переживает рестарт', g.infiniteGold && g.gold === full)

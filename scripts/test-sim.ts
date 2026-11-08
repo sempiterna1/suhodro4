@@ -3,6 +3,7 @@
 
 import { runSimulation } from '../src/game/sim'
 import { TOTAL_WAVES, WAVES } from '../src/game/config'
+import { DIFFICULTIES } from '../src/game/data/difficulties'
 
 let fails = 0
 let checks = 0
@@ -59,15 +60,32 @@ check('recruit: здание 280 HP', recruit.buildingMaxHp === 280, `${recruit.
 const nightmare = runSimulation({ seed: 20261029, policy: 'scripted', maxWaves: 11, difficulty: 'nightmare' })
 check('nightmare: сложность в отчёте', nightmare.difficulty === 'nightmare' && nightmare.difficultyName === 'Кошмар')
 check('nightmare: здание 150 HP', nightmare.buildingMaxHp === 150, `${nightmare.buildingMaxHp}`)
-check(
-  'nightmare: с 11-й волны броня смешана',
-  nightmare.waves.some((w) => w.wave >= 11 && w.armors.length > 1),
-  nightmare.waves.map((w) => `${w.wave}:${w.armor}`).join(', ')
-)
+// Кошмар при новой экономике прокачки падает раньше 11-й волны — смешанную броню
+// проверяем отдельно: подмешиваем mixedWavesFrom в лёгкую сложность и убеждаемся,
+// что путь «два типа брони в отчёте» работает (armorsForWave → отчёт).
+{
+  const def = DIFFICULTIES.recruit as unknown as { mixedWavesFrom: number | null }
+  const saved = def.mixedWavesFrom
+  def.mixedWavesFrom = 11
+  const mixed = runSimulation({ seed: 20261029, policy: 'scripted', maxWaves: 12, difficulty: 'recruit', shop: 'all' })
+  def.mixedWavesFrom = saved
+  check(
+    'с 11-й волны броня смешана ( путь armorsForWave в отчёте)',
+    mixed.waves.filter((w) => w.wave >= 11).length > 0
+      && mixed.waves.filter((w) => w.wave >= 11).every((w) => w.armors.length > 1),
+    mixed.waves.filter((w) => w.wave >= 11).map((w) => `${w.wave}:${w.armor}`).join(', ')
+  )
+}
+// Сравниваем урон по волнам, завершённым в обоих прогонах: более короткий прогон
+// (поражение на Кошмаре) не должен занижать итог — проверяем именно скалирование HP врагов
+const recruitDone = recruit.waves.filter((w) => w.completed)
+const nightmareDone = nightmare.waves.filter((w) => w.completed)
+const commonWaves = Math.min(recruitDone.length, nightmareDone.length)
+const damageFirst = (ws: typeof recruitDone) => Math.round(ws.slice(0, commonWaves).reduce((s, w) => s + w.damage, 0))
 check(
   'сложности влияют на HP врагов (recruit легче nightmare)',
-  recruit.stats.damageDealt < nightmare.stats.damageDealt,
-  `${Math.round(recruit.stats.damageDealt)} vs ${Math.round(nightmare.stats.damageDealt)}`
+  damageFirst(recruitDone) < damageFirst(nightmareDone),
+  `${damageFirst(recruitDone)} vs ${damageFirst(nightmareDone)} (первые ${commonWaves} волн)`
 )
 
 // ─── Детерминизм: два одинаковых прогона — один и тот же JSON ────────────

@@ -5,6 +5,14 @@ import { Game } from '../src/game/engine'
 import { CLASSIC_MAP, pointAtLength } from '../src/game/map'
 import { AVATARS, AVATAR_IDS, VOEVODA_RADIUS, SELL_RATIO } from '../src/game/config'
 
+/** Тестовая застройка новой механикой: купить в арсенал → взять из руки → поставить */
+const buildTower = (g: Game, x: number, y: number, defId: string) => {
+  if (!g.shop.includes(defId)) g.shop.push(defId) // карточка одна на пул: ролл снова предложил ту же башню
+  const r = g.buy(defId)
+  if (!r.ok) return r
+  return g.placeFromHand(g.hand.length - 1, x, y)
+}
+
 let failed = 0
 function check(name: string, ok: boolean, info = '') {
   console.log(`${ok ? '✓' : '✗'} ${name}${info ? ' — ' + info : ''}`)
@@ -48,8 +56,8 @@ check('в GDD 4 аватара', AVATAR_IDS.length === 4 && AVATAR_IDS.join() ==
   const g = fresh()
   g.setAvatar('voevoda')
   g.avatar.x = 300; g.avatar.y = 300
-  const near = g.build(300, 300 + 40, 'archer')
-  const far = g.build(700, 100, 'archer')
+  const near = buildTower(g, 300, 300 + 40, 'archer')
+  const far = buildTower(g, 700, 100, 'archer')
   check('башни построены', near.ok && far.ok)
   const nt = g.towerById(near.towerId!)!, ft = g.towerById(far.towerId!)!
   const r = g.useAbility()
@@ -67,7 +75,7 @@ check('в GDD 4 аватара', AVATAR_IDS.length === 4 && AVATAR_IDS.join() ==
   const g = fresh()
   g.setAvatar('engineer')
   g.avatar.x = 300; g.avatar.y = 300
-  const a = g.build(300, 340, 'archer'), b = g.build(700, 100, 'archer')
+  const a = buildTower(g, 300, 340, 'archer'), b = buildTower(g, 700, 100, 'archer')
   const r = g.useAbility()
   const ta = g.towerById(a.towerId!)!, tb = g.towerById(b.towerId!)!
   check('Перегрузка ускоряет ближайшую башню вдвое', r.ok && ta.hasteMult === 2 && !tb.hasteUntil)
@@ -76,7 +84,7 @@ check('в GDD 4 аватара', AVATAR_IDS.length === 4 && AVATAR_IDS.join() ==
   const got = g.gold - gold0
   check('продажа возвращает 85%', got === Math.floor(50 * 0.85) && got > Math.floor(50 * SELL_RATIO), String(got))
   const h = fresh()
-  const c = h.build(300, 340, 'archer')
+  const c = buildTower(h, 300, 340, 'archer')
   const g1 = h.gold
   h.sell(c.towerId!)
   check('у остальных — 70%', h.gold - g1 === Math.floor(50 * SELL_RATIO), String(h.gold - g1) + ' vs ' + Math.floor(50 * SELL_RATIO))
@@ -117,7 +125,7 @@ check('в GDD 4 аватара', AVATAR_IDS.length === 4 && AVATAR_IDS.join() ==
   const host = fresh()
   host.setAvatar('voevoda')
   host.avatar.x = 300; host.avatar.y = 300
-  host.build(300, 340, 'archer')
+  buildTower(host, 300, 340, 'archer')
   host.useAbility()
   const snap = host.serialize()
   const guest = new Game()

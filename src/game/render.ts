@@ -235,22 +235,18 @@ function drawEntities(ctx: CanvasRenderingContext2D, game: Game, view: ViewState
 // ─── Башни ───────────────────────────────────────────────────────────────
 function drawTowerRings(ctx: CanvasRenderingContext2D, game: Game, view: ViewState) {
   for (const tw of game.towers) {
-    const def = ALL_DEFS[tw.defId]
     const hovered = view.hoverTower === tw.id || view.selectedTower === tw.id
     const isMergeTarget = view.mergeFrom !== null && game.mergeTargetsFor(view.mergeFrom).includes(tw.id)
     const isMergeSource = view.mergeFrom === tw.id
 
-    // радиус атаки при наведении
+    // подсветка выбранной/под курсором: рамка клетки под башней — без огромного круга радиуса атаки
     if (hovered) {
-      const range = def.range * (tw.level >= 4 ? 1.1 : tw.level >= 2 ? 1.05 : 1)
-      groundPath(ctx, () => ctx.arc(tw.x, tw.y, range, 0, Math.PI * 2))
-      ctx.fillStyle = 'rgba(255,190,110,0.08)'
+      groundPath(ctx, () => ctx.rect(tw.x - CELL / 2 + 1, tw.y - CELL / 2 + 1, CELL - 2, CELL - 2))
+      ctx.fillStyle = 'rgba(255,190,110,0.12)'
       ctx.fill()
-      ctx.strokeStyle = 'rgba(255,190,110,0.6)'
-      ctx.lineWidth = 1.5
-      ctx.setLineDash([6, 5])
+      ctx.strokeStyle = 'rgba(255,190,110,0.85)'
+      ctx.lineWidth = 2
       ctx.stroke()
-      ctx.setLineDash([])
     }
     // пульс-подсветка целей слияния
     if (isMergeTarget) {
@@ -278,7 +274,7 @@ function drawTowerBody(ctx: CanvasRenderingContext2D, game: Game, view: ViewStat
   const hovered = view.hoverTower === tw.id || view.selectedTower === tw.id
   if (view.skin === 'lol') {
     drawLolTower(ctx, { ...tw, x: s.x, y: s.y - 6 }, def, game.time, hovered)
-    drawLevelPips(ctx, s.x, s.y + 14, tw.level)
+    drawLevelBadge(ctx, s.x, s.y + 14, tw.level)
     return
   }
   const since = game.time - tw.lastShotAt
@@ -320,7 +316,7 @@ function drawTowerBody(ctx: CanvasRenderingContext2D, game: Game, view: ViewStat
     ctx.fillRect(s.x - 16, top - 16, 32, 32)
   }
   drawPennant(ctx, s.x - 20, s.y + 5, def.color, !!def.merged, game.time + tw.id)
-  drawLevelPips(ctx, s.x, s.y + TOWER_FOOT + 4, tw.level)
+  drawLevelBadge(ctx, s.x, s.y + TOWER_FOOT + 5, tw.level)
   // слитая — золотой ромб под башней
   if (def.merged) {
     groundPath(ctx, () => ctx.rect(tw.x - CELL / 2 + 1, tw.y - CELL / 2 + 1, CELL - 2, CELL - 2))
@@ -361,15 +357,22 @@ function drawPennant(ctx: CanvasRenderingContext2D, x: number, y: number, color:
   }
 }
 
-/** Уровень — латунные ромбики под башней; на 5 уровне — золотые и мерцают */
-function drawLevelPips(ctx: CanvasRenderingContext2D, x: number, y: number, level: number) {
-  for (let l = 0; l < level; l++) {
-    const px = x + (l - (level - 1) / 2) * 7
-    ctx.fillStyle = '#0b0e14'
-    ctx.fillRect(px - 3, y - 2, 6, 5)
-    ctx.fillStyle = level >= 5 ? '#ffd700' : '#ffb347'
-    ctx.fillRect(px - 2, y - 1, 4, 3)
-  }
+/** Уровень — число в маленьком кружке под башней; на 5 уровне кружок золотой */
+function drawLevelBadge(ctx: CanvasRenderingContext2D, x: number, y: number, level: number) {
+  const r = 7.5
+  ctx.beginPath()
+  ctx.arc(x, y, r, 0, Math.PI * 2)
+  ctx.fillStyle = 'rgba(11,14,20,0.88)'
+  ctx.fill()
+  ctx.strokeStyle = level >= 5 ? '#ffd700' : '#ffb347'
+  ctx.lineWidth = 1.5
+  ctx.stroke()
+  ctx.font = '700 9px Rubik, system-ui, sans-serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillStyle = level >= 5 ? '#ffd700' : '#ffb347'
+  ctx.fillText(String(level), x, y + 0.5)
+  ctx.textBaseline = 'alphabetic'
 }
 
 // ─── Враги ───────────────────────────────────────────────────────────────

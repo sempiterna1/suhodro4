@@ -10,10 +10,10 @@
 //
 // Модуль не знает про файлы и CLI — это делает scripts/sim.ts.
 
-import { Game, findRecipe, upgradeCost } from './engine'
+import { Game, findRecipe } from './engine'
 import { ALL_DEFS } from './data/towers'
 import { CELL, MAP_DEFS, MAP_H, MAP_W, MERGE_DIST, type MapDef } from './data/maps'
-import { FIRST_PREVIEW_TIME, MAX_LEVEL, MERGE_MIN_LEVEL, PREVIEW_TIME } from './data/economy'
+import { FIRST_PREVIEW_TIME, MAX_LEVEL, MERGE_MIN_LEVEL, PREVIEW_TIME, ROLL_COST } from './data/economy'
 import { TOTAL_WAVES, WAVES, armorsForWave } from './data/waves'
 import { DEFAULT_DIFFICULTY, DIFFICULTIES, type DifficultyId } from './data/difficulties'
 import { mulberry32, randInt } from './rng'
@@ -178,13 +178,30 @@ function rankedCells(g: Game, h: PlacementHelper, range: number): Array<Vec & { 
   return out
 }
 
+/** Индекс копии defId в руке: покупаем, только если карточка лежит в пуле (одна карточка на ролл) */
+function ensureHand(g: Game, defId: string): number {
+  const idx = g.hand.indexOf(defId)
+  if (idx >= 0) return idx
+  if (!g.buy(defId).ok) return -1
+  return g.hand.length - 1
+}
+
+function buildFromHand(g: Game, defId: string, x: number, y: number): Tower | null {
+  // покупка → руки → установка: новая механика (прокачка/постройка только из руки)
+  const idx = ensureHand(g, defId)
+  if (idx < 0) return null
+  const res = g.placeFromHand(idx, x, y)
+  if (res.ok && res.towerId) return g.towerById(res.towerId) ?? null
+  return null // копия остаётся в руке — пригодится при следующей попытке
+}
+
 function buildBest(g: Game, defId: string, h: PlacementHelper): Tower | null {
   const def = ALL_DEFS[defId]
   if (!def || g.gold < def.price) return null
   const cells = rankedCells(g, h, def.range)
   for (const c of cells) {
-    const res = g.build(c.x, c.y, defId)
-    if (res.ok && res.towerId) return g.towerById(res.towerId) ?? null
+    const tw = buildFromHand(g, defId, c.x, c.y)
+    if (tw) return tw
   }
   return null
 }
@@ -196,14 +213,21 @@ function buildNear(g: Game, defId: string, anchor: Tower, h: PlacementHelper, ma
     (c) => Math.hypot(c.x - anchor.x, c.y - anchor.y) <= maxDist
   )
   for (const c of cells) {
-    const res = g.build(c.x, c.y, defId)
-    if (res.ok && res.towerId) return g.towerById(res.towerId) ?? null
+    const tw = buildFromHand(g, defId, c.x, c.y)
+    if (tw) return tw
   }
   return null
 }
 
 function findBase(g: Game, defId: string): Tower | undefined {
   return g.towers.find((t) => t.defId === defId)
+}
+
+/** Прокачка башни копией из руки: копия покупается, только если карточка в пуле */
+function levelUp(g: Game, t: Tower): boolean {
+  const idx = ensureHand(g, t.defId)
+  if (idx < 0) return false
+  return g.levelFromHand(idx, t.id).ok
 }
 
 /** Слить любую готовую пару (3+ уровня, рецепт и дистанция уже проверяются движком) */
@@ -248,7 +272,7 @@ function makeRandomPolicy(seed: number): Policy {
       for (let step = 0; step < 40; step++) {
         const canBuild = g.shop.some((id) => ALL_DEFS[id] && g.gold >= ALL_DEFS[id].price)
         const mergeables = g.towers.filter((t) => t.level >= MERGE_MIN_LEVEL && g.mergeTargetsFor(t.id).length > 0)
-        const upgradables = g.towers.filter((t) => t.level < MAX_LEVEL && g.gold >= upgradeCost(ALL_DEFS[t.defId]))
+        const upgradables = g.towers.filter((t) => t.level < MAX_LEVEL && g.gold >= ALL_DEFS[t.defId].price)
 
         if (g.towers.length < 3 && canBuild) {
           if (randomBuild(g, h, rng)) continue
@@ -261,7 +285,7 @@ function makeRandomPolicy(seed: number): Policy {
         }
         if (upgradables.length && roll < 0.45) {
           const t = upgradables[randInt(rng, upgradables.length)]
-          g.upgrade(t.id)
+          levelUp(g, t)
           continue
         }
         if (canBuild) {
@@ -287,7 +311,7 @@ function randomBuild(g: Game, h: PlacementHelper, rng: () => number): boolean {
   if (cells.length === 0) return false
   // немного случайности: не всегда лучшая клетка
   const pick = cells[Math.min(cells.length - 1, randInt(rng, Math.min(6, cells.length)))]
-  return g.build(pick.x, pick.y, defId).ok
+  return !!buildFromHand(g, defId, pick.x, pick.y)
 }
 
 // ─── Скриптовая политика «разумного игрока» ──────────────────────────────
@@ -323,11 +347,26 @@ function makeScriptedPolicy(): Policy {
   }
 
   const activePair = (g: Game): number => {
+    // Пара «активна», если обе половины уже есть (поле или рука): работаем над ней в первую очередь
     for (let i = 0; i < PAIR_PLAN.length; i++) {
       if (skipped.has(i)) continue
       const recipe = findRecipe(PAIR_PLAN[i][0], PAIR_PLAN[i][1])
-      if (!recipe) continue
-      if (!g.towers.some((t) => t.defId === recipe.id)) return i
+      if (!recipe || g.towers.some((t) => t.defId === recipe.id)) continue
+      const [da, db] = PAIR_PLAN[i]
+      const have = (id: string) => !!findBase(g, id) || g.hand.includes(id)
+      if (have(da) && have(db)) return i
+    }
+    // Иначе — первая пара, у которой есть хоть какой-то след (поле/рука/пул): начинаем её собирать
+    for (let i = 0; i < PAIR_PLAN.length; i++) {
+      if (skipped.has(i)) continue
+      const recipe = findRecipe(PAIR_PLAN[i][0], PAIR_PLAN[i][1])
+      if (!recipe || g.towers.some((t) => t.defId === recipe.id)) continue
+      const [da, db] = PAIR_PLAN[i]
+      if (
+        findBase(g, da) || findBase(g, db) ||
+        g.hand.includes(da) || g.hand.includes(db) ||
+        g.shop.includes(da) || g.shop.includes(db)
+      ) return i
     }
     return -1
   }
@@ -341,30 +380,26 @@ function makeScriptedPolicy(): Policy {
       const pending = [a, b].filter((t): t is Tower => !!t && t.level < MERGE_MIN_LEVEL)
       pending.sort((x, y) => x.level - y.level || x.id - y.id)
       for (const t of pending) {
-        const cost = upgradeCost(ALL_DEFS[t.defId])
-        if (g.gold >= cost && g.upgrade(t.id).ok) return true
+        if (g.gold >= ALL_DEFS[t.defId].price && levelUp(g, t)) return true
       }
     }
     // Слитые башни — главный источник урона, качаем их после сборки пары
     const merged = g.towers.filter((t) => ALL_DEFS[t.defId].merged && t.level < MAX_LEVEL)
     merged.sort((a, b) => b.level - a.level || a.id - b.id)
     for (const t of merged) {
-      const cost = upgradeCost(ALL_DEFS[t.defId])
-      if (g.gold >= cost && g.upgrade(t.id).ok) return true
+      if (g.gold >= ALL_DEFS[t.defId].price && levelUp(g, t)) return true
     }
     // Базовые башни вне текущей пары — не выше 3, чтобы не терять уровни при слиянии
     const base = g.towers.filter((t) => !ALL_DEFS[t.defId].merged && t.level < MERGE_MIN_LEVEL)
     base.sort((a, b) => a.level - b.level || a.id - b.id)
     for (const t of base) {
-      const cost = upgradeCost(ALL_DEFS[t.defId])
-      if (g.gold >= cost && g.upgrade(t.id).ok) return true
+      if (g.gold >= ALL_DEFS[t.defId].price && levelUp(g, t)) return true
     }
     if (activePair(g) < 0) {
       const rest = g.towers.filter((t) => t.level < MAX_LEVEL)
       rest.sort((a, b) => b.level - a.level || a.id - b.id)
       for (const t of rest) {
-        const cost = upgradeCost(ALL_DEFS[t.defId])
-        if (g.gold >= cost && g.upgrade(t.id).ok) return true
+        if (g.gold >= ALL_DEFS[t.defId].price && levelUp(g, t)) return true
       }
     }
     return false
@@ -386,11 +421,11 @@ function makeScriptedPolicy(): Policy {
     }
     if (a && !b) {
       const def = ALL_DEFS[db]
-      const upCost = upgradeCost(ALL_DEFS[a.defId])
+      const upCost = ALL_DEFS[a.defId].price
       // Если напарник пока не по карману вместе с прокачкой — сначала усиливаем
       // уже стоящую башню: один L3 держит ранние волны лучше двух L1.
       if (a.level < MERGE_MIN_LEVEL && g.gold < def.price + upCost && g.gold >= upCost) {
-        if (g.upgrade(a.id).ok) return true
+        if (levelUp(g, a)) return true
       }
       if (g.gold < def.price) return false
       if (buildNear(g, db, a, h)) return true
@@ -399,9 +434,9 @@ function makeScriptedPolicy(): Policy {
     }
     if (!a && b) {
       const def = ALL_DEFS[da]
-      const upCost = upgradeCost(ALL_DEFS[b.defId])
+      const upCost = ALL_DEFS[b.defId].price
       if (b.level < MERGE_MIN_LEVEL && g.gold < def.price + upCost && g.gold >= upCost) {
-        if (g.upgrade(b.id).ok) return true
+        if (levelUp(g, b)) return true
       }
       if (g.gold < def.price) return false
       if (buildNear(g, da, b, h)) return true
@@ -416,7 +451,8 @@ function makeScriptedPolicy(): Policy {
   }
 
   const extraStep = (g: Game, h: PlacementHelper): boolean => {
-    if (activePair(g) >= 0) return false
+    // Оборона важнее плана: пока башен мало, строим любое доступное из пула
+    if (activePair(g) >= 0 && g.towers.length >= 5) return false
     if (g.towers.length < 12) {
       const affordable = g.shop
         .filter((id) => ALL_DEFS[id] && g.gold >= ALL_DEFS[id].price)
@@ -426,9 +462,42 @@ function makeScriptedPolicy(): Policy {
     return false
   }
 
+  // Карточка одна на пул: если нужной пары нет ни в пуле, ни в руке — роллим.
+  // Как живой игрок: ищем нужные башни прокруткой магазина. Но только когда
+  // оборона уже стоит (башен ≥ 3) и осталось золото и на ролл, и на карточку.
+  let rollsLeft = 0
+  const maybeRollForPlan = (g: Game): boolean => {
+    if (rollsLeft <= 0 || g.towers.length < 3) return false
+    const idx = activePair(g)
+    if (idx < 0) return false
+    for (const id of PAIR_PLAN[idx]) {
+      if (g.hand.includes(id) || g.shop.includes(id)) continue
+      if (g.gold < ROLL_COST + ALL_DEFS[id].price) continue
+      rollsLeft--
+      return g.roll().ok
+    }
+    return false
+  }
+
+  // Припасти копии уже стоящих родителей активной пары: карточка одна на ролл,
+  // так что выгодно брать её сразу — прокачка потом использует копию из руки.
+  const stockpileStep = (g: Game): boolean => {
+    const idx = activePair(g)
+    if (idx < 0) return false
+    for (const id of PAIR_PLAN[idx]) {
+      const onField = findBase(g, id)
+      if (!onField) continue // первую копию сразу ставит planStep
+      const inHand = g.hand.filter((h) => h === id).length
+      if (inHand >= MAX_LEVEL - onField.level) continue // копий хватает
+      if (g.gold >= ALL_DEFS[id].price + ROLL_COST && g.shop.includes(id)) return g.buy(id).ok
+    }
+    return false
+  }
+
   return {
     beforeWave(g) {
       const h = helper(g)
+      rollsLeft = 4
       // Слияния бесплатны — делаем их сразу
       for (let i = 0; i < 30 && mergeAny(g); i++) {}
       for (let step = 0; step < 200; step++) {
@@ -436,6 +505,8 @@ function makeScriptedPolicy(): Policy {
         if (planStep(g, h)) continue
         if (upgradeStep(g, h)) continue
         if (extraStep(g, h)) continue
+        if (stockpileStep(g)) continue
+        if (maybeRollForPlan(g)) continue
         break
       }
     },

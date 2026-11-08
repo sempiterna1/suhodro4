@@ -7,6 +7,23 @@ import { CLASSIC_MAP } from '../src/game/map'
 import { ALL_DEFS, MERGED_TOWERS, TOWERS } from '../src/game/config'
 import type { Creep } from '../src/game/types'
 
+/** Тестовая застройка новой механикой: купить в арсенал → взять из руки → поставить */
+const buildTower = (g: Game, x: number, y: number, defId: string) => {
+  if (!g.shop.includes(defId)) g.shop.push(defId) // карточка одна на пул: ролл снова предложил ту же башню
+  const r = g.buy(defId)
+  if (!r.ok) return r
+  return g.placeFromHand(g.hand.length - 1, x, y)
+}
+/** Прокачка новой механикой: купить копию → навести из руки на башню */
+const levelTower = (g: Game, towerId: number) => {
+  const tw = g.towerById(towerId)
+  if (!tw || tw.level >= 5) return { ok: false, error: 'не найдена или макс. уровень' }
+  if (!g.shop.includes(tw.defId)) g.shop.push(tw.defId) // ролл снова предложил ту же башню
+  const r = g.buy(tw.defId)
+  if (!r.ok) return r
+  return g.levelFromHand(g.hand.length - 1, towerId)
+}
+
 let failed = 0
 function check(name: string, ok: boolean, info = '') {
   console.log(`${ok ? '✓' : '✗'} ${name}${info ? ' — ' + info : ''}`)
@@ -23,7 +40,7 @@ function setup(defId: string, level: number): Game {
   g.shop.push(defId) // слитые башни в арсенале не продаются — для теста ставим напрямую
   g.beginPreview()
   g.gold = 1e6
-  const id = g.build(SPOT.x, SPOT.y, defId).towerId
+  const id = buildTower(g, SPOT.x, SPOT.y, defId).towerId
   if (!id) throw new Error('не построилась ' + defId)
   const tw = g.towerById(id)!
   tw.level = level
@@ -123,11 +140,11 @@ function firstCreep(g: Game): Creep | undefined {
   g.useMap(CLASSIC_MAP) // карта случайна — тестам нужна классическая
   g.beginPreview()
   g.gold = 1e6
-  const a = g.build(420, 260, 'archer').towerId! // свободный блок между вертикалями классической карты
+  const a = buildTower(g, 420, 260, 'archer').towerId! // свободный блок между вертикалями классической карты
   const before = (g as unknown as { auraMult(t: unknown): number }).auraMult(g.towerById(a))
-  const b = g.build(480, 260, 'sentry').towerId!
-  const c = g.build(450, 320, 'mech_guard').towerId!
-  for (const id of [b, c]) for (let i = 0; i < 2; i++) g.upgrade(id)
+  const b = buildTower(g, 480, 260, 'sentry').towerId!
+  const c = buildTower(g, 450, 320, 'mech_guard').towerId!
+  for (const id of [b, c]) for (let i = 0; i < 2; i++) levelTower(g, id)
   const m = g.merge(b, c)
   const after = (g as unknown as { auraMult(t: unknown): number }).auraMult(g.towerById(a))
   check('Бастион даёт ауру +10% соседям', m.ok && Math.abs(after - before - 0.1) < 1e-9, `${before} → ${after}`)
@@ -140,9 +157,9 @@ function firstCreep(g: Game): Creep | undefined {
     g.useMap(CLASSIC_MAP) // карта случайна — тестам нужна классическая
     g.beginPreview()
     g.gold = 1e6
-    const a = g.build(300, 200, m.parents[0]).towerId!
-    const b = g.build(370, 200, m.parents[1]).towerId!
-    for (const id of [a, b]) for (let i = 0; i < 2; i++) g.upgrade(id)
+    const a = buildTower(g, 300, 200, m.parents[0]).towerId!
+    const b = buildTower(g, 370, 200, m.parents[1]).towerId!
+    for (const id of [a, b]) for (let i = 0; i < 2; i++) levelTower(g, id)
     const r = g.merge(a, b)
     check(`слияние → ${m.name}`, r.ok && g.towerById(b)?.defId === m.id)
   }
@@ -155,7 +172,7 @@ function firstCreep(g: Game): Creep | undefined {
   g.beginPreview()
   g.gold = 1e6
   const at = (x: number, y: number, id: string, level: number) => {
-    const t = g.build(x, y, id).towerId!
+    const t = buildTower(g, x, y, id).towerId!
     g.towerById(t)!.level = level
     return t
   }

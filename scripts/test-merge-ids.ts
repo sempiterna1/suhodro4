@@ -5,6 +5,23 @@
 import { Game } from '../src/game/engine'
 import { CLASSIC_MAP } from '../src/game/map'
 
+/** Тестовая застройка новой механикой: купить в арсенал → взять из руки → поставить */
+const buildTower = (g: Game, x: number, y: number, defId: string) => {
+  if (!g.shop.includes(defId)) g.shop.push(defId) // карточка одна на пул: ролл снова предложил ту же башню
+  const r = g.buy(defId)
+  if (!r.ok) return r
+  return g.placeFromHand(g.hand.length - 1, x, y)
+}
+/** Прокачка новой механикой: купить копию → навести из руки на башню */
+const levelTower = (g: Game, towerId: number) => {
+  const tw = g.towerById(towerId)
+  if (!tw || tw.level >= 5) return { ok: false, error: 'не найдена или макс. уровень' }
+  if (!g.shop.includes(tw.defId)) g.shop.push(tw.defId) // ролл снова предложил ту же башню
+  const r = g.buy(tw.defId)
+  if (!r.ok) return r
+  return g.levelFromHand(g.hand.length - 1, towerId)
+}
+
 const g = new Game()
 
 g.unlockAllTowers() // арсенал случаен — тестам нужны все башни
@@ -14,12 +31,12 @@ g.beginPreview()
 g.gold = 99999
 
 // Кластер из 4 валидных точек (не на тракте), попарно в пределах 140 px
-const a = g.build(300, 240, 'archer').towerId!
-const b = g.build(370, 240, 'pyro').towerId!
-const c = g.build(330, 300, 'archer').towerId!
-const d = g.build(400, 300, 'pyro').towerId!
+const a = buildTower(g, 300, 240, 'archer').towerId!
+const b = buildTower(g, 370, 240, 'pyro').towerId!
+const c = buildTower(g, 330, 300, 'archer').towerId!
+const d = buildTower(g, 400, 300, 'pyro').towerId!
 console.log('ids построек:', a, b, c, d)
-for (const id of [a, b, c, d]) for (let i = 0; i < 2; i++) g.upgrade(id)
+for (const id of [a, b, c, d]) for (let i = 0; i < 2; i++) levelTower(g, id)
 
 /** Проверка: все id во всех targets всех башен резолвятся через towerById */
 function assertAllResolve(step: string) {
@@ -50,7 +67,7 @@ console.log('итог у survivor:', mergedTower.defId, 'ур.', mergedTower.lev
   '| targets слитой:', g.mergeTargetsFor(d).length, '(0 = слитые не сливаются, ок)')
 
 // ─── Продажа тоже сдвигает массив ───
-const e = g.build(300, 360, 'frost').towerId ?? g.build(470, 300, 'frost').towerId
+const e = buildTower(g, 300, 360, 'frost').towerId ?? buildTower(g, 470, 300, 'frost').towerId
 if (e) {
   g.sell(e)
   assertAllResolve('после sell')

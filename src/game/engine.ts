@@ -111,15 +111,6 @@ export function mergePartnersText(defId: string): string {
   return list.length ? list.join(', ') : 'ни с кем'
 }
 
-export function upgradeCost(def: TowerDefinition): number {
-  if (def.merged) {
-    const pa = ALL_DEFS[def.parents[0]]
-    const pb = ALL_DEFS[def.parents[1]]
-    return Math.min(pa.price, pb.price)
-  }
-  return def.price
-}
-
 export function hybridMult(attacks: AttackType[], armor: ArmorType): { mult: number; attack: AttackType } {
   let best = { mult: -1, attack: attacks[0] }
   for (const a of attacks) {
@@ -173,7 +164,9 @@ export class Game {
   wave = 1 // 1-базный номер текущей/следующей волны
   speed = 1
   paused = false // пауза: время стоит, но строить/улучшать/роллить можно
-  shop: string[] = [] // башни, доступные к постройке
+  shop: string[] = [] // башни, доступные к покупке (пул арсенала + открытые слитые)
+  hand: string[] = [] // купленные, но ещё не установленные башни («рука»)
+  discovered: string[] = [] // открытые слитые башни — не теряются при ролле арсенала
   infiniteGold = false // чит для тестов: золото не кончается (переживает рестарт)
   private goldBeforeCheat = 0
   time = 0
@@ -251,6 +244,8 @@ export class Game {
     // пул выпадает при старте игры (beginPreview), а не здесь: Game создаётся и на сервере
     // при SSR — случайный пул разошёлся бы с клиентским и сломал гидратацию React
     this.shop = []
+    this.hand = []
+    this.discovered = []
     this.time = 0
     this.previewRemaining = 0
     this.creeps = []
@@ -407,7 +402,7 @@ export class Game {
 
   /** Открыть в арсенале все башни (тесты, будущий режим отладки) */
   unlockAllTowers() {
-    this.shop = TOWERS.map((t) => t.id)
+    this.shop = [...TOWERS.map((t) => t.id), ...MERGED_TOWERS.map((t) => t.id)]
   }
 
   /** Ролл арсенала: новый пул из SHOP_SIZE башен за ROLL_COST золота */
@@ -416,7 +411,7 @@ export class Game {
     if (this.gold < ROLL_COST) return { ok: false, error: 'Не хватает золота' }
     this.gold -= ROLL_COST
     this.refillGold()
-    this.shop = rollPool(this.rng)
+    this.shop = [...rollPool(this.rng), ...this.discovered]
     this.logEvent({ type: 'roll', amount: ROLL_COST, text: this.shop.join(',') })
     return { ok: true }
   }
@@ -431,20 +426,36 @@ export class Game {
     return placementError(x, y, this.towers, this.avatar)
   }
 
+  /** Проверка «карточка в магазине + хватает золота + клетка свободна» — для подсветки вне руки */
   canBuild(x: number, y: number, defId: string): boolean {
     const def = ALL_DEFS[defId]
     return !!def && this.shop.includes(defId) && this.gold >= def.price && this.canPlace(x, y) === null
   }
 
-  build(x: number, y: number, defId: string): ActionResult {
+  /** Покупка башни из арсенала: золото списывается сразу, копия ложится в «руку»;
+   *  карточка убирается из пула — повторно купить её можно только после ролла */
+  buy(defId: string): ActionResult {
     const def = ALL_DEFS[defId]
     if (!def) return { ok: false, error: 'Нет такой башни' }
+    if (this.phase === 'over' || this.phase === 'won') return { ok: false, error: 'Игра окончена' }
     if (!this.shop.includes(defId)) return { ok: false, error: 'Этой башни нет в арсенале — сделайте ролл' }
-    const placeErr = this.canPlace(x, y)
-    if (placeErr) return { ok: false, error: placeErr }
     if (this.gold < def.price) return { ok: false, error: 'Не хватает золота' }
     this.gold -= def.price
     this.refillGold()
+    this.hand.push(defId)
+    this.shop = this.shop.filter((id) => id !== defId)
+    this.logEvent({ type: 'buy', defId, amount: def.price })
+    return { ok: true }
+  }
+
+  /** Установка башни из руки на свободную клетку: золото уже заплачено */
+  placeFromHand(idx: number, x: number, y: number): ActionResult {
+    const defId = this.hand[idx]
+    const def = ALL_DEFS[defId]
+    if (!def) return { ok: false, error: 'Этой башни уже нет в руке' }
+    const placeErr = this.canPlace(x, y)
+    if (placeErr) return { ok: false, error: placeErr }
+    this.hand.splice(idx, 1)
     const at = snapToCell(x, y) // башня всегда в центре клетки
     const tower: Tower = {
       id: this.uid++,
@@ -463,21 +474,25 @@ export class Game {
       aim: -Math.PI / 2,
     }
     this.towers.push(tower)
-    this.logEvent({ type: 'build', defId, towerId: tower.id, x: at.x, y: at.y, amount: def.price })
+    this.logEvent({ type: 'build', defId, towerId: tower.id, x: at.x, y: at.y, amount: def.price, text: 'из руки' })
     return { ok: true, towerId: tower.id }
   }
 
-  upgrade(id: number): ActionResult {
-    const tw = this.towerById(id)
-    if (!tw) return { ok: false, error: 'Башни нет' }
+  /** Прокачка копией из руки: однотипная башня на поле получает +1 уровень (до 5) */
+  levelFromHand(idx: number, towerId: number): ActionResult {
+    const defId = this.hand[idx]
+    const tw = this.towerById(towerId)
+    if (!defId) return { ok: false, error: 'Этой башни уже нет в руке' }
+    if (!tw) return { ok: false, error: 'Башни нет на поле' }
+    const def = ALL_DEFS[defId]
+    if (tw.defId !== defId) {
+      return { ok: false, error: `Копия «${def.name}» качает только башню того же вида — слияние делает только поле` }
+    }
     if (tw.level >= 5) return { ok: false, error: 'Максимальный уровень' }
-    const cost = upgradeCost(ALL_DEFS[tw.defId])
-    if (this.gold < cost) return { ok: false, error: 'Не хватает золота' }
-    this.gold -= cost
-    this.refillGold()
-    tw.invested += cost
+    this.hand.splice(idx, 1)
     tw.level += 1
-    this.logEvent({ type: 'upgrade', defId: tw.defId, towerId: tw.id, level: tw.level, x: tw.x, y: tw.y, amount: cost })
+    tw.invested += def.price
+    this.logEvent({ type: 'upgrade', defId: tw.defId, towerId: tw.id, level: tw.level, x: tw.x, y: tw.y, amount: def.price })
     return { ok: true }
   }
 
@@ -559,6 +574,11 @@ export class Game {
     tb.focusStacks = 0
     this.towers = this.towers.filter((t) => t.id !== a)
     this.stats.merges++
+    // Открытие слитой башни: карточка появляется в арсенале и не теряется при ролле
+    if (!this.discovered.includes(recipe.id)) {
+      this.discovered.push(recipe.id)
+      this.shop.push(recipe.id)
+    }
     this.logEvent({
       type: 'merge',
       defId: recipe.id,
@@ -1394,6 +1414,7 @@ export class Game {
       paused: this.paused,
       infiniteGold: this.infiniteGold,
       shop: [...this.shop],
+      hand: [...this.hand],
       rollCost: ROLL_COST,
       time: this.time,
       stats: { ...this.stats },
@@ -1450,6 +1471,8 @@ export class Game {
       paused: this.paused,
       infiniteGold: this.infiniteGold,
       shop: [...this.shop],
+      hand: [...this.hand],
+      discovered: [...this.discovered],
       mapSeed: this.mapSeed,
       time: this.time,
       previewRemaining: Math.max(0, this.previewRemaining),
@@ -1505,6 +1528,8 @@ export class Game {
     this.paused = s.paused
     this.infiniteGold = s.infiniteGold
     this.shop = [...s.shop]
+    this.hand = [...(s.hand ?? [])]
+    this.discovered = [...(s.discovered ?? [])]
     // карта гостя — та же, что у хоста: генерируем по его зерну
     if (s.mapSeed !== this.mapSeed) this.loadMap(generateMap(s.mapSeed))
     else setSecondPathActive(this.secondExitOpen) // волна могла открыть второй выход
@@ -1583,11 +1608,14 @@ export class Game {
   applyGuestCmd(cmd: GuestCmd): string | null {
     let res: ActionResult
     switch (cmd.t) {
-      case 'build':
-        res = this.build(cmd.x, cmd.y, cmd.defId)
+      case 'buy':
+        res = this.buy(cmd.defId)
         break
-      case 'upgrade':
-        res = this.upgrade(cmd.id)
+      case 'placeHand':
+        res = this.placeFromHand(cmd.idx, cmd.x, cmd.y)
+        break
+      case 'levelHand':
+        res = this.levelFromHand(cmd.idx, cmd.id)
         break
       case 'sell':
         res = this.sell(cmd.id)

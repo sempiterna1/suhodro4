@@ -22,6 +22,10 @@ export interface Snap {
   paused: boolean
   infiniteGold: boolean
   shop: string[]
+  /** купленные башни, ожидающие установки/прокачки («рука») */
+  hand?: string[]
+  /** открытые слитые башни — не теряются при ролле */
+  discovered?: string[]
   mapSeed: number // гость генерирует ту же тропу по зерну (map.ts)
   time: number
   previewRemaining: number
@@ -50,8 +54,9 @@ export interface Snap {
 
 /** Команда гостя → хост */
 export type GuestCmd =
-  | { t: 'build'; x: number; y: number; defId: string }
-  | { t: 'upgrade'; id: number }
+  | { t: 'buy'; defId: string }
+  | { t: 'placeHand'; idx: number; x: number; y: number }
+  | { t: 'levelHand'; idx: number; id: number }
   | { t: 'sell'; id: number }
   | { t: 'move'; id: number; x: number; y: number }
   | { t: 'merge'; a: number; b: number }

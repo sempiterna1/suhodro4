@@ -3,6 +3,14 @@ import { Game } from '../src/game/engine'
 import { CLASSIC_MAP } from '../src/game/map'
 import { WAVES, hpForWave, ARMOR_HP_MULT } from '../src/game/config'
 
+/** Тестовая застройка новой механикой: купить в арсенал → взять из руки → поставить */
+const buildTower = (g: Game, x: number, y: number, defId: string) => {
+  if (!g.shop.includes(defId)) g.shop.push(defId) // карточка одна на пул: ролл снова предложил ту же башню
+  const r = g.buy(defId)
+  if (!r.ok) return r
+  return g.placeFromHand(g.hand.length - 1, x, y)
+}
+
 const g = new Game()
 
 g.unlockAllTowers() // арсенал случаен — тестам нужны все башни
@@ -39,25 +47,25 @@ console.log(
   'hp(base):', (hpForWave(1) * ARMOR_HP_MULT[w1.armor]).toFixed(1),
   'hp(-30%):', (hpForWave(1) * ARMOR_HP_MULT[w1.armor] * HP_PLAYTEST_MULT).toFixed(1)
 )
-// проверка свободной постройки
-const r1 = g.build(300, 300, 'sentry')
-const r2 = g.build(301, 301, 'archer') // слишком близко — должно отклониться
-const r3 = g.build(240, 150, 'archer') // на тракте — должно отклониться
+// проверка свободной постройки (покупка → рука → установка)
+const r1 = buildTower(g, 300, 300, 'sentry')
+const r2 = buildTower(g, 301, 301, 'archer') // слишком близко — должно отклониться
+const r3 = buildTower(g, 240, 150, 'archer') // на тракте — должно отклониться
 console.log('build(300,300):', r1.ok, '| build(301,301):', r2.ok, r2.error, '| build(на тракте):', r3.ok, r3.error)
 
 // проверка слияния при свободной постройке (Лучница + Пиромант рядом, оба 3 ур.)
 const g2 = new Game()
 g2.unlockAllTowers() // арсенал случаен — тестам нужны все башни
 g2.useMap(CLASSIC_MAP) // карта случайна — тестам нужна классическая
-const bA = g2.build(285, 260, 'archer')
-const bB = g2.build(285, 340, 'pyro')
+const bA = buildTower(g2, 285, 260, 'archer')
+const bB = buildTower(g2, 285, 340, 'pyro')
 const idA = bA.towerId!
 const idB = bB.towerId!
 g2.towerById(idA)!.level = 3
 g2.towerById(idB)!.level = 3
 const recipe = g2.canMerge(idA, idB)
 g2.gold = 999 // на тест дальнего строительства
-const far = g2.build(850, 100, 'archer')
+const far = buildTower(g2, 850, 100, 'archer')
 g2.towerById(far.towerId!)!.level = 3
 const farRecipe = g2.canMerge(idA, far.towerId!)
 console.log('merge recipe рядом:', recipe?.id ?? 'НЕТ', '| далеко (850,100):', farRecipe === null ? 'отклонено (дистанция)' : 'ОШИБКА: слилось издалека')

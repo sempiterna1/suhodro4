@@ -212,6 +212,7 @@ export interface GameStats {
 /** Тип события в журнале партии (этап 1: разбор баланса и реплеи) */
 export type GameEventType =
   | 'build'
+  | 'buy'
   | 'upgrade'
   | 'sell'
   | 'merge'
@@ -262,7 +263,9 @@ export interface UiState {
   speed: number
   paused: boolean
   infiniteGold: boolean // чит для тестов
-  shop: string[] // id башен, доступных к постройке (пул арсенала)
+  shop: string[] // id башен, доступных к покупке (пул арсенала + открытые слитые)
+  /** купленные башни, ожидающие установки/прокачки на поле («рука») */
+  hand: string[]
   rollCost: number
   time: number
   stats: GameStats

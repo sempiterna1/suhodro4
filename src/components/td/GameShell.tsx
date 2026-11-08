@@ -8,7 +8,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { Game } from '@/game/engine'
 import { clampCamera, render, viewScale, type Skin, type ViewState } from '@/game/render'
 import { ALL_DEFS, CELL, MAP_DEFS, MAP_H, MAP_W } from '@/game/config'
-import { GRID_H, GRID_W, snapToCell } from '@/game/map'
+import { GRID_H, GRID_W, cellOf, snapToCell } from '@/game/map'
 import { insideField, toScreen, toWorld } from '@/game/iso'
 import { preloadAssets } from '@/game/assets'
 import type { GuestCmd } from '@/game/mp-protocol'
@@ -24,7 +24,7 @@ import {
   type MpStatus,
 } from './Panels'
 import {
-  Arsenal, BuildConfirmButton, CenterNotices, DMG_COLORS, HeroButtons, PricePlaque, StartButton, TopBar, WaveBanner, type MenuActions,
+  BuildConfirmButton, CenterNotices, DMG_COLORS, HandTray, HeroButtons, PricePlaque, ShopButton, ShopModal, StartButton, TopBar, WaveBanner, type MenuActions,
 } from './Hud'
 import { Sfx } from '@/game/audio'
 import { towerThumb } from '@/game/pixel'
@@ -71,6 +71,14 @@ export default function GameShell() {
   const [selectedTower, setSelectedTower] = useState<number | null>(null)
   // башня, выбранная в арсенале для постройки (перетаскиванием или нажатием)
   const [armed, setArmed] = useState<string | null>(null)
+  // башня, взятая в «стол» из руки: индекс в ui.hand (копия ставится на клетку или качает башню)
+  const [armedHand, setArmedHand] = useState<number | null>(null)
+  // магазин — окно по центру, открывается кнопкой в нижней панели (арсенал не закреплён на экране)
+  const [shopOpen, setShopOpen] = useState(false)
+  const shopOpenRef = useRef(false)
+  useEffect(() => {
+    shopOpenRef.current = shopOpen
+  }, [shopOpen])
   // клетка, выбранная под постройку (центр клетки); башня ставится только кнопкой ✓
   const [buildCell, setBuildCell] = useState<Vec | null>(null)
   const [mergeFrom, setMergeFrom] = useState<number | null>(null)
@@ -81,6 +89,19 @@ export default function GameShell() {
   // ─── Звук: синтез Web Audio; включается после первого жеста, выбор «без звука» запоминается ───
   const [sfx] = useState(() => new Sfx())
   const [muted, setMuted] = useState(false)
+  // громкости для слайдеров меню; хранилище и применение — в Sfx (zr-music / zr-sfx)
+  const readStoredVolume = (key: string, fallback: number) => {
+    try {
+      const raw = window.localStorage.getItem(key)
+      const v = Number(raw)
+      return raw !== null && Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : fallback
+    } catch {
+      return fallback
+    }
+  }
+  const [musicVolume, setMusicVolume] = useState(() => readStoredVolume('zr-music', 0.35))
+  const [sfxVolume, setSfxVolume] = useState(() => readStoredVolume('zr-sfx', 1))
+  const [ambientVolume, setAmbientVolume] = useState(() => readStoredVolume('zr-ambient', 0.6))
   useEffect(() => {
     let saved = false
     try {
@@ -120,6 +141,17 @@ export default function GameShell() {
     }
   }, [muted, sfx])
 
+  // применение громкостей к аудио-графу (Sfx сам пишет их в localStorage)
+  useEffect(() => {
+    sfx.setMusicVolume(musicVolume)
+  }, [musicVolume, sfx])
+  useEffect(() => {
+    sfx.setSfxVolume(sfxVolume)
+  }, [sfxVolume, sfx])
+  useEffect(() => {
+    sfx.setAmbientVolume(ambientVolume)
+  }, [ambientVolume, sfx])
+
   // ─── Мультиплеер ────────────────────────────────────────────────────────
   const [mpRole, setMpRole] = useState<MpRole>('single')
   const [mpCode, setMpCode] = useState<string | null>(null)
@@ -155,6 +187,7 @@ export default function GameShell() {
   const selRef = useRef(selectedTower)
   const mergeRef = useRef(mergeFrom)
   const armedRef = useRef(armed)
+  const armedHandRef = useRef(armedHand)
   const buildCellRef = useRef<Vec | null>(null)
   const cellsRef = useRef<Vec[]>([])
   // id башни, которую переносят (режим постройки с её клеткой в качестве старта)
@@ -171,6 +204,7 @@ export default function GameShell() {
   }, [mergeFrom])
   useEffect(() => {
     armedRef.current = armed
+    armedHandRef.current = armed ? armedHandRef.current : null
     if (!armed) {
       viewRef.current.buildGhost = null
       buildCellRef.current = null
@@ -180,6 +214,17 @@ export default function GameShell() {
       setBuildCell(null)
     }
   }, [armed])
+  useEffect(() => {
+    armedHandRef.current = armedHand
+  }, [armedHand])
+
+  /** Полный выход из режима постройки: снять башню и со стола, и с руки */
+  const disarm = () => {
+    armedRef.current = null
+    armedHandRef.current = null
+    setArmedHand(null)
+    setArmed(null)
+  }
 
   // ─── Скин башен: ?skin=lol|steam в ссылке, иначе — последний выбор в этом браузере ───
   useEffect(() => {
@@ -403,21 +448,52 @@ export default function GameShell() {
     return toWorld(c.x, c.y)
   }
 
-  /** Башня под курсором: башни высокие, поэтому попадание считаем по силуэту на экране */
+  /** Башня под курсором: башни высокие, поэтому попадание считаем по силуэту на экране.
+   *  Силуэт масштабируется с зумом камеры — иначе на приближенной карте клик по видимой башне мимо зоны попадания */
   const towerAt = (p: Vec): number | null => {
     const m = toScreen(p.x, p.y)
+    const k = viewScale(viewRef.current)
     let best: number | null = null
     let bestY = -Infinity
     for (const tw of game.towers) {
       const s = toScreen(tw.x, tw.y)
       // ближняя к зрителю башня перекрывает дальнюю — берём ту, что ниже на экране
-      if (Math.abs(m.x - s.x) <= 22 && m.y >= s.y - 58 && m.y <= s.y + 14 && s.y > bestY) {
+      if (Math.abs(m.x - s.x) <= 22 * k && m.y >= s.y - 58 * k && m.y <= s.y + 14 * k && s.y > bestY) {
         best = tw.id
         bestY = s.y
       }
     }
     return best
   }
+
+  /** Тап по клетке с башней: запасной хит-тест, когда точка ниже силуэта (земля перед основанием) */
+  const towerAtCell = (p: Vec): number | null => {
+    const c = cellOf(p.x, p.y)
+    const tw = game.towers.find((t) => {
+      const tc = cellOf(t.x, t.y)
+      return tc.cx === c.cx && tc.cy === c.cy
+    })
+    return tw ? tw.id : null
+  }
+
+  /** Основание башни: маленький бокс у подножия — широкий силуэт не должен перекрывать соседние клетки */
+  const towerCoreAt = (p: Vec): number | null => {
+    const m = toScreen(p.x, p.y)
+    const k = viewScale(viewRef.current)
+    let best: number | null = null
+    let bestY = -Infinity
+    for (const tw of game.towers) {
+      const s = toScreen(tw.x, tw.y)
+      if (Math.abs(m.x - s.x) <= 15 * k && m.y >= s.y - 20 * k && m.y <= s.y + 10 * k && s.y > bestY) {
+        best = tw.id
+        bestY = s.y
+      }
+    }
+    return best
+  }
+
+  /** Цель для копии из руки: клетка башни или её основание — чтобы ставить на соседние клетки рядом с башнями */
+  const towerTargetAt = (p: Vec): number | null => towerAtCell(p) ?? towerCoreAt(p)
 
   /** Экранные координаты → точка поля; null — вне холста или вне ромба поля */
   const clientToMap = (clientX: number, clientY: number): Vec | null => {
@@ -486,7 +562,10 @@ export default function GameShell() {
     const g = viewRef.current.buildGhost
     if (armedRef.current && g && e.button === 0) {
       const p = toMap(e)
-      if (Math.hypot(p.x - g.x, p.y - g.y) <= CELL * 1.3) {
+      // тап по башне с копией из руки — это прокачка/подсказка (handleTap), а не перетаскивание призрака:
+      // иначе нажатие «копию на башню» съедается переносом призрака на соседнюю клетку
+      const overTower = armedHandRef.current !== null && towerTargetAt(p) !== null
+      if (!overTower && Math.hypot(p.x - g.x, p.y - g.y) <= CELL * 1.3) {
         ghostDragRef.current = true // взяли призрак — тянем по клеткам
         try {
           e.currentTarget.setPointerCapture(e.pointerId)
@@ -516,6 +595,11 @@ export default function GameShell() {
     pointers.current.delete(e.pointerId)
     if (ghostDragRef.current) {
       ghostDragRef.current = false
+      // бросок копии на башню: такая же — прокачка (+1 уровень), а не просто перенос призрака на соседнюю клетку
+      if (armedHandRef.current !== null) {
+        const tid = towerTargetAt(toMap(e))
+        if (tid !== null) applyHandToTower(tid)
+      }
       return
     }
     if (pinchRef.current) {
@@ -598,7 +682,9 @@ export default function GameShell() {
     }
     const p = toMap(e)
     viewRef.current.mouse = p
-    const hid = armedRef.current ? null : towerAt(p)
+    // подсветка под курсором: обычный режим — широкий силуэт (выделение);
+    // копия из руки вооружена — та же цель, что и клик (клетка/основание), чтобы не перекрывать соседние клетки
+    const hid = !armedRef.current ? towerAt(p) : armedHandRef.current !== null ? towerTargetAt(p) : null
     viewRef.current.hoverTower = hid
     updateTip(e, hid)
   }
@@ -609,35 +695,56 @@ export default function GameShell() {
     viewRef.current.hoverTower = null
   }
 
-  // ─── Постройка: тап по башне в арсенале → клетка → ✓ ───
-  /** true — команда принята (у гостя — отправлена хосту) */
-  const buildAt = (p: Vec, defId: string): boolean => {
-    if (asGuest && codeRef.current) {
-      sendCmd(codeRef.current, { t: 'build', x: p.x, y: p.y, defId })
-      return true
-    }
-    const res = game.build(p.x, p.y, defId)
-    if (!res.ok && res.error) errToast('Не построено', res.error)
-    setUi(game.getUiState())
-    return res.ok
-  }
+  // ─── Постройка: покупка → «рука» → клетка/башня → ✓ ───
 
-  // Esc — отменить выбор башни
+  // Esc / ПКМ — отменить выбор башни (в disarm() уже внутри handleTap); Esc сначала закрывает магазин
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.code === 'Escape') setArmed(null)
+      if (e.code === 'Escape') {
+        if (shopOpenRef.current) setShopOpen(false)
+        else disarm()
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
+
+  /** Копия из руки на башне: такая же — прокачка (+1 уровень), другая — подсказка. Основная механика */
+  const applyHandToTower = (tid: number) => {
+    const tw = game.towerById(tid)
+    const armedDefId = armedRef.current
+    if (!tw || !armedDefId || armedHandRef.current === null) return
+    const name = ALL_DEFS[armedDefId]?.name ?? 'башня'
+    if (tw.defId !== armedDefId) {
+      errToast('Слияние только на поле', `Копия «${name}» качает только точно такую же башню`)
+      return
+    }
+    const idx = armedHandRef.current
+    if (asGuest && codeRef.current) {
+      sendCmd(codeRef.current, { t: 'levelHand', idx, id: tid })
+    } else {
+      const res = game.levelFromHand(idx, tid)
+      if (!res.ok && res.error) errToast('Прокачка недоступна', res.error)
+      setUi(game.getUiState())
+    }
+    disarm()
+  }
 
   const handleTap = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const p = toMap(e)
     // режим постройки: тап по свободной клетке переносит призрак; ставит только ✓
     if (armedRef.current) {
       if (e.button === 2) {
-        setArmed(null) // правая кнопка — отмена
+        disarm() // правая кнопка — отмена
         return
+      }
+      // рука: тап по точно такой же башне — сразу прокачка; по другой — подсказка
+      if (armedHandRef.current !== null) {
+        const tid = towerTargetAt(p)
+        if (tid !== null) {
+          applyHandToTower(tid)
+          return
+        }
       }
       if (insideField(p)) {
         const at = snapToCell(p.x, p.y)
@@ -710,16 +817,6 @@ export default function GameShell() {
 
   const asGuest = mpRole === 'guest'
 
-
-  const doUpgrade = () => {
-    if (selectedTower === null) return
-    if (asGuest && codeRef.current) {
-      sendCmd(codeRef.current, { t: 'upgrade', id: selectedTower })
-      return
-    }
-    const res = game.upgrade(selectedTower)
-    if (!res.ok && res.error) errToast('Улучшение недоступно', res.error)
-  }
 
   const doSell = () => {
     if (selectedTower === null) return
@@ -814,7 +911,7 @@ export default function GameShell() {
   const doRestart = () => {
     game.reset()
     setSelectedTower(null)
-    setArmed(null)
+    disarm()
     setMergeFrom(null)
     setUi(game.getUiState())
     toast({ title: 'Новая попытка', description: `${game.mapDef.name} снова под атакой.` })
@@ -825,7 +922,7 @@ export default function GameShell() {
     game.reset()
     game.beginPreview()
     setSelectedTower(null)
-    setArmed(null)
+    disarm()
     setMergeFrom(null)
     setUi(game.getUiState())
     toast({ title: 'Миссия заново', description: `${game.mapDef.name} · ${game.difficultyDef.name}.` })
@@ -838,7 +935,7 @@ export default function GameShell() {
     game.selectMap(next.seed)
     game.reset()
     setSelectedTower(null)
-    setArmed(null)
+    disarm()
     setMergeFrom(null)
     setUi(game.getUiState())
     toast({ title: 'Следующая миссия', description: `${next.name}: ${next.feature}` })
@@ -929,7 +1026,13 @@ export default function GameShell() {
   const hudOn = canBuild && !showInvite
   const armedDef = armed ? ALL_DEFS[armed] : undefined
   const buildChip = armedDef ? { name: isMoving ? `Перенос: ${armedDef.name}` : armedDef.name, color: DMG_COLORS['attack' in armedDef ? armedDef.attack : armedDef.attacks[0]] } : null
-  const buildAffordable = !!armedDef && (ui.infiniteGold || ui.gold >= armedDef.price)
+  // копия из руки уже оплачена при покупке
+  const buildAffordable = !!armedDef && (armedHand !== null || ui.infiniteGold || ui.gold >= armedDef.price)
+  const buildOkLabel = armedDef
+    ? armedHand !== null
+      ? 'Поставить'
+      : `Поставить за ${armedDef.price}`
+    : 'Поставить'
   const contextPanel =
     mergeFrom !== null ? (
       <MergePanel game={game} from={mergeFrom} onCancel={() => setMergeFrom(null)} />
@@ -937,9 +1040,7 @@ export default function GameShell() {
       <TowerPanel
         game={game}
         towerId={selectedTower}
-        gold={ui.gold}
         nextArmor={ui.nextWaveArmor}
-        onUpgrade={doUpgrade}
         onSell={doSell}
         onMergeStart={() => {
           setMergeFrom(selectedTower)
@@ -984,7 +1085,7 @@ export default function GameShell() {
     let cell = buildCellRef.current
     if (!cell || !cells.some((c) => c.x === cell!.x && c.y === cell!.y)) {
       if (!cells.length) {
-        setArmed(null)
+        disarm()
         return
       }
       cell = nearestCell(cells, cell ?? { x: MAP_W / 2, y: MAP_H / 2 })
@@ -994,7 +1095,11 @@ export default function GameShell() {
     viewRef.current.buildGhost = {
       x: cell.x,
       y: cell.y,
-      valid: movingRef.current !== null ? true : game.canBuild(cell.x, cell.y, def.id),
+      valid: movingRef.current !== null
+        ? true
+        : armedHandRef.current !== null
+          ? game.canPlace(cell.x, cell.y) === null // копия из руки — золото уже заплачено
+          : game.canBuild(cell.x, cell.y, def.id),
       range: def.range,
       glyph: def.glyph,
       defId: def.id,
@@ -1039,12 +1144,35 @@ export default function GameShell() {
     el.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`
   }
 
-  const pickTower = (defId: string) => {
-    if (ui.phase === 'intro' || ui.phase === 'over' || ui.phase === 'won') return
-    if (armedRef.current === defId) {
-      setArmed(null) // повторное нажатие на ту же карточку — отмена
+  /** Покупка: золото списывается, копия падает в «руку» (без призрака — взятие в стол — только из руки), магазин закрывается */
+  const doBuy = (defId: string) => {
+    if (ui.phase !== 'preview' && ui.phase !== 'wave') return
+    if (asGuest && codeRef.current) {
+      sendCmd(codeRef.current, { t: 'buy', defId })
+      setShopOpen(false)
       return
     }
+    const res = game.buy(defId)
+    if (!res.ok && res.error) {
+      errToast('Покупка не удалась', res.error)
+      return
+    }
+    setUi(game.getUiState())
+    setShopOpen(false)
+  }
+
+  /** Взять копию из руки в стол: появляется призрак, ✓ ставит, тап по такой же башне качает */
+  const armHand = (idx: number) => {
+    const defId = game.hand[idx]
+    if (idx < 0 || !defId) {
+      disarm() // рука изменилась (снапшот гостя) — выходим
+      return
+    }
+    if (armedHandRef.current === idx && armedRef.current === defId) {
+      disarm() // повторный клик по той же копии — снять со стола
+      return
+    }
+    if (ui.phase === 'intro' || ui.phase === 'over' || ui.phase === 'won') return
     setSelectedTower(null)
     setMergeFrom(null)
     movingRef.current = null
@@ -1061,8 +1189,10 @@ export default function GameShell() {
     const prev = buildCellRef.current
     const cell = (prev && cells.find((c) => c.x === prev.x && c.y === prev.y)) || nearestCell(cells, centre)
     armedRef.current = defId
+    armedHandRef.current = idx
     buildCellRef.current = cell
     setArmed(defId)
+    setArmedHand(idx)
     setBuildCell(cell)
     refreshBuild()
   }
@@ -1101,10 +1231,22 @@ export default function GameShell() {
           }
         }
       }
-      setArmed(null)
+      disarm()
       return
     }
-    if (buildAt(c, id)) setArmed(null)
+    const idx = armedHandRef.current
+    if (idx === null) return
+    if (asGuest && codeRef.current) {
+      sendCmd(codeRef.current, { t: 'placeHand', idx, x: c.x, y: c.y })
+    } else {
+      const res = game.placeFromHand(idx, c.x, c.y)
+      if (!res.ok && res.error) {
+        errToast('Не поставлено', res.error)
+        return
+      }
+      setUi(game.getUiState())
+    }
+    disarm()
   }
 
   useEffect(() => {
@@ -1119,6 +1261,18 @@ export default function GameShell() {
       placeQuickUi()
     }
   })
+
+  // ВРЕМЕННО (отладка smoke): доступ к вводу из консоли браузера
+  useEffect(() => {
+    ;(window as unknown as Record<string, unknown>).__td = {
+      game,
+      viewRef,
+      toWorld,
+      toScreen,
+      towerAtMap: (wx: number, wy: number) => towerAt({ x: wx, y: wy }),
+      input: () => ({ armed: armedRef.current, handIdx: armedHandRef.current, cell: buildCellRef.current }),
+    }
+  })
   useLayoutEffect(() => {
     if (armed) placeBuildUi()
   }, [armed, buildCell])
@@ -1130,8 +1284,14 @@ export default function GameShell() {
     lighting,
     role: mpRole,
     mpStatus,
+    musicVolume,
+    sfxVolume,
+    ambientVolume,
     onLighting: () => setLighting((l) => !l),
     onMute: () => setMuted((m) => !m),
+    onMusicVolume: setMusicVolume,
+    onSfxVolume: setSfxVolume,
+    onAmbientVolume: setAmbientVolume,
     onInfiniteGold: doInfiniteGold,
     onSkin: () => setSkin((s) => (s === 'lol' ? 'steam' : 'lol')),
     onHelp: () => setHelpOpen(true),
@@ -1313,16 +1473,16 @@ export default function GameShell() {
 
           {armed && armedDef && buildCell && hudOn && (
             <div className="pointer-events-none absolute inset-0 z-10 overflow-hidden">
-              {!isMoving && (
+              {!isMoving && armedHand === null && (
                 <div ref={plaqueRef} className="absolute left-0 top-0" style={{ transform: 'translate(-999px, -999px)' }}>
                   <PricePlaque price={armedDef.price} />
                 </div>
               )}
               <div ref={cancelRef} className="absolute left-0 top-0" style={{ transform: 'translate(-999px, -999px)' }}>
-                <BuildConfirmButton kind="cancel" size={btn} label="Отмена" onClick={() => setArmed(null)} />
+                <BuildConfirmButton kind="cancel" size={btn} label="Отмена" onClick={disarm} />
               </div>
               <div ref={okRef} className="absolute left-0 top-0" style={{ transform: 'translate(-999px, -999px)' }}>
-                <BuildConfirmButton kind="ok" size={btn} label={`Поставить за ${armedDef.price}`} disabled={!buildAffordable} onClick={confirmBuild} />
+                <BuildConfirmButton kind="ok" size={btn} label={buildOkLabel} disabled={!buildAffordable} onClick={confirmBuild} />
               </div>
             </div>
           )}
@@ -1356,7 +1516,8 @@ export default function GameShell() {
                     {!contextPanel ? heroButtons : <span />}
                     {startButton}
                   </div>
-                  <Arsenal ui={ui} armed={armed} onPick={pickTower} onRoll={doRoll} fill info={false} />
+                  <HandTray ui={ui} armedHand={armedHand} onArm={armHand} />
+                  <ShopButton onClick={() => setShopOpen(true)} disabled={!canBuild} />
                 </div>
               ) : (
                 <>
@@ -1370,7 +1531,8 @@ export default function GameShell() {
                     style={{ right: 'max(52px, env(safe-area-inset-right))' }}
                   >
                     {startButton}
-                    <Arsenal ui={ui} armed={armed} onPick={pickTower} onRoll={doRoll} info={false} />
+                    <HandTray ui={ui} armedHand={armedHand} onArm={armHand} />
+                    <ShopButton onClick={() => setShopOpen(true)} disabled={!canBuild} />
                   </div>
                 </>
               )}
@@ -1440,7 +1602,8 @@ export default function GameShell() {
             style={{ zoom: uiScale }}
           >
             {heroButtons}
-            <Arsenal ui={ui} armed={armed} onPick={pickTower} onRoll={doRoll} size="lg" />
+            <HandTray ui={ui} armedHand={armedHand} onArm={armHand} size="lg" />
+            <ShopButton onClick={() => setShopOpen(true)} disabled={!canBuild} />
             <div className="flex w-[150px] justify-start">{startButton}</div>
           </motion.div>
         )}
@@ -1455,6 +1618,10 @@ export default function GameShell() {
       )}
 
       <HelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
+
+      <AnimatePresence>
+        {shopOpen && <ShopModal ui={ui} onPick={doBuy} onRoll={doRoll} onClose={() => setShopOpen(false)} />}
+      </AnimatePresence>
     </div>
   )
 }

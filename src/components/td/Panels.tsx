@@ -4,7 +4,7 @@
 
 import { useState } from 'react'
 import { ARMOR_COLORS, ARMOR_NAMES, ATTACK_NAMES, MERGED_TOWERS, TOWERS, DAMAGE_MATRIX, LEVEL_MULT, SELL_RATIO, ALL_DEFS } from '@/game/config'
-import { mergePartnersText, upgradeCost } from '@/game/engine'
+import { mergePartnersText } from '@/game/engine'
 import type { Game } from '@/game/engine'
 import type { ArmorType, AttackType, TowerDef, UiState, Vec } from '@/game/types'
 import { Button } from '@/components/ui/button'
@@ -15,7 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { X, Coins, Repeat2, Trash2, ChevronUp, Copy, Check, Clock } from 'lucide-react'
+import { X, Coins, Repeat2, Trash2, Copy, Check, Clock } from 'lucide-react'
 
 export type MpRole = 'single' | 'host' | 'guest'
 export type MpStatus = 'off' | 'waiting' | 'linked'
@@ -50,18 +50,14 @@ export function Price({ value, ok = true, className = '' }: { value: number; ok?
 export function TowerPanel({
   game,
   towerId,
-  gold,
   nextArmor,
-  onUpgrade,
   onSell,
   onMergeStart,
   onClose,
 }: {
   game: Game
   towerId: number | null
-  gold: number
   nextArmor: ArmorType
-  onUpgrade: () => void
   onSell: () => void
   onMergeStart: () => void
   onClose: () => void
@@ -75,9 +71,10 @@ export function TowerPanel({
   const attacks: AttackType[] = def.merged ? def.attacks : [def.attack]
   const bestMult = Math.max(...attacks.map((a) => DAMAGE_MATRIX[a][nextArmor]))
   const dps = Math.round(((dmg / interval) * bestMult) * 10) / 10
-  const cost = upgradeCost(def)
   const refund = Math.floor(tw.invested * SELL_RATIO)
   const canMerge = !def.merged && tw.level >= 3
+  // копии в «руке»: сколько ещё это башню прокачают (рука хоста/гостя синхронизируется снапшотами)
+  const copies = game.hand.filter((id) => id === tw.defId).length
 
   return (
     <div className="rounded-lg border-2 border-[#5b6f8c] bg-[#141b27] p-3">
@@ -135,17 +132,7 @@ export function TowerPanel({
       ) : (
         <p className="mb-2 text-[10px] text-[#5b6f8c]">5 ур.: {def.l5}</p>
       )}
-      <div className="grid grid-cols-3 gap-1.5">
-        <Button
-          onClick={onUpgrade}
-          disabled={tw.level >= 5 || gold < cost}
-          size="sm"
-          className="h-8 gap-0.5 border border-[#7088a8] bg-[#1f2a3b] px-1 text-[11px] text-[#ffd700] hover:bg-[#26344a] disabled:opacity-40"
-          title="Повысить уровень"
-        >
-          <ChevronUp className="h-3 w-3" />
-          {tw.level >= 5 ? 'макс.' : <Price value={cost} ok={gold >= cost} />}
-        </Button>
+      <div className="grid grid-cols-2 gap-1.5">
         <Button
           onClick={onMergeStart}
           disabled={!canMerge}
@@ -164,6 +151,12 @@ export function TowerPanel({
           <Trash2 className="mr-0.5 h-3 w-3" />+{refund}
         </Button>
       </div>
+      {tw.level < 5 && (
+        <p className="mt-1.5 text-[10px] leading-snug text-[#5b6f8c]">
+          Прокачка: купите копию в арсенале — она ляжет в «руку», затем наведите копию из руки на эту башню (+1 уровень).
+          {copies > 0 && <> В руке копий: <span className="font-bold text-[#c9d6e8]">{copies}</span>.</>}
+        </p>
+      )}
       {!def.merged && (
         <p className="mt-1.5 text-[10px] leading-snug text-[#5b6f8c]">
           {canMerge ? 'Слияние: выберите башню 3+ ур. в пределах 140 px. ' : 'Слияние — с 3 уровня, вторая башня в пределах 140 px. '}

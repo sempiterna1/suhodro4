@@ -9,9 +9,11 @@ import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, useAnimationControls } from 'framer-motion'
 import { AI_SIGNALS, ALL_DEFS, ARMOR_COLORS, ARMOR_NAMES, AVATARS, TOWERS } from '@/game/config'
 import { avatarPortrait, towerThumb } from '@/game/pixel'
-import type { AttackType, TowerDef, UiState } from '@/game/types'
+import type { AttackType, TowerDefinition, UiState } from '@/game/types'
 import type { MpRole, MpStatus } from './Panels'
-import { DAMAGE_TYPE, TOWER_CARD_W, TowerInfoCard } from './TowerInfo'
+import { DAMAGE_TYPE, DamageBadge, EffectiveVs, effectLines } from './TowerInfo'
+import { Store, Music, Volume2, Wind } from 'lucide-react'
+import { Slider } from '@/components/ui/slider'
 import {
   BoltIcon, BuildingIcon, CheckIcon, CloseIcon, CoinIcon, DiceIcon, ExitFullscreenIcon, FullscreenIcon, HelpIcon, InfinityIcon,
   MaskIcon, MenuIcon, PauseIcon, PlayIcon, RestartIcon, SoundIcon, SoundOffIcon, SunIcon, SwordsIcon, UsersIcon,
@@ -40,6 +42,7 @@ export const DMG_COLORS: Record<AttackType, string> = {
 
 const PILL = 'pointer-events-auto border border-[#3a4660] bg-[rgba(14,19,31,0.9)]'
 const slideDown = { initial: { y: -16, opacity: 0 }, animate: { y: 0, opacity: 1 }, exit: { y: -16, opacity: 0 } }
+const num = (v: number) => String(Math.round(v * 10) / 10)
 
 /** Ярлык: высота 20, 10 px, верхний регистр, рамка цветом ярлыка */
 export function Tag({ color, children, title }: { color: string; children: React.ReactNode; title?: string }) {
@@ -180,8 +183,15 @@ export interface MenuActions {
   lighting: boolean
   role: MpRole
   mpStatus: MpStatus
+  /** громкости 0..1 — для слайдеров в меню */
+  musicVolume: number
+  sfxVolume: number
+  ambientVolume: number
   onLighting: () => void
   onMute: () => void
+  onMusicVolume: (v: number) => void
+  onSfxVolume: (v: number) => void
+  onAmbientVolume: (v: number) => void
   onInfiniteGold: () => void
   onSkin: () => void
   onHelp: () => void
@@ -218,6 +228,60 @@ export function MenuPanel({ ui, m, onClose }: { ui: UiState; m: MenuActions; onC
       {m.role !== 'single' && row(<UsersIcon />, `Кооп: ${m.mpStatus === 'linked' ? '2/2 на связи' : '1/2'}`, null)}
       {m.role === 'host' && m.onInvite && row(<UsersIcon />, 'Пригласить друга', m.onInvite, false, true)}
       {row(m.muted ? <SoundOffIcon /> : <SoundIcon />, m.muted ? 'Звук: выкл' : 'Звук: вкл', m.onMute, !m.muted)}
+      <div className="col-span-2 flex flex-col gap-1.5 rounded-xl border border-[#3a4660] bg-[#1f2638] px-3 py-2">
+        <div className="flex items-center justify-between text-[13px] font-bold text-[#e8ecf4]">
+          <span className="flex min-w-0 items-center gap-2.5">
+            <span className="flex w-5 shrink-0 justify-center text-[#f2c94c]"><Music /></span>
+            Музыка
+          </span>
+          <span className="font-mono text-[11px] text-[#c3cbe0]">{Math.round(m.musicVolume * 100)}%</span>
+        </div>
+        <Slider
+          value={[Math.round(m.musicVolume * 100)]}
+          min={0}
+          max={100}
+          step={5}
+          onValueChange={(v) => m.onMusicVolume((v[0] ?? 0) / 100)}
+          aria-label="Громкость музыки"
+          className="[&_[data-slot=slider-track]]:bg-[#3a4660] [&_[data-slot=slider-range]]:bg-[#f2c94c]"
+        />
+      </div>
+      <div className="col-span-2 flex flex-col gap-1.5 rounded-xl border border-[#3a4660] bg-[#1f2638] px-3 py-2">
+        <div className="flex items-center justify-between text-[13px] font-bold text-[#e8ecf4]">
+          <span className="flex min-w-0 items-center gap-2.5">
+            <span className="flex w-5 shrink-0 justify-center text-[#f2c94c]"><Volume2 /></span>
+            Звуки игры
+          </span>
+          <span className="font-mono text-[11px] text-[#c3cbe0]">{Math.round(m.sfxVolume * 100)}%</span>
+        </div>
+        <Slider
+          value={[Math.round(m.sfxVolume * 100)]}
+          min={0}
+          max={100}
+          step={5}
+          onValueChange={(v) => m.onSfxVolume((v[0] ?? 0) / 100)}
+          aria-label="Громкость звуков игры"
+          className="[&_[data-slot=slider-track]]:bg-[#3a4660] [&_[data-slot=slider-range]]:bg-[#f2c94c]"
+        />
+      </div>
+      <div className="col-span-2 flex flex-col gap-1.5 rounded-xl border border-[#3a4660] bg-[#1f2638] px-3 py-2">
+        <div className="flex items-center justify-between text-[13px] font-bold text-[#e8ecf4]">
+          <span className="flex min-w-0 items-center gap-2.5">
+            <span className="flex w-5 shrink-0 justify-center text-[#f2c94c]"><Wind /></span>
+            Атмосфера
+          </span>
+          <span className="font-mono text-[11px] text-[#c3cbe0]">{Math.round(m.ambientVolume * 100)}%</span>
+        </div>
+        <Slider
+          value={[Math.round(m.ambientVolume * 100)]}
+          min={0}
+          max={100}
+          step={5}
+          onValueChange={(v) => m.onAmbientVolume((v[0] ?? 0) / 100)}
+          aria-label="Громкость атмосферы (ветер, лагерь)"
+          className="[&_[data-slot=slider-track]]:bg-[#3a4660] [&_[data-slot=slider-range]]:bg-[#f2c94c]"
+        />
+      </div>
       {row(<SunIcon />, m.lighting ? 'Свет и тени: вкл' : 'Свет и тени: выкл', m.onLighting, m.lighting)}
       {row(<InfinityIcon />, 'Бесконечное золото', m.onInfiniteGold, ui.infiniteGold)}
       {row(<MaskIcon />, 'Шуточный скин', m.onSkin, m.skin === 'lol')}
@@ -383,199 +447,253 @@ export function StartButton({ ui, onStart }: { ui: UiState; onStart: () => void 
   )
 }
 
-// ─── Арсенал: прокручиваемый ряд карточек + закреплённый ролл ─────────────
-const CARD = {
-  sm: { w: 64, h: 76, iw: 56, ih: 44, name: false },
-  lg: { w: 92, h: 118, iw: 80, ih: 64, name: true },
-} as const
+// ─── Магазин: кнопка в нижней панели + окно по центру экрана ───────────────
+/** Кнопка открытия магазина — вместо постоянного ряда арсенала внизу экрана */
+export function ShopButton({ onClick, disabled = false }: { onClick: () => void; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label="Открыть магазин башен"
+      title="Магазин: выбрать башню из арсенала"
+      className={`${PILL} flex shrink-0 items-center gap-2 rounded-2xl px-4 py-2.5 text-[13px] font-bold uppercase tracking-wide text-[#e8ecf4] transition-colors hover:bg-[rgba(30,38,56,0.95)] active:scale-95 disabled:opacity-40`}
+    >
+      <Store className="h-5 w-5 shrink-0 text-[#f2c94c]" strokeWidth={2.2} />
+      Магазин
+    </button>
+  )
+}
 
-export function Arsenal({
-  ui, armed, onPick, onRoll, size = 'sm', rowWidth, fill = false, info = true,
-}: {
+/**
+ * Магазин по центру экрана: пул из SHOP_SIZE башен крупными карточками
+ * (имя, тип урона, цена, «эффективен против», статы, способность 5 ур.),
+ * ролл в подвале. Покупка — клик по карточке, окно закрывает GameShell.
+ */
+export function ShopModal({ ui, onPick, onRoll, onClose }: {
   ui: UiState
-  armed: string | null
   onPick: (defId: string) => void
   onRoll: () => void
-  size?: 'sm' | 'lg'
-  /** ширина ряда; по умолчанию для sm — 3,5 карточки */
-  rowWidth?: number | string
-  /** на всю ширину (портрет телефона) */
-  fill?: boolean
-  /** карточка с подробностями при наведении мыши (на телефоне не нужна) */
-  info?: boolean
+  onClose: () => void
 }) {
-  const c = CARD[size]
   const canBuild = ui.phase === 'preview' || ui.phase === 'wave'
-  const pool = ui.shop.map((id) => ALL_DEFS[id]).filter((d): d is TowerDef => !!d && !d.merged)
-  const thumb = (t: TowerDef) => (typeof document === 'undefined' ? '' : towerThumb(t))
+  // в пуле и базовые, и открытые слитые (копия слитой качает её на поле)
+  const pool = ui.shop.map((id) => ALL_DEFS[id]).filter((d): d is TowerDefinition => !!d)
+  const thumb = (t: TowerDefinition) => (typeof document === 'undefined' ? '' : towerThumb(t))
   const canRoll = ui.gold >= ui.rollCost && canBuild
   const [spin, setSpin] = useState(0)
-
-  // прокрутка: края затухают, пока в ту сторону ещё есть башни
-  const vp = useRef<HTMLDivElement>(null)
-  const [edge, setEdge] = useState({ start: true, end: false })
-  const [dragging, setDragging] = useState(false)
-  const down = useRef<{ x: number; left: number; mouse: boolean } | null>(null)
-  const moved = useRef(false)
-  const measure = () => {
-    const el = vp.current
-    if (!el) return
-    const start = el.scrollLeft <= 2
-    const end = el.scrollLeft + el.clientWidth >= el.scrollWidth - 2
-    setEdge((e) => (e.start === start && e.end === end ? e : { start, end }))
-  }
-  useEffect(measure, [pool.length, size])
-  useEffect(() => {
-    const el = vp.current
-    if (!el) return
-    const ro = new ResizeObserver(measure)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
-  // колесо мыши по вертикали листает ряд вбок; слушатель не пассивный, чтобы страница не дёргалась
-  useEffect(() => {
-    const el = vp.current
-    if (!el) return
-    const onWheel = (e: WheelEvent) => {
-      if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && el.scrollWidth > el.clientWidth) {
-        e.preventDefault()
-        el.scrollLeft += e.deltaY
-      }
-    }
-    el.addEventListener('wheel', onWheel, { passive: false })
-    return () => el.removeEventListener('wheel', onWheel)
-  }, [])
-
-  const onPointerDown = (e: React.PointerEvent) => {
-    moved.current = false
-    down.current = { x: e.clientX, left: vp.current?.scrollLeft ?? 0, mouse: e.pointerType === 'mouse' }
-  }
-  const onPointerMove = (e: React.PointerEvent) => {
-    const d = down.current
-    if (!d || !vp.current) return
-    const dx = e.clientX - d.x
-    if (Math.abs(dx) > 4) moved.current = true // сдвиг больше ~4 px — это прокрутка, а не тап
-    if (d.mouse && moved.current) {
-      if (!dragging) setDragging(true)
-      vp.current.scrollLeft = d.left - dx
-    }
-  }
-  const onPointerUp = () => {
-    down.current = null
-    if (dragging) setDragging(false)
-  }
-
-  const fadeL = edge.start ? '#000 0' : 'transparent 0, #000 18px'
-  const fadeR = edge.end ? '#000 100%' : '#000 calc(100% - 28px), transparent 100%'
-  const mask = `linear-gradient(to right, ${fadeL}, ${fadeR})`
-
-  // подсказка над карточкой для мыши (на пальцах её заменяет плашка с названием вверху)
-  const rootRef = useRef<HTMLDivElement>(null)
-  const [hover, setHover] = useState<{ id: string; left: number } | null>(null)
-  const showHover = (id: string, card: HTMLElement) => {
-    const root = rootRef.current
-    if (!root) return
-    const rr = root.getBoundingClientRect(), cr = card.getBoundingClientRect()
-    const k = rr.width / (root.offsetWidth || 1) || 1
-    const cx = (cr.left + cr.width / 2 - rr.left) / k
-    const lo = (8 - rr.left) / k, hi = (window.innerWidth - 8 - rr.left) / k - TOWER_CARD_W
-    setHover({ id, left: Math.max(lo, Math.min(hi, cx - TOWER_CARD_W / 2)) })
-  }
-
   return (
-    <div ref={rootRef} className={`${PILL} relative flex items-center gap-1.5 rounded-[18px] p-1.5 ${fill ? 'w-full' : ''}`} style={{ maxWidth: '100%' }}>
-      <div
-        ref={vp}
-        role="group"
-        aria-label="Арсенал, листается вбок"
-        onScroll={measure}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerLeave={onPointerUp}
-        onPointerCancel={onPointerUp}
-        className={`flex min-w-0 gap-1.5 overflow-x-auto overflow-y-hidden ${fill ? 'flex-1' : ''} [&::-webkit-scrollbar]:hidden`}
-        style={{
-          width: rowWidth ?? (size === 'sm' ? 246 : undefined),
-          height: c.h,
-          overscrollBehaviorX: 'contain',
-          touchAction: 'pan-x',
-          scrollSnapType: dragging ? 'none' : 'x mandatory',
-          scrollbarWidth: 'none',
-          cursor: dragging ? 'grabbing' : 'grab',
-          userSelect: 'none',
-          WebkitMaskImage: mask,
-          maskImage: mask,
-        }}
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.15 }}
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Магазин башен"
+      className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center bg-[rgba(5,7,11,0.72)] p-3"
+    >
+      <motion.div
+        initial={{ scale: 0.92, y: 14 }}
+        animate={{ scale: 1, y: 0 }}
+        exit={{ scale: 0.95, y: 8 }}
+        transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+        onClick={(e) => e.stopPropagation()}
+        className="flex max-h-[92dvh] w-fit max-w-[96vw] flex-col overflow-hidden rounded-2xl border-2 border-[#5b6f8c] bg-[rgba(14,19,31,0.97)] shadow-[0_18px_60px_rgba(0,0,0,0.8)]"
       >
-        {pool.map((t) => {
-          const affordable = ui.gold >= t.price
-          const locked = !affordable || !canBuild
-          const on = armed === t.id
-          return (
-            <button
-              key={ui.shop.join() + t.id}
-              type="button"
-              aria-pressed={on}
-              aria-label={`${t.name}, ${DAMAGE_TYPE[t.attack].name.toLowerCase()}, цена ${t.price}${affordable ? '' : ', не хватает золота'}`}
-              onClick={() => {
-                if (moved.current || locked) return
-                setHover(null)
-                onPick(t.id)
-              }}
-              onPointerEnter={(e) => info && e.pointerType === 'mouse' && showHover(t.id, e.currentTarget)}
-              onPointerLeave={() => setHover((h) => (h?.id === t.id ? null : h))}
-              className={`relative flex shrink-0 grow-0 snap-start flex-col items-center justify-between rounded-xl pb-1.5 pt-1 ${
-                on ? 'border-2 border-[#f2c94c] bg-[#2b3550]' : 'border border-[#3a4660] bg-[#1f2638]'
-              } ${locked ? 'opacity-50' : ''}`}
-              style={{ flexBasis: c.w, width: c.w, height: c.h, boxSizing: 'border-box' }}
-            >
-              <span className="absolute left-[5px] top-[5px] h-2 w-2 rounded-full" style={{ background: DMG_COLORS[t.attack] }} />
-                  <img
-                src={thumb(t) || undefined}
-                alt=""
-                draggable={false}
-                className="pointer-events-none block object-contain"
-                style={{ width: c.iw, height: c.ih, imageRendering: 'pixelated' }}
-              />
-              {c.name && <span className="w-full truncate px-1 text-center text-[11px] font-bold leading-tight text-[#c3cbe0]">{t.name}</span>}
-              <span className={`text-[13px] font-bold leading-4 ${affordable ? 'text-[#f2c94c]' : 'text-[#ff8a8a]'}`}>{t.price}</span>
-            </button>
-          )
-        })}
-        {pool.length === 0 && <span className="self-center px-3 text-xs text-[#c3cbe0]">Арсенал выпадет с началом игры</span>}
-      </div>
-
-      {/* карточка башни под мышью — вне прокручиваемого ряда, чтобы он её не обрезал */}
-      <AnimatePresence>
-        {hover && ALL_DEFS[hover.id] && (
-          <div key={hover.id} className="pointer-events-none absolute z-50" style={{ left: hover.left, bottom: '100%', marginBottom: 12 }}>
-            <TowerInfoCard def={ALL_DEFS[hover.id]} affordable={ui.gold >= ALL_DEFS[hover.id].price} thumb={thumb(ALL_DEFS[hover.id] as TowerDef)} />
+        <div className="flex items-center justify-between gap-3 border-b border-[#3a4660] px-3 py-2">
+          <div className="flex items-center gap-2">
+            <Store className="h-4 w-4 text-[#f2c94c]" strokeWidth={2.2} />
+            <h2 className="text-[13px] font-bold uppercase tracking-[0.12em] text-[#e8ecf4]">Арсенал</h2>
+            <span className="text-[11px] text-[#7088a8]">выберите башню</span>
           </div>
-        )}
-      </AnimatePresence>
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1 font-mono text-xs font-bold text-[#f0b060]">
+              <CoinIcon size={13} strokeWidth={2.6} />
+              {ui.gold}
+            </span>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Закрыть магазин"
+              title="Закрыть (Esc)"
+              className="flex h-7 w-7 items-center justify-center rounded-full border border-[#3a4660] bg-[rgba(14,19,31,0.92)] text-[#e8ecf4] active:scale-95"
+            >
+              <CloseIcon size={14} />
+            </button>
+          </div>
+        </div>
 
-      <div className="h-14 w-px shrink-0 bg-[#3a4660]" style={{ height: c.h - 20 }} />
-      <button
-        type="button"
-        disabled={!canRoll}
-        onClick={() => {
-          setSpin((s) => s + 1)
-          onRoll()
-        }}
-        aria-label={`Ролл: обновить арсенал за ${ui.rollCost}`}
-        title={`Ролл арсенала: ${pool.length} новых башен из ${TOWERS.length}`}
-        className="flex shrink-0 flex-col items-center justify-between rounded-xl border border-[#3a4660] bg-[#1f2638] pb-1.5 pt-1 disabled:opacity-50"
-        style={{ flexBasis: c.w, width: c.w, height: c.h, boxSizing: 'border-box' }}
-      >
-        <span className="flex items-center justify-center text-[#f2c94c]" style={{ width: c.iw, height: c.ih }}>
-          <motion.span animate={{ rotate: spin * 360 }} transition={{ duration: 0.45 }} className="flex">
-            <DiceIcon size={size === 'sm' ? 26 : 34} />
-          </motion.span>
+        <div className="flex flex-wrap justify-center gap-2 overflow-y-auto p-3">
+          {pool.map((t) => {
+            const affordable = ui.gold >= t.price
+            const locked = !affordable || !canBuild
+            const attacks: AttackType[] = t.merged ? t.attacks : [t.attack]
+            const desc = t.merged ? t.desc : t.role
+            const effects = effectLines(t)
+            return (
+              <button
+                key={t.id}
+                type="button"
+                disabled={locked}
+                onClick={() => onPick(t.id)}
+                aria-label={`Купить: ${t.name}, ${DAMAGE_TYPE[attacks[0]].name.toLowerCase()}, цена ${t.price}${affordable ? '' : ', не хватает золота'}`}
+                className={`flex w-[220px] flex-col overflow-hidden rounded-xl text-left transition-transform hover:-translate-y-0.5 active:scale-[0.98] disabled:cursor-not-allowed ${
+                  t.merged ? 'border border-[#ffd70088] bg-[#242a3e]' : 'border border-[#3a4660] bg-[#1f2638]'
+                } ${locked ? 'opacity-45' : ''}`}
+              >
+                <div className="h-1 w-full" style={{ background: `linear-gradient(90deg, ${t.color}, ${t.color}33)` }} />
+                <div className="flex flex-1 flex-col gap-1.5 p-2">
+                  <div className="flex items-start gap-2">
+                    <div className="flex h-11 w-11 shrink-0 items-end justify-center rounded border border-[#2e3c52] bg-[radial-gradient(circle_at_50%_70%,#1f2a3b,#0a0f17)]">
+                      {thumb(t) ? (
+                        <img src={thumb(t)} alt="" className="h-10 w-auto max-w-[40px] object-contain" style={{ imageRendering: 'pixelated' }} />
+                      ) : (
+                        <span className="self-center text-xl">{t.glyph}</span>
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-1">
+                        <p className="font-serif text-[13px] font-black leading-tight text-[#ffc46b]">{t.name}</p>
+                        <span className={`inline-flex shrink-0 items-center gap-0.5 font-mono text-xs font-bold ${affordable ? 'text-[#f0b060]' : 'text-[#e05252]'}`}>
+                          <CoinIcon size={12} strokeWidth={2.6} />
+                          {t.price}
+                        </span>
+                      </div>
+                      <div className="mt-0.5 flex flex-wrap items-center gap-1">
+                        {attacks.map((a, i) => (
+                          <DamageBadge key={a + i} type={a} />
+                        ))}
+                        {!!t.merged && (
+                          <span className="rounded-sm border border-[#ffd70066] bg-[#ffd7001a] px-1 py-px text-[9px] font-bold uppercase leading-none tracking-wide text-[#ffd700]">
+                            слитая
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <p className="text-[10.5px] leading-snug text-[#b9c6d8]">{desc.charAt(0).toUpperCase() + desc.slice(1)}</p>
+                  <EffectiveVs def={t} />
+
+                  <div className="grid grid-cols-4 gap-1">
+                    <ShopStat label="Урон" value={num(t.damage)} color="#f0b060" />
+                    <ShopStat label="Скорость" value={`${num(1 / t.interval)}/с`} color="#9fd2ff" />
+                    <ShopStat label="Дальн." value={String(t.range)} color="#ccd8e6" />
+                    <ShopStat label="Урон/с" value={num(t.damage / t.interval)} color="#7fd0a0" />
+                  </div>
+
+                  {effects.length > 0 && (
+                    <ul className="flex flex-col gap-0.5">
+                      {effects.slice(0, 2).map((e) => (
+                        <li key={e} className="flex gap-1 text-[10px] leading-snug text-[#c9d6e8]">
+                          <span className="text-[#f0b060]">◆</span>
+                          {e}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
+                  <p className="mt-auto pt-0.5 text-[10px] leading-snug text-[#e8d9a0]">
+                    <span className="font-bold text-[#ffd700]">★ 5 ур.:</span> {t.l5}
+                  </p>
+                </div>
+              </button>
+            )
+          })}
+          {pool.length === 0 && (
+            <p className="px-6 py-8 text-center text-xs text-[#c3cbe0]">
+              {canBuild ? 'Арсенал пуст — обновите его роллом' : 'Арсенал будет доступен в бою'}
+            </p>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between gap-3 border-t border-[#3a4660] bg-[rgba(10,15,23,0.6)] px-3 py-2">
+          <p className="text-[10.5px] leading-snug text-[#7088a8]">
+            Купленная карточка уходит из арсенала до ролла и падает в «руку» — оттуда наведите копию на клетку или на такую же башню (+1 уровень).
+          </p>
+          <button
+            type="button"
+            disabled={!canRoll}
+            onClick={() => {
+              setSpin((s) => s + 1)
+              onRoll()
+            }}
+            aria-label={`Ролл: обновить арсенал за ${ui.rollCost}`}
+            title={`Ролл арсенала: ${pool.length} новых башен из ${TOWERS.length}`}
+            className="flex shrink-0 items-center gap-1.5 rounded-xl border border-[#3a4660] bg-[#1f2638] px-3 py-1.5 text-[12px] font-bold text-[#c3cbe0] active:scale-95 disabled:opacity-40"
+          >
+            <motion.span animate={{ rotate: spin * 360 }} transition={{ duration: 0.45 }} className="flex text-[#f2c94c]">
+              <DiceIcon size={18} />
+            </motion.span>
+            Ролл
+            <span className={`font-mono ${ui.gold >= ui.rollCost ? 'text-[#f2c94c]' : 'text-[#ff8a8a]'}`}>{ui.rollCost}</span>
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  )
+}
+
+function ShopStat({ label, value, color = '#dde6f0' }: { label: string; value: string; color?: string }) {
+  return (
+    <div className="rounded border border-[#2e3c52] bg-[#0a0f17]/70 px-1 py-0.5 text-center">
+      <div className="text-[7.5px] font-semibold uppercase tracking-wide text-[#5b6f8c]">{label}</div>
+      <div className="font-mono text-[11px] font-bold leading-tight" style={{ color }}>
+        {value}
+      </div>
+    </div>
+  )
+}
+
+// ─── Рука: купленные башни, ждущие установки или прокачки ──────────────────
+export function HandTray({
+  ui, armedHand, onArm, size = 'sm',
+}: {
+  ui: UiState
+  /** индекс взятой в «стол» копии (подсветка) */
+  armedHand: number | null
+  onArm: (idx: number) => void
+  size?: 'sm' | 'lg'
+}) {
+  const defOf = (idx: number) => ALL_DEFS[ui.hand[idx]]
+  if (!ui.hand.length) return null
+  return (
+    <div
+      className={`${PILL} flex items-center gap-1.5 rounded-[18px] p-1.5`}
+      role="group"
+      aria-label={`Рука: купленных башен ${ui.hand.length}, клик — взять в стол`}
+    >
+      {ui.hand.map((id, i) => {
+        const def = defOf(i)
+        if (!def) return null
+        const on = armedHand === i
+        return (
+          <button
+            key={`${i}-${id}`}
+            type="button"
+            aria-pressed={on}
+            aria-label={`Взять в стол: ${def.name} (копия ${i + 1} из ${ui.hand.length})`}
+            title={on ? 'Снята со стола' : `${def.name} — копия из руки: тап по клетке или по такой же башне`}
+            onClick={() => onArm(i)}
+            className={`relative flex shrink-0 grow-0 flex-col items-center justify-center rounded-xl pt-1 ${
+              on ? 'border-2 border-[#7fd0a0] bg-[#1f2d28]' : 'border border-[#3a4660] bg-[#1f2638]'
+            }`}
+            style={{ width: 44, height: 52, boxSizing: 'border-box' }}
+          >
+            <span className="text-lg leading-none">{def.glyph}</span>
+            <span className="absolute right-[3px] top-[3px] text-[8px] font-bold leading-none text-[#7fd0a0]">
+              {i + 1}
+            </span>
+          </button>
+        )
+      })}
+      {ui.hand.length > 0 && (
+        <span className="pr-1 text-[10px] font-bold uppercase tracking-wider text-[#7fd0a0]">
+          рука
         </span>
-        {c.name && <span className="text-[11px] font-bold leading-tight text-[#c3cbe0]">Ролл</span>}
-        <span className={`text-[13px] font-bold leading-4 ${ui.gold >= ui.rollCost ? 'text-[#f2c94c]' : 'text-[#ff8a8a]'}`}>{ui.rollCost}</span>
-      </button>
+      )}
     </div>
   )
 }

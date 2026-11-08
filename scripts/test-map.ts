@@ -6,6 +6,14 @@ import { Game } from '../src/game/engine'
 import { CELL } from '../src/game/config'
 import { CLASSIC_MAP, GRID_H, GRID_W, cellCenter, generateMap, isPathCell, pathLength } from '../src/game/map'
 
+/** Тестовая застройка новой механикой: купить в арсенал → взять из руки → поставить */
+const buildTower = (g: Game, x: number, y: number, defId: string) => {
+  if (!g.shop.includes(defId)) g.shop.push(defId) // карточка одна на пул: ролл снова предложил ту же башню
+  const r = g.buy(defId)
+  if (!r.ok) return r
+  return g.placeFromHand(g.hand.length - 1, x, y)
+}
+
 let failed = 0
 function check(name: string, ok: boolean, info = '') {
   console.log(`${ok ? '✓' : '✗'} ${name}${info ? ' — ' + info : ''}`)
@@ -65,20 +73,20 @@ function check(name: string, ok: boolean, info = '') {
   g.unlockAllTowers()
   g.beginPreview()
   g.gold = 1e6
-  const r = g.build(305, 215, 'archer') // клетка (7,5)
+  const r = buildTower(g, 305, 215, 'archer') // клетка (7,5)
   const tw = g.towerById(r.towerId!)!
   check('башня встаёт в центр клетки', r.ok && tw.x === 7 * CELL + CELL / 2 && tw.y === 5 * CELL + CELL / 2, `${tw.x},${tw.y}`)
-  const same = g.build(318, 230, 'sentry') // та же клетка
+  const same = buildTower(g, 318, 230, 'sentry') // та же клетка
   check('в занятую клетку строить нельзя', !same.ok, same.error)
   const p = cellCenter(CLASSIC_MAP.cells[10])
-  const onPath = g.build(p.x, p.y, 'sentry')
+  const onPath = buildTower(g, p.x, p.y, 'sentry')
   check('на тропу строить нельзя', !onPath.ok, onPath.error)
   // соседняя с тропой свободная клетка — ищется, а не захардкожена
   const base = CLASSIC_MAP.cells[10]
   const nb = ([[1, 0], [-1, 0], [0, 1], [0, -1]] as const)
     .map(([dx, dy]) => ({ cx: base.cx + dx, cy: base.cy + dy }))
     .find((q) => q.cx >= 0 && q.cy >= 0 && q.cx < GRID_W && q.cy < GRID_H && !isPathCell(q))!
-  const next = g.build(cellCenter(nb).x, cellCenter(nb).y, 'sentry')
+  const next = buildTower(g, cellCenter(nb).x, cellCenter(nb).y, 'sentry')
   check('в соседнюю клетку строить можно', next.ok, `клетка ${nb.cx},${nb.cy}`)
   let freeCells = 0
   for (let cx = 0; cx < GRID_W; cx++) for (let cy = 0; cy < GRID_H; cy++) if (!isPathCell({ cx, cy })) freeCells++

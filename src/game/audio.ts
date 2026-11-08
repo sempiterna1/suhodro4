@@ -128,10 +128,23 @@ const readMusicVolume = () => {
     return 0.35
   }
 }
+/** Громкость игровых звуков (эффекты, шаги, рог) — по умолчанию полная, как раньше */
+const readSfxVolume = () => {
+  try {
+    const raw = window.localStorage.getItem('zr-sfx')
+    const v = Number(raw)
+    return raw !== null && Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1
+  } catch {
+    return 1
+  }
+}
 
 export class Sfx {
   private ctx: AudioContext | null = null
   private master: GainNode | null = null
+  /** Шина эффектов: её громкость = настройка «Звуки»; музыка и ambient идут в master мимо неё */
+  private sfxBus: GainNode | null = null
+  sfxVolume = 1
   private noise: AudioBuffer | null = null
   private lastAt = new Map<Sound, number>()
   private shots = new Map<number, number>()
@@ -172,6 +185,11 @@ export class Sfx {
     this.ctx = new AC()
     this.master = this.ctx.createGain()
     this.master.gain.value = this.muted ? 0 : 0.55
+    // шина игровых звуков (настройка «Звуки»); музыка и ambient подключены к master напрямую
+    this.sfxVolume = readSfxVolume()
+    this.sfxBus = this.ctx.createGain()
+    this.sfxBus.gain.value = this.sfxVolume
+    this.sfxBus.connect(this.master)
     // мягкий компрессор — пачка выстрелов не хрипит
     const comp = this.ctx.createDynamicsCompressor()
     comp.threshold.value = -18
@@ -385,6 +403,17 @@ export class Sfx {
     if (this.music && this.ctx) this.music.gain.gain.setTargetAtTime(this.musicVolume * MUSIC_LEVEL, this.ctx.currentTime, 0.2)
   }
 
+  /** Громкость игровых звуков 0..1 (запоминается в zr-sfx) */
+  setSfxVolume(v: number) {
+    this.sfxVolume = Math.max(0, Math.min(1, v))
+    try {
+      window.localStorage.setItem('zr-sfx', String(this.sfxVolume))
+    } catch {
+      // не запомнили — не страшно
+    }
+    if (this.sfxBus && this.ctx) this.sfxBus.gain.setTargetAtTime(this.sfxVolume, this.ctx.currentTime, 0.05)
+  }
+
   private startMusic() {
     const ctx = this.ctx, master = this.master
     if (!ctx || !master || this.music) return
@@ -463,7 +492,7 @@ export class Sfx {
     g.gain.value = def.gain * (0.7 + Math.random() * 0.6)
     const pan = ctx.createStereoPanner()
     pan.pan.value = Math.max(-0.7, Math.min(0.7, (x / MAP_W) * 1.4 - 0.7))
-    src.connect(g).connect(pan).connect(this.master)
+    src.connect(g).connect(pan).connect(this.sfxBus ?? this.master)
     this.stepVoices++
     src.onended = () => { this.stepVoices-- }
     src.start()
@@ -559,7 +588,7 @@ export class Sfx {
     // звук слышен с той стороны экрана, где событие
     const pan = ctx.createStereoPanner()
     pan.pan.value = Math.max(-0.7, Math.min(0.7, (x / MAP_W) * 1.4 - 0.7))
-    pan.connect(this.master)
+    pan.connect(this.sfxBus ?? this.master)
 
     // сэмпл, если загружен: случайный из списка, лёгкий разброс высоты; число голосов ограничено
     const smp = SAMPLES[s]

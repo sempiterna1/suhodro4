@@ -4,6 +4,23 @@ import { Game } from '../src/game/engine'
 import { CLASSIC_MAP } from '../src/game/map'
 import { hpForWave, ARMOR_HP_MULT, HP_PLAYTEST_MULT, COOP_HP_MULT, CREEP_KINDS } from '../src/game/config'
 
+/** Тестовая застройка новой механикой: купить в арсенал → взять из руки → поставить */
+const buildTower = (g: Game, x: number, y: number, defId: string) => {
+  if (!g.shop.includes(defId)) g.shop.push(defId) // карточка одна на пул: ролл снова предложил ту же башню
+  const r = g.buy(defId)
+  if (!r.ok) return r
+  return g.placeFromHand(g.hand.length - 1, x, y)
+}
+/** Прокачка новой механикой: купить копию → навести из руки на башню */
+const levelTower = (g: Game, towerId: number) => {
+  const tw = g.towerById(towerId)
+  if (!tw || tw.level >= 5) return { ok: false, error: 'не найдена или макс. уровень' }
+  if (!g.shop.includes(tw.defId)) g.shop.push(tw.defId) // ролл снова предложил ту же башню
+  const r = g.buy(tw.defId)
+  if (!r.ok) return r
+  return g.levelFromHand(g.hand.length - 1, towerId)
+}
+
 const g = new Game()
 
 g.unlockAllTowers() // арсенал случаен — тестам нужны все башни
@@ -60,18 +77,23 @@ const err = h.applyGuestCmd({ t: 'startWave' })
 const phaseAfter: string = h.phase
 console.log(`startWave от гостя: фаза=${phaseAfter} ${phaseAfter === 'wave' && err === null ? '✓' : '✗ РЕГРЕССИЯ'}`)
 
-// upgrade командой: строим башню как хост, гость качает
-const tid = h.build(300, 300, 'archer').towerId!
-h.upgrade(tid)
-h.upgrade(tid)
+// прокачка командой levelHand: строим башню как хост, гость качает копией из руки
+const tid = buildTower(h, 300, 300, 'archer').towerId!
 h.gold = 1000
-const err2 = h.applyGuestCmd({ t: 'upgrade', id: tid })
+h.shop.push('archer') // карточка одна на пул: магазин прокрутили до той же башни
+h.applyGuestCmd({ t: 'buy', defId: h.towerById(tid)!.defId })
+h.applyGuestCmd({ t: 'levelHand', idx: h.hand.length - 1, id: tid })
+h.shop.push('archer') // ролл снова предложил ту же башню
+h.applyGuestCmd({ t: 'buy', defId: h.towerById(tid)!.defId })
+h.applyGuestCmd({ t: 'levelHand', idx: h.hand.length - 1, id: tid })
+const err2 = h.applyGuestCmd({ t: 'levelHand', idx: 999, id: tid }) // рука пуста — отклонение
 const tw = h.towerById(tid)
-console.log(`upgrade от гостя: ур.=${tw?.level} ${tw?.level === 4 && err2 === null ? '✓' : '✗ РЕГРЕССИЯ'}`)
+h.gold = 1000
+console.log(`upgrade от гостя: ур.=${tw?.level} ${tw?.level === 3 && err2 !== null ? '✓' : '✗ РЕГРЕССИЯ'}`)
 
 // merge командой: вторая башня + слияние (обе L3)
-const tid2 = h.build(370, 300, 'pyro').towerId!
-for (let i = 0; i < 2; i++) h.upgrade(tid2)
+const tid2 = buildTower(h, 370, 300, 'pyro').towerId!
+for (let i = 0; i < 2; i++) levelTower(h, tid2)
 const err3 = h.applyGuestCmd({ t: 'merge', a: tid, b: tid2 })
 const merged = h.towerById(tid2)
 console.log(`merge от гостя: ${merged?.defId} ${merged?.defId === 'flame_archer' && err3 === null ? '✓' : '✗ РЕГРЕССИЯ'}`)
