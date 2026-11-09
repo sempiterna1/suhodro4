@@ -119,6 +119,8 @@ const MUSIC_DIR = '/assets/music/'
 const MUSIC_FILES = ['dark-cavern-ambient-001.ogg', 'dark-place.ogg', 'the-frigid-seas.mp3']
 const MUSIC_LEVEL = 0.6 // итоговый уровень = musicVolume × MUSIC_LEVEL
 const MUSIC_FADE = 5 // секунд кроссфейда между проходами и треками
+/** Тема главного меню: играет только на интро, в бою её сменяют боевые треки */
+const MENU_TRACK = 'mineral-beneath-the-ice.mp3'
 const readMusicVolume = () => {
   try {
     const raw = window.localStorage.getItem('zr-music')
@@ -157,6 +159,9 @@ export class Sfx {
   private stepAcc = new Map<number, number>()
   private music: { gain: GainNode; bufs: (AudioBuffer | null)[]; factors: number[]; idx: number; nextAt: number } | null = null
   musicVolume = 0.35
+  /** Тема главного меню (отдельная шина): включается только на интро */
+  private menu: { gain: GainNode; buf: AudioBuffer | null } | null = null
+  private menuOn = false
   private buildingHp = -1
   private wave = -1
   private phase = ''
@@ -200,6 +205,8 @@ export class Sfx {
     this.startAmbient()
     this.musicVolume = readMusicVolume()
     this.startMusic()
+    this.startMenuMusic()
+    this.applyMusicRouting() // вдруг разблокировка случилась вне интро — выставить правильные гейны
     const len = this.ctx.sampleRate * 0.5
     this.noise = this.ctx.createBuffer(1, len, this.ctx.sampleRate)
     const data = this.noise.getChannelData(0)
@@ -392,7 +399,7 @@ export class Sfx {
 
   // ─── Музыка: тихие тревожные дорожки по кругу; кроссфейд убирает стыки, громкость выравнивается по RMS ───
 
-  /** Громкость музыки 0..1 (запоминается в zr-music) */
+  /** Громкость музыки 0..1 (запоминается в zr-music); действует и на тему меню */
   setMusicVolume(v: number) {
     this.musicVolume = Math.max(0, Math.min(1, v))
     try {
@@ -400,7 +407,56 @@ export class Sfx {
     } catch {
       // не запомнили — не страшно
     }
-    if (this.music && this.ctx) this.music.gain.gain.setTargetAtTime(this.musicVolume * MUSIC_LEVEL, this.ctx.currentTime, 0.2)
+    this.applyMusicRouting()
+  }
+
+  // ─── Тема главного меню ───────────────────────────────────────────────────
+
+  /** Включать/выключать тему меню (вызывать из игрового цикла по фазе) */
+  setMenuActive(on: boolean) {
+    if (on === this.menuOn) return
+    this.menuOn = on
+    this.applyMusicRouting()
+  }
+
+  /** Гейны обеих музыкальных шин по текущему состоянию: в меню играет тема меню, в бою — боевые треки */
+  private applyMusicRouting() {
+    const ctx = this.ctx
+    if (!ctx) return
+    const now = ctx.currentTime
+    const level = this.musicVolume * MUSIC_LEVEL
+    if (this.music) this.music.gain.gain.setTargetAtTime(this.menuOn ? 0 : level, now, 0.8)
+    if (this.menu) this.menu.gain.gain.setTargetAtTime(this.menuOn ? level : 0, now, 0.8)
+  }
+
+  private startMenuMusic() {
+    const ctx = this.ctx, master = this.master
+    if (!ctx || !master || this.menu) return
+    const gain = ctx.createGain()
+    gain.gain.value = 0
+    gain.connect(master)
+    this.menu = { gain, buf: null }
+    fetch(MUSIC_DIR + MENU_TRACK)
+      .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))))
+      .then((ab) => ctx.decodeAudioData(ab))
+      .then((buf) => {
+        if (!this.menu) return
+        // единый уровень с боевыми треками по RMS
+        const d = buf.getChannelData(0)
+        let sum = 0, n = 0
+        for (let k = 0; k < d.length; k += 7) { sum += d[k] * d[k]; n++ }
+        const rms = Math.sqrt(sum / Math.max(1, n))
+        const f = Math.max(0.25, Math.min(2.5, 0.08 / Math.max(rms, 1e-4)))
+        const src = ctx.createBufferSource()
+        src.buffer = buf
+        src.loop = true
+        const g = ctx.createGain()
+        g.gain.value = f
+        src.connect(g).connect(gain)
+        src.start()
+        this.applyMusicRouting()
+      })
+      .catch(() => {})
   }
 
   /** Громкость игровых звуков 0..1 (запоминается в zr-sfx) */
@@ -573,6 +629,8 @@ export class Sfx {
     const shop = game.shop.join()
     if (this.shop && shop && shop !== this.shop) play('roll')
     this.shop = shop
+    // тема главного меню — только на интро; старт миссии её сменяет боевыми треками, рестарт возвращает
+    this.setMenuActive(game.phase === 'intro')
     this.phase = game.phase
     this.wave = game.wave
   }

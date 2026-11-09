@@ -89,7 +89,9 @@ export default function GameShell() {
   // ─── Звук: синтез Web Audio; включается после первого жеста, выбор «без звука» запоминается ───
   const [sfx] = useState(() => new Sfx())
   const [muted, setMuted] = useState(false)
-  // громкости для слайдеров меню; хранилище и применение — в Sfx (zr-music / zr-sfx)
+  // громкости для слайдеров меню; хранилище и применение — в Sfx (zr-music / zr-sfx / zr-ambient).
+  // Начальное значение должно совпадать с серверным (localStorage есть только в браузере) —
+  // сохранённые значения подтягиваются после монтирования, иначе гидратация расходится.
   const readStoredVolume = (key: string, fallback: number) => {
     try {
       const raw = window.localStorage.getItem(key)
@@ -99,9 +101,10 @@ export default function GameShell() {
       return fallback
     }
   }
-  const [musicVolume, setMusicVolume] = useState(() => readStoredVolume('zr-music', 0.35))
-  const [sfxVolume, setSfxVolume] = useState(() => readStoredVolume('zr-sfx', 1))
-  const [ambientVolume, setAmbientVolume] = useState(() => readStoredVolume('zr-ambient', 0.6))
+  const [musicVolume, setMusicVolume] = useState(0.35)
+  const [sfxVolume, setSfxVolume] = useState(1)
+  const [ambientVolume, setAmbientVolume] = useState(0.6)
+  const [volReady, setVolReady] = useState(false)
   useEffect(() => {
     let saved = false
     try {
@@ -141,16 +144,26 @@ export default function GameShell() {
     }
   }, [muted, sfx])
 
+  // подтягиваем сохранённые громкости после монтирования; до этого применение закрыто,
+  // чтобы дефолты не перезаписали значения в localStorage раньше чтения
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage доступен только после монтирования
+    setMusicVolume(readStoredVolume('zr-music', 0.35))
+    setSfxVolume(readStoredVolume('zr-sfx', 1))
+    setAmbientVolume(readStoredVolume('zr-ambient', 0.6))
+    setVolReady(true)
+  }, [])
+
   // применение громкостей к аудио-графу (Sfx сам пишет их в localStorage)
   useEffect(() => {
-    sfx.setMusicVolume(musicVolume)
-  }, [musicVolume, sfx])
+    if (volReady) sfx.setMusicVolume(musicVolume)
+  }, [volReady, musicVolume, sfx])
   useEffect(() => {
-    sfx.setSfxVolume(sfxVolume)
-  }, [sfxVolume, sfx])
+    if (volReady) sfx.setSfxVolume(sfxVolume)
+  }, [volReady, sfxVolume, sfx])
   useEffect(() => {
-    sfx.setAmbientVolume(ambientVolume)
-  }, [ambientVolume, sfx])
+    if (volReady) sfx.setAmbientVolume(ambientVolume)
+  }, [volReady, ambientVolume, sfx])
 
   // ─── Мультиплеер ────────────────────────────────────────────────────────
   const [mpRole, setMpRole] = useState<MpRole>('single')
@@ -1349,6 +1362,8 @@ export default function GameShell() {
               ui={ui}
               uiScale={uiScale}
               fullscreen={fullscreen}
+              musicVolume={musicVolume}
+              onMusicVolume={setMusicVolume}
               onPickMap={(seed) => {
                 game.selectMap(seed)
                 setUi(game.getUiState())

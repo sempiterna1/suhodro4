@@ -9,6 +9,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
+import { Music } from 'lucide-react'
+import { Slider } from '@/components/ui/slider'
 import {
   AVATARS,
   AVATAR_IDS,
@@ -34,6 +36,9 @@ interface MainMenuProps {
   ui: UiState
   uiScale: number
   fullscreen: boolean
+  /** громкость музыки 0..1 — регулятор в углу главного меню */
+  musicVolume: number
+  onMusicVolume: (v: number) => void
   onPickMap: (seed: number) => void
   onPickDifficulty: (id: DifficultyId) => void
   onPickAvatar: (id: AvatarId) => void
@@ -55,6 +60,25 @@ export function MainMenu(props: MainMenuProps) {
   return (
     // на весь экран: живой изометрический мир игры виден фоном за лёгким затемнением
     <div className="absolute inset-0 overflow-y-auto bg-[#070a10]/60 backdrop-blur-[2px]">
+      {/* громкость музыки — под рукой сразу, тема меня играет только здесь */}
+      <div
+        className="absolute right-3 top-3 z-20 flex items-center gap-2 rounded-full border border-[#3a4660] bg-[rgba(14,19,31,0.9)] px-3 py-1.5"
+        style={{ zoom: uiScale }}
+      >
+        <Music className="h-4 w-4 shrink-0 text-[#f2c94c]" strokeWidth={2.2} />
+        <Slider
+          value={[Math.round(props.musicVolume * 100)]}
+          min={0}
+          max={100}
+          step={5}
+          onValueChange={(v) => props.onMusicVolume((v[0] ?? 0) / 100)}
+          aria-label="Громкость музыки"
+          className="w-24 sm:w-32 [&_[data-slot=slider-track]]:bg-[#3a4660] [&_[data-slot=slider-range]]:bg-[#f2c94c]"
+        />
+        <span className="w-9 text-right font-mono text-[10px] font-bold text-[#c3cbe0]">
+          {Math.round(props.musicVolume * 100)}%
+        </span>
+      </div>
       <div className="flex min-h-full flex-col items-center px-4 py-6 sm:py-8" style={{ zoom: uiScale }}>
         {/* индикатор шагов */}
         <div className="mb-6 flex items-center justify-center gap-2 font-mono text-[10px] uppercase tracking-[0.25em] text-[#5b6f8c]">
