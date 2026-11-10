@@ -215,6 +215,8 @@ export class Game {
   shop: string[] = [] // башни, доступные к покупке (пул арсенала + открытые слитые)
   hand: string[] = [] // купленные, но ещё не установленные башни («рука»)
   discovered: string[] = [] // открытые слитые башни — не теряются при ролле арсенала
+  /** Режим «весь арсенал» (unlockAllTowers): покупка не требует карточки в ролл-пуле */
+  fullArsenal = false
   /** Экипированные предметы (лавка, этап 3): 6 слотов по GDD */
   items: ItemOffer[] = []
   /** Витрина лавки: 4 случайных предмета, обновление за эссенцию */
@@ -299,6 +301,7 @@ export class Game {
     this.shop = []
     this.hand = []
     this.discovered = []
+    this.fullArsenal = false
     this.items = []
     this.itemShop = []
     this.time = 0
@@ -459,6 +462,7 @@ export class Game {
   /** Открыть в арсенале все башни (тесты, будущий режим отладки) */
   unlockAllTowers() {
     this.shop = [...TOWERS.map((t) => t.id), ...ECONOMY_TOWERS.map((t) => t.id), ...MERGED_TOWERS.map((t) => t.id)]
+    this.fullArsenal = true // полный арсенал живёт и после роллов: покупка не требует карточки в пуле
   }
 
   /** Ролл арсенала: новый пул из SHOP_SIZE башен за ROLL_COST золота */
@@ -667,7 +671,12 @@ export class Game {
     const def = ALL_DEFS[defId]
     if (!def) return { ok: false, error: 'Нет такой башни' }
     if (this.phase === 'over' || this.phase === 'won') return { ok: false, error: 'Игра окончена' }
-    if (!this.shop.includes(defId)) return { ok: false, error: 'Этой башни нет в арсенале — сделайте ролл' }
+    // В режиме «весь арсенал» боевые башни требуют карточку в ролл-пуле как обычно,
+    // а экономические (шахта/стан/бур) покупаются свободно: симулятор меряет
+    // верхнюю оценку вклада экономики, а не иллюзию бесконечного боевого пула
+    if (!this.shop.includes(defId) && !(this.fullArsenal && ECONOMY_TOWERS.some((e) => e.id === defId))) {
+      return { ok: false, error: 'Этой башни нет в арсенале — сделайте ролл' }
+    }
     if (this.gold < def.price) return { ok: false, error: 'Не хватает золота' }
     this.gold -= def.price
     this.refillGold()

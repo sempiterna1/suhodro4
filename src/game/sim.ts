@@ -11,7 +11,8 @@
 // Модуль не знает про файлы и CLI — это делает scripts/sim.ts.
 
 import { Game, findRecipe } from './engine'
-import { ALL_DEFS } from './data/towers'
+import { ALL_DEFS, defFootprint } from './data/towers'
+import { ALL_ITEMS, ITEM_SLOTS_TOTAL } from './data/items'
 import { CELL, MAP_DEFS, MAP_H, MAP_W, MERGE_DIST, type MapDef } from './data/maps'
 import { FIRST_PREVIEW_TIME, MAX_LEVEL, MERGE_MIN_LEVEL, PREVIEW_TIME, ROLL_COST } from './data/economy'
 import { TOTAL_WAVES, WAVES, armorsForWave } from './data/waves'
@@ -178,6 +179,11 @@ function rankedCells(g: Game, h: PlacementHelper, range: number): Array<Vec & { 
   return out
 }
 
+/** Все валидные места-якоря (для не бьющих построек: экономика с range 0 не имеет «лучших» клеток) */
+function freeAnchors(g: Game, h: PlacementHelper, fp = 1): Vec[] {
+  return h.cells.filter((c) => g.canPlace(c.x, c.y, fp) === null)
+}
+
 /** Индекс копии defId в руке: покупаем, только если карточка лежит в пуле (одна карточка на ролл) */
 function ensureHand(g: Game, defId: string): number {
   const idx = g.hand.indexOf(defId)
@@ -198,7 +204,8 @@ function buildFromHand(g: Game, defId: string, x: number, y: number): Tower | nu
 function buildBest(g: Game, defId: string, h: PlacementHelper): Tower | null {
   const def = ALL_DEFS[defId]
   if (!def || g.gold < def.price) return null
-  const cells = rankedCells(g, h, def.range)
+  // экономические постройки не покрывают тропу (range 0) — ставим в любое свободное место
+  const cells = def.range > 0 ? rankedCells(g, h, def.range) : freeAnchors(g, h, defFootprint(def))
   for (const c of cells) {
     const tw = buildFromHand(g, defId, c.x, c.y)
     if (tw) return tw
@@ -332,8 +339,10 @@ const PAIR_PLAN: Array<[string, string]> = [
   ['catapult', 'golem'], // Каменный титан
 ]
 
-function makeScriptedPolicy(): Policy {
+function makeScriptedPolicy(shopAll = false): Policy {
   const skipped = new Set<number>()
+  // Режим «весь арсенал»: эконом-карты считаются всегда доступными
+  const availAll = shopAll
   let lastAvatarOrder = -100
   let lastHelper: PlacementHelper | null = null
   let lastHelperSeed = -1
@@ -462,6 +471,48 @@ function makeScriptedPolicy(): Policy {
     return false
   }
 
+  // ─── Фарм-политика (этап 3): деньги должны работать — шахты, бур, лавка ───
+  // Оборона всегда первична (шаг ставится после plan/upgrade/extra), у
+  // экономических свои потолок и «врата по волне»: пока золота мало,
+  // оно идёт в урон, не в экономику.
+  const ECON_PLAN = [
+    { id: 'mine', gateWave: 11, cap: 2, buffer: 150 }, // шахта — излишек в эссенцию для лавки (после boss-10)
+    { id: 'sluice', gateWave: 11, cap: 1, buffer: 150 }, // стан — золотой дифференциал
+    { id: 'deep_drill', gateWave: 13, cap: 1, buffer: 300 }, // 4 клетки и 160 — большая ставка на экономику
+  ]
+  const econStep = (g: Game, h: PlacementHelper): boolean => {
+    // Оборона первична: экономику не строим, пока не выстроен каркас башен
+    // (тот же порог, что у добивки extraStep) и не прошли ранние волны
+    if (g.towers.length < 5) return false
+    for (const w of ECON_PLAN) {
+      const have = g.towers.filter((t) => t.defId === w.id).length
+      if (have >= w.cap || g.wave < w.gateWave) continue
+      const price = ALL_DEFS[w.id]?.price ?? 0
+      // В режиме all («весь арсенал») эконом-карты доступны всегда: роллимый
+      // пул заменяет их при открытии с вероятностью ~2.4% на карточку, что
+      // не должно калечить экономическую стратегию в симуляторе.
+      if (g.gold < price + w.buffer || !(availAll || g.shop.includes(w.id))) continue
+      const built = buildBest(g, w.id, h)
+      if (built || g.hand.includes(w.id)) return true
+      // постановка может не удаться (нет валидного блока 2×2) — копия в руке ждёт
+      return g.hand.includes(w.id)
+    }
+    return false
+  }
+
+  // Лавка предметов: весь излишек эссенции конвертируется в экипировку.
+  // Берём самое дорогое доступное (ценность предмета растёт с ценой), редкие
+  // версии просто покупаются дальше как обычные — их сила уже в цене.
+  const itemStep = (g: Game): boolean => {
+    if (g.items.length >= ITEM_SLOTS_TOTAL || g.itemShop.length === 0) return false
+    const affordable = g.itemShop
+      .map((o, idx) => ({ idx, def: ALL_ITEMS[o.id] }))
+      .filter((o) => !!o.def && g.essence >= o.def.price)
+    if (affordable.length === 0) return false
+    affordable.sort((a, b) => b.def!.price - a.def!.price)
+    return g.buyItem(affordable[0].idx).ok
+  }
+
   // Карточка одна на пул: если нужной пары нет ни в пуле, ни в руке — роллим.
   // Как живой игрок: ищем нужные башни прокруткой магазина. Но только когда
   // оборона уже стоит (башен ≥ 3) и осталось золото и на ролл, и на карточку.
@@ -502,11 +553,16 @@ function makeScriptedPolicy(): Policy {
       for (let i = 0; i < 30 && mergeAny(g); i++) {}
       for (let step = 0; step < 200; step++) {
         if (mergeAny(g)) continue
+        // оборонный каркас и прокачка первыми; экономика после них — берёт то,
+        // что план не потратил, но раньше запаса копий и добивки поля: иначе
+        // stockpile скупает все излишки, а к концу миссии не остаётся клеток
         if (planStep(g, h)) continue
         if (upgradeStep(g, h)) continue
+        if (econStep(g, h)) continue
         if (extraStep(g, h)) continue
         if (stockpileStep(g)) continue
         if (maybeRollForPlan(g)) continue
+        if (itemStep(g)) continue
         break
       }
     },
@@ -527,10 +583,10 @@ function makeScriptedPolicy(): Policy {
   }
 }
 
-function makePolicy(id: SimPolicyId, seed: number): Policy {
+function makePolicy(id: SimPolicyId, seed: number, shopAll = false): Policy {
   if (id === 'none') return nonePolicy
   if (id === 'random') return makeRandomPolicy(seed)
-  return makeScriptedPolicy()
+  return makeScriptedPolicy(shopAll)
 }
 
 // ─── Прогон миссии ───────────────────────────────────────────────────────
@@ -623,7 +679,7 @@ export function runSimulation(opts: SimOptions = {}): SimReport {
   const dt = Math.max(1 / 240, Math.min(0.05, opts.dt ?? 1 / 30))
   const maxSeconds = opts.maxSeconds ?? 3 * 60 * 60
   const maxWaves = Math.max(1, Math.min(TOTAL_WAVES, opts.maxWaves ?? TOTAL_WAVES))
-  const policy = makePolicy(policyId, seed)
+  const policy = makePolicy(policyId, seed, shop === 'all')
   const diff = DIFFICULTIES[difficulty]
 
   const g = new Game(seed)
