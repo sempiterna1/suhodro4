@@ -3,7 +3,9 @@
 // Для механик — точечные проверки: замедление, цепь, линия, уязвимость, аура, разгон, фокус.
 
 import { Game } from '../src/game/engine'
-import { CLASSIC_MAP } from '../src/game/map'
+import { CLASSIC_MAP, GRID_H, GRID_W } from '../src/game/map'
+import { defFootprint } from '../src/game/data/towers'
+import type { TowerDef } from '../src/game/types'
 import { ALL_DEFS, ECONOMY_IDS, MERGED_TOWERS, RARITIES, RARITY_DPS, TOWERS } from '../src/game/config'
 import type { Creep } from '../src/game/types'
 
@@ -304,6 +306,118 @@ function firstCreep(g: Game): Creep | undefined {
   run(g, 40)
   const mineInc = g.events.filter((e) => e.type === 'income' && e.defId === 'mine' && e.wave === 1)
   check('шахта дала 8 эссенции', mineInc.length === 1 && mineInc[0].amount === 8 && g.essence === 8, JSON.stringify(mineInc))
+}
+// ─── Глубинный бур (этап 3): блок 2×2, эссенция по точной кривой 10 → 45 ───
+{
+  const def = ALL_DEFS.deep_drill as TowerDef
+  check('бур у экономических, без редкости', !!def && ECONOMY_IDS.includes('deep_drill') && !def.rarity)
+  check('бур стоит 160', def.price === 160, String(def.price))
+  check('бур занимает слот 2×2', defFootprint(def) === 2, String(defFootprint(def)))
+  check('кривая эссенции 10→45 по уровням', JSON.stringify(def.incomeByLevel) === JSON.stringify([10, 16, 24, 33, 45]), JSON.stringify(def.incomeByLevel))
+}
+{
+  // правила блока 2×2: края, тропа, аватар, занятые клетки, свободное место
+  const g = new Game()
+  g.unlockAllTowers()
+  g.useMap(CLASSIC_MAP)
+  g.beginPreview()
+  g.gold = 1e6
+  // якорь у правого края: блок вылезает справа — нельзя, с названием слота
+  const edgeRight = (GRID_W - 1) * 40 + 20
+  const edgeBottom = (GRID_H - 1) * 40 + 20
+  check('у правого края — «Нужен блок 2×2»', (g.canPlace(edgeRight, 260, 2) ?? '').startsWith('Нужен блок 2×2'), g.canPlace(edgeRight, 260, 2) ?? 'null')
+  check('у нижнего края — «Нужен блок 2×2»', (g.canPlace(260, edgeBottom, 2) ?? '').startsWith('Нужен блок 2×2'), g.canPlace(260, edgeBottom, 2) ?? 'null')
+  // тропа: ключ, что все 4 клетки блока проверяются (у сужений тракта даже 1×1 конфликтует)
+  let onPath = false
+  for (let cy = 0; cy < GRID_H; cy++)
+    for (let cx = 0; cx < GRID_W; cx++)
+      if ([g.canPlace(cx * 40 + 20, cy * 40 + 20, 1), g.canPlace(cx * 40 + 20, cy * 40 + 20, 2)].some((e) => e === 'Нельзя строить на тракте'))
+        onPath = true
+  check('тропа блокирует и соты, и блок 2×2', onPath)
+  // аватар стоит в блоке
+  const acell = g.canPlace(60, 260, 2)
+  check('аватар блокирует блок 2×2', acell === 'Охотница стоит на этом месте', acell ?? 'null')
+  // чужая башня в блоке: чистый блок, ставим в него 1×1 — блок становится занят
+  let occCell: { x: number; y: number } | null = null
+  outer: for (let cy = 0; cy < GRID_H - 1; cy++)
+    for (let cx = 0; cx < GRID_W - 1; cx++) {
+      const x = cx * 40 + 20
+      const y = cy * 40 + 20
+      if (g.canPlace(x, y, 2) === null) { occCell = { x, y }; break outer }
+    }
+  check('нашёлся чистый блок для занятости', occCell !== null)
+  if (occCell) {
+    buildTower(g, occCell.x, occCell.y, 'golem')
+    check('башня в блоке — «Место занято башней»', g.canPlace(occCell.x, occCell.y, 2) === 'Место занято башней', g.canPlace(occCell.x, occCell.y, 2) ?? 'null')
+  }
+  // свободное место встаёт якорем в клетку
+  let cell: { x: number; y: number } | null = null
+  outer: for (let cy = 0; cy < GRID_H - 1; cy++)
+    for (let cx = 0; cx < GRID_W - 1; cx++) {
+      const x = cx * 40 + 20
+      const y = cy * 40 + 20
+      // не рядом со спотом голема: место для обороны оставляем, бур там не нужен
+      if (Math.abs(x - SPOT.x) < 80 && Math.abs(y - SPOT.y) < 60) continue
+      if (g.canPlace(x, y, 2) === null) { cell = { x, y }; break outer }
+    }
+  check('нашлось место под блок 2×2', cell !== null)
+}
+{
+  // постановка: якорь — клетка клика, блок идёт вправо-вниз, клетки блока занимаются
+  const def = ALL_DEFS.deep_drill
+  const g = new Game()
+  g.unlockAllTowers()
+  g.useMap(CLASSIC_MAP)
+  g.beginPreview()
+  g.gold = 1e6
+  let cell: { x: number; y: number } | null = null
+  outer: for (let cy = 0; cy < GRID_H - 1; cy++)
+    for (let cx = 0; cx < GRID_W - 1; cx++) {
+      const x = cx * 40 + 20
+      const y = cy * 40 + 20
+      if (Math.abs(x - SPOT.x) < 200 && Math.abs(y - SPOT.y) < 200) continue // оставим место обороне
+      if (g.canPlace(x, y, 2) === null) { cell = { x, y }; break outer }
+    }
+  check('место под блок найдено', cell !== null)
+  const id = buildTower(g, cell!.x, cell!.y, 'deep_drill').towerId!
+  const tw = g.towerById(id)!
+  check('бур встал якорем в клетку клика', tw.x === cell!.x && tw.y === cell!.y, `${tw.x},${tw.y}`)
+  // соседняя клетка блока теперь занята 1×1
+  check('клетки блока заняты после постройки', g.canPlace(cell!.x + 40, cell!.y + 40, 1) !== null, g.canPlace(cell!.x + 40, cell!.y + 40, 1) ?? 'null')
+  check('бур не атакует', def.damage === 0 && def.range === 0)
+}
+{
+  // защита волны и точная эссенция: 10 / 24 / 45 на 1 / 3 / 5 уровнях
+  function drillGold(level: number): { amount: number; essence: number } {
+    const g = new Game()
+    g.unlockAllTowers()
+    g.useMap(CLASSIC_MAP)
+    g.beginPreview()
+    g.gold = 1e6
+    let cell: { x: number; y: number } | null = null
+    outer: for (let cy = 0; cy < GRID_H - 1; cy++)
+      for (let cx = 0; cx < GRID_W - 1; cx++) {
+        const x = cx * 40 + 20
+        const y = cy * 40 + 20
+        if (Math.abs(x - SPOT.x) < 200 && Math.abs(y - SPOT.y) < 200) continue
+        if (g.canPlace(x, y, 2) === null) {
+          // свободный блок — вдали от обороны на споте
+          cell = { x, y }
+          break outer
+        }
+      }
+    const id = buildTower(g, cell!.x, cell!.y, 'deep_drill').towerId!
+    g.towerById(id)!.level = level
+    const guard = buildTower(g, SPOT.x, SPOT.y, 'golem').towerId!
+    g.towerById(guard)!.level = 5
+    g.startWave()
+    run(g, 90)
+    const inc = g.events.filter((e) => e.type === 'income' && e.defId === 'deep_drill' && e.wave === 1)
+    return { amount: inc[0]?.amount ?? -1, essence: g.essence }
+  }
+  check('бур на 1 ур. дал 10 эссенции', drillGold(1).amount === 10)
+  check('бур на 3 ур. дал 24 эссенции', drillGold(3).amount === 24)
+  check('бур на 5 ур. дал 45 эссенции', drillGold(5).amount === 45)
 }
 void firstCreep
 

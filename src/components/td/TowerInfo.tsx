@@ -5,7 +5,7 @@
 
 import { motion } from 'framer-motion'
 import { Asterisk, Coins, Crosshair, Hammer, Sparkles } from 'lucide-react'
-import { ALL_DEFS, ARMOR_COLORS, ARMOR_NAMES, DAMAGE_MATRIX, LEVEL_MULT, RARITY_BY_ID } from '@/game/config'
+import { ALL_DEFS, ARMOR_COLORS, ARMOR_NAMES, DAMAGE_MATRIX, LEVEL_MULT, RARITY_BY_ID, defFootprint, econIncomeAt, econIncomeAt5, econIncomeBase } from '@/game/config'
 import type { ArmorType, AttackType, TowerDefinition } from '@/game/types'
 
 export const ATTACK_COLORS: Record<AttackType, string> = {
@@ -53,6 +53,7 @@ const num = (v: number) => String(Math.round(v * 10) / 10)
 export function effectLines(def: TowerDefinition): string[] {
   const l: string[] = []
   if (def.income) l.push(`Золото: +${def.income} за волну за каждый уровень (не атакует)`)
+  if (def.essence) l.push(defFootprint(def) > 1 ? `Эссенция за волну от ${econIncomeAt(def, 1)} (ур. 1) до ${econIncomeAt5(def)} (ур. 5), блок ${defFootprint(def)}×${defFootprint(def)} (не атакует)` : `Эссенция: +${def.essence} за волну за каждый уровень (не атакует)`)
   if (def.splash) l.push(`Урон по площади, радиус ${def.splash}`)
   if (def.slam) l.push('Удар по всем врагам в радиусе')
   if (def.line) l.push('Болт насквозь — бьёт всех на линии')
@@ -142,8 +143,8 @@ export function TowerInfoCard({
   const parents = def.merged ? def.parents.map((p) => ALL_DEFS[p]?.name ?? p) : null
   const econ = isEcon(def)
   const rarity = def.rarity ? RARITY_BY_ID[def.rarity] : null
-  const incomeNow = def.income ? def.income * level * (level >= 5 ? 2 : 1) : 0
-  const essenceNow = def.essence ? def.essence * level * (level >= 5 ? 2 : 1) : 0
+  const incomeNow = def.income ? econIncomeAt(def, level) : 0
+  const essenceNow = def.essence ? econIncomeAt(def, level) : 0
   return (
     <motion.div
       initial={{ opacity: 0, y: 6, scale: 0.97 }}
@@ -200,16 +201,16 @@ export function TowerInfoCard({
             def.income ? (
               <>
                 <Stat label="Доход" value={`+${incomeNow}/волну`} color="#f0b060" />
-                <Stat label="За уровень" value={`+${def.income}`} color="#e8d9a0" />
-                <Stat label="На 5 ур." value={`+${(def.income ?? 0) * 5 * 2}`} color="#ffd700" />
+                <Stat label="За уровень" value={`+${econIncomeBase(def)}`} color="#e8d9a0" />
+                <Stat label="На 5 ур." value={`+${econIncomeAt5(def)}`} color="#ffd700" />
                 <Stat label="Атака" value="нет" color="#8a96a8" />
               </>
             ) : (
               <>
                 <Stat label="Доход" value={`+${essenceNow}💠/волну`} color="#a6f095" />
-                <Stat label="За уровень" value={`+${def.essence}`} color="#c9e8bd" />
-                <Stat label="На 5 ур." value={`+${(def.essence ?? 0) * 5 * 2}`} color="#7ad0c8" />
-                <Stat label="Атака" value="нет" color="#8a96a8" />
+                <Stat label="За уровень" value={`+${econIncomeBase(def)}`} color="#c9e8bd" />
+                <Stat label="На 5 ур." value={`+${econIncomeAt5(def)}`} color="#7ad0c8" />
+                {defFootprint(def) > 1 ? <Stat label="Слот" value={`${defFootprint(def)}×${defFootprint(def)}`} color="#7fd0a0" /> : <Stat label="Атака" value="нет" color="#8a96a8" />}
               </>
             )
           ) : (

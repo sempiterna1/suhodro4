@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Game } from '@/game/engine'
 import { clampCamera, render, viewScale, type Skin, type ViewState } from '@/game/render'
-import { ALL_DEFS, CELL, MAP_DEFS, MAP_H, MAP_W } from '@/game/config'
+import { ALL_DEFS, CELL, MAP_DEFS, MAP_H, MAP_W, defFootprint } from '@/game/config'
 import { GRID_H, GRID_W, cellOf, snapToCell } from '@/game/map'
 import { insideField, toScreen, toWorld } from '@/game/iso'
 import { preloadAssets } from '@/game/assets'
@@ -1105,15 +1105,20 @@ export default function GameShell() {
   const buildAcc = useRef(0)
   const btn = desktop ? Math.round(44 * Math.min(uiScale, 1.6)) : 44
 
-  /** Свободные клетки поля (центры): те, где сейчас можно поставить башню */
-  const freeCells = (): Vec[] => {
+  /** Свободные места-якоря (центры верхних левых клеток): те, где сейчас можно поставить башню */
+  const freeCells = (footprint = 1): Vec[] => {
     const out: Vec[] = []
+    const mv = movingRef.current !== null ? game.towerById(movingRef.current) : undefined
     for (let gx = 0; gx < GRID_W; gx++) {
       for (let gy = 0; gy < GRID_H; gy++) {
         const x = gx * CELL + CELL / 2
         const y = gy * CELL + CELL / 2
-        const mv = movingRef.current !== null ? game.towerById(movingRef.current) : undefined
-        if (game.canPlace(x, y) === null || (mv && mv.x === x && mv.y === y)) out.push({ x, y })
+        // при переносе клетки переносимой башни остаются «под ней» — считаем их свободными
+        if (mv && mv.x === x && mv.y === y) {
+          out.push({ x, y })
+          continue
+        }
+        if (game.canPlace(x, y, footprint, movingRef.current ?? undefined) === null) out.push({ x, y })
       }
     }
     return out
@@ -1128,7 +1133,8 @@ export default function GameShell() {
       viewRef.current.buildGhost = null
       return
     }
-    const cells = freeCells()
+    const fp = defFootprint(def)
+    const cells = freeCells(fp)
     cellsRef.current = cells
     let cell = buildCellRef.current
     if (!cell || !cells.some((c) => c.x === cell!.x && c.y === cell!.y)) {
@@ -1146,11 +1152,12 @@ export default function GameShell() {
       valid: movingRef.current !== null
         ? true
         : armedHandRef.current !== null
-          ? game.canPlace(cell.x, cell.y) === null // копия из руки — золото уже заплачено
+          ? game.canPlace(cell.x, cell.y, fp) === null // копия из руки — золото уже заплачено
           : game.canBuild(cell.x, cell.y, def.id),
       range: def.range,
       glyph: def.glyph,
       defId: def.id,
+      footprint: fp,
       cells,
       color: DMG_COLORS['attack' in def ? def.attack : def.attacks[0]],
     }
@@ -1163,7 +1170,8 @@ export default function GameShell() {
     if (!g || !cn || !ok) return
     const v = viewRef.current
     const sc = viewScale(v)
-    const s = toScreen(g.x, g.y)
+    // плашка и кнопки — по центру блока постройки (у бура 2×2 смещение на полклетки)
+    const s = toScreen(g.x + (g.footprint > 1 ? CELL / 2 : 0), g.y + (g.footprint > 1 ? CELL / 2 : 0))
     const px = (s.x - v.cam.x) * sc
     const py = (s.y - v.cam.y) * sc
     const dx = 24 * sc + 14 + btn / 2

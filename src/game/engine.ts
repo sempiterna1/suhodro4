@@ -1,7 +1,7 @@
 // Игровой движок прототипа «Железный Разлом»
 // Чистый TypeScript без зависимости от React — в будущем переносится на Unity C#
 
-import { ALL_DEFS, CHAIN_FALLOFF, CHAIN_RANGE, ECONOMY_TOWERS, LINE_WIDTH, MERGED_TOWERS, MIN_INTERVAL, RARITY_BY_ID, RARITY_DPS, RARITY_ECON_WEIGHT, SLAM_STUN, TOWERS } from './data/towers'
+import { ALL_DEFS, CHAIN_FALLOFF, CHAIN_RANGE, ECONOMY_TOWERS, LINE_WIDTH, MERGED_TOWERS, MIN_INTERVAL, RARITY_BY_ID, RARITY_DPS, RARITY_ECON_WEIGHT, SLAM_STUN, TOWERS, defFootprint } from './data/towers'
 import { DAMAGE_MATRIX, ARMOR_HP_MULT, ARMOR_SPEED } from './data/combat'
 import { AVATARS, SELL_RATIO_ENGINEER, VOEVODA_RADIUS, markBonusForLevel, type AvatarId } from './data/avatars'
 import { BOSS_ESCORTS, BOSSES, BOSS_HP_MULT, BOSS_SPEED, TOTAL_WAVES, WAVES, armorsForWave, waveSpeedMult } from './data/waves'
@@ -33,11 +33,14 @@ import { CREEP_KINDS, KINDS_BY_ARMOR } from './data/creeps'
 import { ALL_ITEMS, ITEM_RARE_CHANCE, ITEM_RARE_WAVE, ITEM_REROLL_COST, ITEM_SHOP_SIZE, ITEM_SLOTS, ITEM_SLOTS_TOTAL, ITEMS, rareK, type ItemDef, type ItemOffer } from './data/items'
 import { mulberry32, randInt } from './rng'
 import {
+  type Cell,
   type GameMap,
   cellOf,
   distToPath,
   generateMap,
   getMap,
+  GRID_H,
+  GRID_W,
   isPathCell,
   pathLength,
   pointAtLength,
@@ -76,20 +79,44 @@ export function distToSegment(p: Vec, a: Vec, b: Vec): number {
   return Math.hypot(p.x - (a.x + bx * t), p.y - (a.y + by * t))
 }
 
+/** Занимает ли башня блок footprint×footprint (якорь — клетка башни, блок идёт вправо-вниз) */
+function towerFootprint(defId: string): number {
+  return defFootprint(ALL_DEFS[defId])
+}
+
+/** Клетки блока башни по её якорной клетке (для проверки занятости) */
+function blockCells(anchorCell: Cell, footprint: number): Cell[] {
+  const out: Cell[] = []
+  for (let dx = 0; dx < footprint; dx++) {
+    for (let dy = 0; dy < footprint; dy++) out.push({ cx: anchorCell.cx + dx, cy: anchorCell.cy + dy })
+  }
+  return out
+}
+
 /**
- * Проверка клетки под башню (координаты — любая точка внутри клетки).
- * null — строить можно, иначе строка с причиной запрета.
+ * Проверка блока footprint×footprint с якорем в клетке точки (координаты — любая точка внутри клетки).
+ * null — строить можно, иначе строка с причиной запрета. ignoreId — башня вне учёта (её переносят).
  */
-export function placementError(x: number, y: number, towers: Tower[], avatar: Vec): string | null {
+export function placementError(x: number, y: number, towers: Tower[], avatar: Vec, footprint = 1, ignoreId?: number): string | null {
   if (x < 0 || y < 0 || x >= MAP_W || y >= MAP_H) return 'За краем карты'
   const c = cellOf(x, y)
-  if (isPathCell(c)) return 'Нельзя строить на тракте'
-  for (const tw of towers) {
-    const tc = cellOf(tw.x, tw.y)
-    if (tc.cx === c.cx && tc.cy === c.cy) return 'Клетка занята башней'
+  // блок целиком на карте: этому 2×2 нужно место и справа, и снизу от якоря
+  if (c.cx + footprint > GRID_W || c.cy + footprint > GRID_H) {
+    return footprint > 1 ? `Нужен блок ${footprint}×${footprint}: впритык к краю карты не поставить` : 'За краем карты'
   }
-  const ac = cellOf(avatar.x, avatar.y)
-  if (ac.cx === c.cx && ac.cy === c.cy) return 'Охотница стоит на этой клетке'
+  const block = blockCells(c, footprint)
+  const acell = cellOf(avatar.x, avatar.y) // Охотница не должна стоять в блоке
+  for (const b of block) {
+    if (isPathCell(b)) return 'Нельзя строить на тракте'
+    if (acell.cx === b.cx && acell.cy === b.cy) return 'Охотница стоит на этом месте'
+  }
+  for (const tw of towers) {
+    if (tw.id === ignoreId) continue
+    const fc = blockCells(cellOf(tw.x, tw.y), towerFootprint(tw.defId))
+    for (const occ of fc) {
+      if (block.some((b) => b.cx === occ.cx && b.cy === occ.cy)) return 'Место занято башней'
+    }
+  }
   return null
 }
 
@@ -623,15 +650,15 @@ export class Game {
     return this.towers.find((t) => t.id === id)
   }
 
-  /** Проверка места для постройки (без цены). null — можно */
-  canPlace(x: number, y: number): string | null {
-    return placementError(x, y, this.towers, this.avatar)
+  /** Проверка места для постройки (без цены). null — можно. footprint — размер блока 1×1 или 2×2 */
+  canPlace(x: number, y: number, footprint = 1, ignoreId?: number): string | null {
+    return placementError(x, y, this.towers, this.avatar, footprint, ignoreId)
   }
 
-  /** Проверка «карточка в магазине + хватает золота + клетка свободна» — для подсветки вне руки */
+  /** Проверка «карточка в магазине + хватает золота + блок свободен» — для подсветки вне руки */
   canBuild(x: number, y: number, defId: string): boolean {
     const def = ALL_DEFS[defId]
-    return !!def && this.shop.includes(defId) && this.gold >= def.price && this.canPlace(x, y) === null
+    return !!def && this.shop.includes(defId) && this.gold >= def.price && this.canPlace(x, y, defFootprint(def)) === null
   }
 
   /** Покупка башни из арсенала: золото списывается сразу, копия ложится в «руку»;
@@ -655,7 +682,7 @@ export class Game {
     const defId = this.hand[idx]
     const def = ALL_DEFS[defId]
     if (!def) return { ok: false, error: 'Этой башни уже нет в руке' }
-    const placeErr = this.canPlace(x, y)
+    const placeErr = this.canPlace(x, y, defFootprint(def))
     if (placeErr) return { ok: false, error: placeErr }
     this.hand.splice(idx, 1)
     const at = snapToCell(x, y) // башня всегда в центре клетки
@@ -714,7 +741,7 @@ export class Game {
     const tw = this.towerById(id)
     if (!tw) return { ok: false, error: 'Башни нет' }
     if (tw.moved) return { ok: false, error: 'Эту башню уже переносили' }
-    const err = placementError(x, y, this.towers.filter((t) => t.id !== id), this.avatar)
+    const err = placementError(x, y, this.towers.filter((t) => t.id !== id), this.avatar, towerFootprint(tw.defId))
     if (err) return { ok: false, error: err }
     const at = snapToCell(x, y)
     tw.x = at.x
@@ -1606,7 +1633,9 @@ export class Game {
       }
       if (def.essence) {
         // Гномья кирка: +20% с шахт; Сердце рудника: +эссенция за ауру рядом (Бастион, поддержка — этап 4)
-        let amount = def.essence * tw.level * l5mult
+        // incomeByLevel задаёт точную кривую (Глубинный бур 10→45), иначе «уровень × базу, на 5 ур. ×2»
+        const raw = def.incomeByLevel?.[tw.level - 1] ?? def.essence * tw.level * l5mult
+        let amount = raw
         amount = Math.round(amount * this.itemEssenceMult() + this.itemEssencePerAura() * this.auraCountNear(tw))
         this.essence += amount
         this.addFloat(tw.x, tw.y - 40, `+${amount} 💠`, '#a6f095')

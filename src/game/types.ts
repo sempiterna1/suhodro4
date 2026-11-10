@@ -55,6 +55,10 @@ export interface TowerDef extends AttackFx {
   income?: number
   /** Этап 3: эссенция за пройденную волну за каждый уровень (валюта лавки предметов) */
   essence?: number
+  /** Занимает блок footprint×footprint клеток (якорь — верхняя левая клетка); по умолчанию 1 */
+  footprint?: number
+  /** Доход по уровням точной таблицей (Глубинный бур 10→45); задана — формула «уровень × базу, на 5 ур. ×2» не применяется */
+  incomeByLevel?: number[]
   color: string
   glyph: string
   role: string

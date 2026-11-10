@@ -4,7 +4,7 @@
 // отсортированные по глубине. Всё, что лежит на земле (радиусы, кольца, взрывы), рисуется через
 // groundPath — в той же проекции, поэтому круги становятся эллипсами на снегу.
 
-import { ALL_DEFS, ARMOR_COLORS, CELL, MAP_H, MAP_W, bossForWave } from './config'
+import { ALL_DEFS, ARMOR_COLORS, CELL, MAP_H, MAP_W, bossForWave, defFootprint } from './config'
 import type { Game } from './engine'
 import { pointAtLength } from './engine'
 import { getMap } from './map'
@@ -22,7 +22,7 @@ import type { Creep, CreepKind, Effect, Tower, Vec } from './types'
 
 export type Skin = 'steam' | 'lol'
 
-/** Призрак постройки: выбранная в арсенале башня над клеткой (центр клетки) */
+/** Призрак постройки: выбранная в арсенале башня над блоком footprint×footprint (якорь — верхняя левая клетка) */
 export interface BuildGhost {
   x: number
   y: number
@@ -30,7 +30,9 @@ export interface BuildGhost {
   range: number // радиус атаки выбранной башни
   glyph: string
   defId?: string
-  cells: Vec[] // все свободные клетки (центры) — подсвечиваются ромбами
+  /** размер блока постройки в клетках (Глубинный бур — 2×2) */
+  footprint: number
+  cells: Vec[] // все свободные места-якоря (центры верхних левых клеток) — подсвечиваются ромбами
   color: string // цвет типа урона выбранной башни
 }
 
@@ -213,7 +215,9 @@ function drawEntities(ctx: CanvasRenderingContext2D, game: Game, view: ViewState
     items.push({ y: roadEnds.entry2.y - 4, draw: () => drawPortal(ctx, now, roadEnds.entry2) })
   }
   for (const tw of game.towers) {
-    const s = toScreen(tw.x, tw.y)
+    const fp = defFootprint(ALL_DEFS[tw.defId])
+    // большой блок 2×2 стоит по центру блока: земля у нижнего края блока
+    const s = toScreen(tw.x + (fp > 1 ? CELL / 2 : 0), tw.y + (fp > 1 ? CELL / 2 : 0))
     items.push({ y: s.y + 4, draw: () => drawTowerBody(ctx, game, view, tw, s) })
   }
   for (const c of game.creeps) {
@@ -235,13 +239,14 @@ function drawEntities(ctx: CanvasRenderingContext2D, game: Game, view: ViewState
 // ─── Башни ───────────────────────────────────────────────────────────────
 function drawTowerRings(ctx: CanvasRenderingContext2D, game: Game, view: ViewState) {
   for (const tw of game.towers) {
+    const fp = defFootprint(ALL_DEFS[tw.defId])
     const hovered = view.hoverTower === tw.id || view.selectedTower === tw.id
     const isMergeTarget = view.mergeFrom !== null && game.mergeTargetsFor(view.mergeFrom).includes(tw.id)
     const isMergeSource = view.mergeFrom === tw.id
 
-    // подсветка выбранной/под курсором: рамка клетки под башней — без огромного круга радиуса атаки
+    // подсветка выбранной/под курсором: рамка блока под башней — без огромного круга радиуса атаки
     if (hovered) {
-      groundPath(ctx, () => ctx.rect(tw.x - CELL / 2 + 1, tw.y - CELL / 2 + 1, CELL - 2, CELL - 2))
+      groundPath(ctx, () => ctx.rect(tw.x - CELL / 2 + 1, tw.y - CELL / 2 + 1, fp * CELL - 2, fp * CELL - 2))
       ctx.fillStyle = 'rgba(255,190,110,0.12)'
       ctx.fill()
       ctx.strokeStyle = 'rgba(255,190,110,0.85)'
@@ -279,7 +284,8 @@ function drawTowerBody(ctx: CanvasRenderingContext2D, game: Game, view: ViewStat
   }
   const since = game.time - tw.lastShotAt
   const recoil = since >= 0 && since < 0.1 ? 1 : 0
-  const scale = TOWER_SCALE * (def.merged ? 1.12 : 1) * (1 + (tw.level - 1) * 0.025)
+  const fp = defFootprint(def)
+  const scale = TOWER_SCALE * (def.merged ? 1.12 : 1) * (1 + (tw.level - 1) * 0.025) * (fp > 1 ? 1.9 : 1)
   const foot = s.y + TOWER_FOOT
   // свой облик башни (towers.ts): корпус из листа + свечение стихии + навесные части
   const spr = towerSprite(def, towerArt(def))
@@ -296,7 +302,7 @@ function drawTowerBody(ctx: CanvasRenderingContext2D, game: Game, view: ViewStat
   drawLongShadow(ctx, spr.cv, s.x, foot - 4, spr.ax, scale, 0.3)
   ctx.fillStyle = 'rgba(14,22,52,0.35)'
   ctx.beginPath()
-  ctx.ellipse(s.x + 4, s.y + 4, 24, 10, 0, 0, Math.PI * 2)
+  ctx.ellipse(s.x + 4, s.y + 4, fp > 1 ? 42 : 24, fp > 1 ? 17 : 10, 0, 0, Math.PI * 2)
   ctx.fill()
   blit()
   if (hovered) {
@@ -712,6 +718,7 @@ function drawAvatar(ctx: CanvasRenderingContext2D, game: Game, s: Vec) {
 function drawBuildGhost(ctx: CanvasRenderingContext2D, view: ViewState) {
   if (!view.buildGhost) return
   const { x, y, valid, range, glyph, defId, cells, color } = view.buildGhost
+  const fp = view.buildGhost.footprint
 
   // режим постройки: карта слегка темнеет
   ctx.save()
@@ -733,8 +740,8 @@ function drawBuildGhost(ctx: CanvasRenderingContext2D, view: ViewState) {
   }
   ctx.setLineDash([])
 
-  // радиус атаки: изометрический овал вокруг выбранной клетки
-  groundPath(ctx, () => ctx.arc(x, y, range, 0, Math.PI * 2))
+  // радиус атаки: изометрический овал вокруг центра блока
+  groundPath(ctx, () => ctx.arc(x + CELL / 2, y + CELL / 2, range, 0, Math.PI * 2))
   ctx.fillStyle = 'rgba(255,255,255,0.07)'
   ctx.fill()
   ctx.strokeStyle = color
@@ -743,7 +750,7 @@ function drawBuildGhost(ctx: CanvasRenderingContext2D, view: ViewState) {
   ctx.stroke()
   ctx.setLineDash([])
 
-  groundPath(ctx, () => ctx.rect(x - CELL / 2 + 2, y - CELL / 2 + 2, CELL - 4, CELL - 4))
+  groundPath(ctx, () => ctx.rect(x - CELL / 2 + 2, y - CELL / 2 + 2, fp * CELL - 4, fp * CELL - 4))
   ctx.fillStyle = color + '73'
   ctx.fill()
   ctx.strokeStyle = color
@@ -751,13 +758,17 @@ function drawBuildGhost(ctx: CanvasRenderingContext2D, view: ViewState) {
   ctx.stroke()
 
   // полупрозрачный «призрак» башни прямо на земле, без рамки
-  const s = toScreen(x, y)
+  // большие блоки показывают призрак по центру блока и крупнее
+  const gcx = x + CELL / 2
+  const gcy = y + CELL / 2
+  const s = toScreen(gcx, gcy)
   const def = defId ? ALL_DEFS[defId] : undefined
   const spr = def ? towerSprite(def, towerArt(def)) : null
   if (spr) {
+    const gscale = TOWER_SCALE * (fp > 1 ? 1.9 : 1)
     ctx.save()
     ctx.globalAlpha = valid ? 0.8 : 0.4
-    crispDraw(ctx, spr.cv, s.x - spr.ax * TOWER_SCALE, s.y + TOWER_FOOT - spr.h * TOWER_SCALE, spr.cv.width * TOWER_SCALE, spr.h * TOWER_SCALE)
+    crispDraw(ctx, spr.cv, s.x - spr.ax * gscale, s.y + TOWER_FOOT - spr.h * gscale, spr.cv.width * gscale, spr.h * gscale)
     ctx.restore()
   } else {
     ctx.globalAlpha = valid ? 0.85 : 0.45

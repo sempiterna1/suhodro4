@@ -3,7 +3,7 @@
 // UI-панели прототипа «Железный Разлом»
 
 import { useState } from 'react'
-import { ARMOR_COLORS, ARMOR_NAMES, ATTACK_NAMES, MERGED_TOWERS, TOWERS, DAMAGE_MATRIX, LEVEL_MULT, SELL_RATIO, ALL_DEFS } from '@/game/config'
+import { ARMOR_COLORS, ARMOR_NAMES, ATTACK_NAMES, MERGED_TOWERS, TOWERS, DAMAGE_MATRIX, LEVEL_MULT, SELL_RATIO, ALL_DEFS, econIncomeAt, econIncomeBase } from '@/game/config'
 import { mergePartnersText } from '@/game/engine'
 import type { Game } from '@/game/engine'
 import type { ArmorType, AttackType, TowerDef, UiState, Vec } from '@/game/types'
@@ -114,11 +114,11 @@ export function TowerPanel({
             <>
               <div>
                 <div className="text-[9px] uppercase text-[#5b6f8c]">доход</div>
-                <div className="text-[#f0b060]">+{def.income! * tw.level * (tw.level >= 5 ? 2 : 1)}/волну</div>
+                <div className="text-[#f0b060]">+{econIncomeAt(def, tw.level)}/волну</div>
               </div>
               <div>
                 <div className="text-[9px] uppercase text-[#5b6f8c]">за уровень</div>
-                <div className="text-[#e8d9a0]">+{def.income}</div>
+                <div className="text-[#e8d9a0]">+{econIncomeBase(def)}</div>
               </div>
               <div>
                 <div className="text-[9px] uppercase text-[#5b6f8c]">атака</div>
@@ -129,11 +129,11 @@ export function TowerPanel({
             <>
               <div>
                 <div className="text-[9px] uppercase text-[#5b6f8c]">доход</div>
-                <div className="text-[#a6f095]">+{def.essence! * tw.level * (tw.level >= 5 ? 2 : 1)}💠/волну</div>
+                <div className="text-[#a6f095]">+{econIncomeAt(def, tw.level)}💠/волну</div>
               </div>
               <div>
                 <div className="text-[9px] uppercase text-[#5b6f8c]">за уровень</div>
-                <div className="text-[#c9e8bd]">+{def.essence}</div>
+                <div className="text-[#c9e8bd]">+{econIncomeBase(def)}</div>
               </div>
               <div>
                 <div className="text-[9px] uppercase text-[#5b6f8c]">атака</div>

@@ -37,9 +37,10 @@ const LOOKS: Record<string, Look> = {
   sentry: { art: 'tower-coal', parts: [['shield', 'front']] },
   mech_guard: { art: 'tower-coal', glow: '#ffd060', parts: [['gatling', 'right'], ['gear', 'left']] },
   prism: { art: 'art-prism', parts: [] },
-  // экономические (этап 3): промывочный лоток у подножия корпуса
+  // экономические (этап 3): промывочный лоток у подножия корпуса; бур — канонирующая вышка с кристаллами
   sluice: { art: 'tower-coal', glow: '#e8c170', parts: [['sluice', 'front']] },
   mine: { art: 'tower-frost', glow: '#a6f095', parts: [['crystals', 'front']] },
+  deep_drill: { art: 'tower-cannon', glow: '#7fd0a0', parts: [['crystals', 'front'], ['rod', 'right']] },
   // пронзающие
   archer: { art: 'art-archer', parts: [] },
   crossbow: { art: 'art-crossbow', parts: [] },

@@ -7,7 +7,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, useAnimationControls } from 'framer-motion'
-import { AI_SIGNALS, ALL_DEFS, ALL_ITEMS, ARMOR_COLORS, ARMOR_NAMES, AVATARS, ITEM_REROLL_COST, ITEM_SLOTS, ITEM_SLOTS_TOTAL, RARITY_BY_ID, TOWERS } from '@/game/config'
+import { AI_SIGNALS, ALL_DEFS, ALL_ITEMS, ARMOR_COLORS, ARMOR_NAMES, AVATARS, ITEM_REROLL_COST, ITEM_SLOTS, ITEM_SLOTS_TOTAL, RARITY_BY_ID, TOWERS, defFootprint, econIncomeAt, econIncomeAt5, econIncomeBase } from '@/game/config'
 import { avatarPortrait, towerThumb } from '@/game/pixel'
 import type { AttackType, TowerDefinition, UiState } from '@/game/types'
 import type { MpRole, MpStatus } from './Panels'
@@ -604,17 +604,17 @@ export function ShopModal({ ui, onPick, onRoll, onClose }: {
                     {isEcon(t) ? (
                       t.income ? (
                         <>
-                          <ShopStat label="Доход" value={`+${t.income}/волну`} color="#f0b060" />
-                          <ShopStat label="За уровень" value={`+${t.income}`} color="#e8d9a0" />
-                          <ShopStat label="На 5 ур." value={`+${(t.income ?? 0) * 5 * 2}`} color="#ffd700" />
+                          <ShopStat label="Доход" value={`+${econIncomeAt(t, 1)}/волну`} color="#f0b060" />
+                          <ShopStat label="За уровень" value={`+${econIncomeBase(t)}`} color="#e8d9a0" />
+                          <ShopStat label="На 5 ур." value={`+${econIncomeAt5(t)}`} color="#ffd700" />
                           <ShopStat label="Атака" value="нет" color="#8a96a8" />
                         </>
                       ) : (
                         <>
-                          <ShopStat label="Доход" value={`+${t.essence}💠/волну`} color="#a6f095" />
-                          <ShopStat label="За уровень" value={`+${t.essence}`} color="#c9e8bd" />
-                          <ShopStat label="На 5 ур." value={`+${(t.essence ?? 0) * 5 * 2}`} color="#7ad0c8" />
-                          <ShopStat label="Атака" value="нет" color="#8a96a8" />
+                          <ShopStat label="Доход" value={`+${econIncomeAt(t, 1)}💠/волну`} color="#a6f095" />
+                          <ShopStat label="За уровень" value={`+${econIncomeBase(t)}`} color="#c9e8bd" />
+                          <ShopStat label="На 5 ур." value={`+${econIncomeAt5(t)}`} color="#7ad0c8" />
+                          {defFootprint(t) > 1 ? <ShopStat label="Слот" value={`${defFootprint(t)}×${defFootprint(t)}`} color="#7fd0a0" /> : <ShopStat label="Атака" value="нет" color="#8a96a8" />}
                         </>
                       )
                     ) : (
@@ -897,11 +897,11 @@ export function HandTray({
         const on = armedHand === i
         const econ = isEcon(def)
         const rarity = def.rarity ? RARITY_BY_ID[def.rarity] : null
-        // главная характеристика копии: у экономических — доход за волну, у боевых — ДПС
+        // главная характеристика копии: у экономических — доход за волну (бур — по кривой), у боевых — ДПС
         const stat = econ
-          ? `${fmtNum((def.income ?? 0))}/волна`
+          ? `${fmtNum(econIncomeAt(def, 1))}${def.essence ? '💠' : ''}/волна`
           : `${fmtNum(def.damage / def.interval)} ДПС`
-        const label = econ ? 'доход' : 'урон'
+        const label = econ ? (def.essence ? 'добыча' : 'доход') : 'урон'
         return (
           <button
             key={`${i}-${id}`}

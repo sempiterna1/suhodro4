@@ -322,6 +322,46 @@ for (const t of TOWERS) {
 // ─── Экономические постройки (этап 3: золото вместо атаки) ─────────────
 // Роллятся вместе с боевыми на общих основаниях (вес RARITY_ECON_WEIGHT),
 // редкости не имеют. Прокачка — общей моделью копии, доход растёт с уровнем.
+// Глубинный бур задаёт доход точной кривой incomeByLevel (10 → 45).
+
+/**
+ * Доход экономической постройки за пройденную волну на данном уровне:
+ * точная кривая incomeByLevel (бур) или формула «уровень × базу, на 5 ур. ×2».
+ * Структурный тип: MergeDef не платит, все поля опциональны.
+ */
+export interface EconSource {
+  income?: number
+  essence?: number
+  incomeByLevel?: number[]
+}
+
+export function econIncomeAt(def: EconSource, level: number): number {
+  const curve = def.incomeByLevel
+  if (curve?.length) return curve[Math.max(1, Math.min(level, curve.length)) - 1] ?? 0
+  const base = def.essence ?? def.income ?? 0
+  return base * level * (level >= 5 ? 2 : 1)
+}
+
+/** Доход на 5-м уровне: конец кривой (бур: 45) или «база × 5 × 2» */
+export function econIncomeAt5(def: EconSource): number {
+  const curve = def.incomeByLevel
+  if (curve?.length) return curve[curve.length - 1] ?? 0
+  const base = def.essence ?? def.income ?? 0
+  return base * 5 * 2
+}
+
+/** Прирост за один уровень копии (для «За уровень»): первый шаг кривой или база */
+export function econIncomeBase(def: EconSource): number {
+  const curve = def.incomeByLevel
+  if (curve?.length) return curve[0] ?? 0
+  return def.essence ?? def.income ?? 0
+}
+
+/** Размер блока постройки в клетках (слитые башни и обычные — 1×1) */
+export function defFootprint(def: TowerDef | MergeDef | undefined): number {
+  return def && 'footprint' in def ? def.footprint ?? 1 : 1
+}
+
 export const ECONOMY_TOWERS: TowerDef[] = [
   {
     id: 'sluice',
@@ -353,6 +393,24 @@ export const ECONOMY_TOWERS: TowerDef[] = [
     glyph: '💠',
     role: 'не атакует: эссенция за каждую пройденную волну',
     l5: 'Добыча удвоена',
+    merged: false,
+  },
+  {
+    id: 'deep_drill',
+    name: 'Глубинный бур',
+    attack: 'universal',
+    price: 160,
+    damage: 0,
+    interval: 1,
+    range: 0,
+    projSpeed: 0,
+    essence: 10,
+    footprint: 2, // большой слот 2×2 (план этапа 3)
+    incomeByLevel: [10, 16, 24, 33, 45], // точная кривая этапа 3: 10 → 45
+    color: '#7fd0a0',
+    glyph: '⛏',
+    role: 'большая шахта 2×2: много эссенции за волну, занимает 4 клетки',
+    l5: 'Пиковая добыча 45 💠 за волну',
     merged: false,
   },
 ]
