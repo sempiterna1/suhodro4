@@ -1,7 +1,7 @@
 // Игровой движок прототипа «Железный Разлом»
 // Чистый TypeScript без зависимости от React — в будущем переносится на Unity C#
 
-import { ALL_DEFS, CHAIN_FALLOFF, CHAIN_RANGE, ECONOMY_IDS, LINE_WIDTH, MERGED_TOWERS, MIN_INTERVAL, SLAM_STUN, TOWERS } from './data/towers'
+import { ALL_DEFS, CHAIN_FALLOFF, CHAIN_RANGE, ECONOMY_TOWERS, LINE_WIDTH, MERGED_TOWERS, MIN_INTERVAL, SLAM_STUN, TOWERS } from './data/towers'
 import { DAMAGE_MATRIX, ARMOR_HP_MULT, ARMOR_SPEED } from './data/combat'
 import { AVATARS, SELL_RATIO_ENGINEER, VOEVODA_RADIUS, markBonusForLevel, type AvatarId } from './data/avatars'
 import { BOSS_ESCORTS, BOSSES, BOSS_HP_MULT, BOSS_SPEED, TOTAL_WAVES, WAVES, armorsForWave, waveSpeedMult } from './data/waves'
@@ -121,9 +121,9 @@ export function hybridMult(attacks: AttackType[], armor: ArmorType): { mult: num
   return best
 }
 
-/** Случайный пул арсенала: SHOP_SIZE разных боевых башен */
+/** Случайный пул арсенала: SHOP_SIZE разных башен — боевых и экономических */
 export function rollPool(rng: () => number): string[] {
-  const ids = TOWERS.map((t) => t.id)
+  const ids = [...TOWERS, ...ECONOMY_TOWERS].map((t) => t.id)
   for (let i = ids.length - 1; i > 0; i--) {
     const j = randInt(rng, i + 1)
     ;[ids[i], ids[j]] = [ids[j], ids[i]]
@@ -352,7 +352,7 @@ export class Game {
 
   beginPreview() {
     if (this.phase !== 'intro' && this.phase !== 'wave') return
-    if (this.phase === 'intro' && this.shop.length === 0) this.shop = [...rollPool(this.rng), ...ECONOMY_IDS] // первый пул бесплатный
+    if (this.phase === 'intro' && this.shop.length === 0) this.shop = rollPool(this.rng) // первый пул бесплатный
     if (this.phase === 'intro' && this.itemShop.length === 0) this.rollItemOffers() // первая витрина лавки бесплатна
     this.phase = 'preview'
     this.previewRemaining = this.wave === 1 ? FIRST_PREVIEW_TIME : PREVIEW_TIME
@@ -413,7 +413,7 @@ export class Game {
 
   /** Открыть в арсенале все башни (тесты, будущий режим отладки) */
   unlockAllTowers() {
-    this.shop = [...TOWERS.map((t) => t.id), ...ECONOMY_IDS, ...MERGED_TOWERS.map((t) => t.id)]
+    this.shop = [...TOWERS.map((t) => t.id), ...ECONOMY_TOWERS.map((t) => t.id), ...MERGED_TOWERS.map((t) => t.id)]
   }
 
   /** Ролл арсенала: новый пул из SHOP_SIZE башен за ROLL_COST золота */
@@ -422,7 +422,7 @@ export class Game {
     if (this.gold < ROLL_COST) return { ok: false, error: 'Не хватает золота' }
     this.gold -= ROLL_COST
     this.refillGold()
-    this.shop = [...rollPool(this.rng), ...this.discovered, ...ECONOMY_IDS]
+    this.shop = [...rollPool(this.rng), ...this.discovered]
     this.logEvent({ type: 'roll', amount: ROLL_COST, text: this.shop.join(',') })
     return { ok: true }
   }
@@ -627,8 +627,7 @@ export class Game {
     this.gold -= def.price
     this.refillGold()
     this.hand.push(defId)
-    // экономические постройки в арсенале постоянны: карточка не выбывает после покупки
-    if (!ECONOMY_IDS.includes(defId)) this.shop = this.shop.filter((id) => id !== defId)
+    this.shop = this.shop.filter((id) => id !== defId) // карточка выбывает и может вернуться только роллом
     this.logEvent({ type: 'buy', defId, amount: def.price })
     return { ok: true }
   }

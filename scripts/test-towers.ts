@@ -189,16 +189,15 @@ function firstCreep(g: Game): Creep | undefined {
   g.towerById(pyroLow)!.level = 3
   check('подходящая пара — без ошибки', g.mergeError(archer, pyroLow) === null && g.merge(archer, pyroLow).ok)
 }
-// ─── Промывочный стан (этап 3): постоянный арсенал, доход за волну, не атакует ───
+// ─── Промывочный стан (этап 3): экономические башни тоже выпадают в ролле ───
 {
   const g = new Game()
   g.useMap(CLASSIC_MAP)
   g.beginPreview()
-  check('стан в арсенале сразу (без ролла)', g.shop.includes('sluice'))
+  g.shop.push('sluice') // пул случаен — для эконом-блока карточку вставляем вручную
   g.gold = 1e6
-  check('покупка стана', g.buy('sluice').ok)
-  check('стан остаётся в арсенале после покупки', g.shop.includes('sluice'))
-  check('ролл не убирает стан', g.roll().ok && g.shop.includes('sluice'))
+  check('стан из пула можно купить', g.buy('sluice').ok)
+  check('карточка стана выбывает после покупки', !g.shop.includes('sluice'))
   const idx = g.hand.indexOf('sluice')
   check('копия стана в руке', idx >= 0)
   // первая свободная клетка — стан не требует покрытия тропы

@@ -1,11 +1,11 @@
 // Арсенал с роллом и пауза.
-// Арсенал: 5 разных башен из 15 + постоянные экономические постройки (стан, шахта),
-// ролл за 10 золота меняет только боевой пул, строить можно только из арсенала.
+// Арсенал: 5 разных башен из 17 (15 боевых + стан и шахта — они тоже выпадают в ролле),
+// ролл за 10 золота меняет пул, карточка выбывает после покупки, строить можно только из арсенала.
 // Пауза: время стоит, крипы не двигаются; строить и роллить на паузе можно; кооп-команды работают.
 
 import { Game } from '../src/game/engine'
 import { CLASSIC_MAP } from '../src/game/map'
-import { ROLL_COST, SHOP_SIZE, TOWERS, MERGED_TOWERS, ECONOMY_IDS } from '../src/game/config'
+import { ROLL_COST, SHOP_SIZE, TOWERS, MERGED_TOWERS, ECONOMY_IDS, ECONOMY_TOWERS } from '../src/game/config'
 
 /** Тестовая застройка новой механикой: купить в арсенал → взять из руки → поставить */
 const buildTower = (g: Game, x: number, y: number, defId: string) => {
@@ -35,13 +35,13 @@ function check(name: string, ok: boolean, info = '') {
   // до старта пул пуст: Game создаётся и при SSR, случайный пул сломал бы гидратацию
   check('до старта игры пул пуст', g.shop.length === 0)
   g.beginPreview()
-  const poolSize = SHOP_SIZE + ECONOMY_IDS.length
-  check(`стартовый пул — ${SHOP_SIZE} разных башен + экономические постройки`, g.shop.length === poolSize && new Set(g.shop).size === poolSize, g.shop.join(','))
-  check('боевая часть пула — только боевые башни', g.shop.filter((id) => !ECONOMY_IDS.includes(id)).every((id) => TOWERS.some((t) => t.id === id)))
+  const poolIds = [...TOWERS, ...ECONOMY_TOWERS].map((t) => t.id)
+  check(`стартовый пул — ${SHOP_SIZE} разных башен (боевые и экономические)`, g.shop.length === SHOP_SIZE && new Set(g.shop).size === SHOP_SIZE, g.shop.join(','))
+  check('в пуле только боевые и экономические башни', g.shop.every((id) => poolIds.includes(id)))
   const gold0 = g.gold
   const r = g.roll()
   check(`ролл списывает ${ROLL_COST} золота`, r.ok && g.gold === gold0 - ROLL_COST, `${gold0} → ${g.gold}`)
-  check('после ролла снова полный пул', g.shop.length === poolSize && new Set(g.shop).size === poolSize)
+  check('после ролла снова полный пул', g.shop.length === SHOP_SIZE && new Set(g.shop).size === SHOP_SIZE)
 
   g.gold = ROLL_COST - 1
   const poor = g.roll()
@@ -71,7 +71,7 @@ function check(name: string, ok: boolean, info = '') {
   // рестарт даёт новый бесплатный пул
   g.reset()
   g.beginPreview()
-  check('после рестарта — новый бесплатный пул и стартовое золото', g.shop.length === SHOP_SIZE + ECONOMY_IDS.length && g.gold === 150)
+  check('после рестарта — новый бесплатный пул и стартовое золото', g.shop.length === SHOP_SIZE && g.gold === 150)
 
   // тестовый «полный арсенал» не затирается стартом игры
   const u = new Game()

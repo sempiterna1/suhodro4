@@ -1310,17 +1310,6 @@ export default function GameShell() {
     }
   })
 
-  // ВРЕМЕННО (отладка smoke): доступ к вводу из консоли браузера
-  useEffect(() => {
-    ;(window as unknown as Record<string, unknown>).__td = {
-      game,
-      viewRef,
-      toWorld,
-      toScreen,
-      towerAtMap: (wx: number, wy: number) => towerAt({ x: wx, y: wy }),
-      input: () => ({ armed: armedRef.current, handIdx: armedHandRef.current, cell: buildCellRef.current }),
-    }
-  })
   useLayoutEffect(() => {
     if (armed) placeBuildUi()
   }, [armed, buildCell])
