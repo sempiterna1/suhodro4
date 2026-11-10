@@ -57,3 +57,9 @@ server.log
 
 # отчёты headless-симулятора
 /reports/
+
+# граф знаний graphify: в репозитории — только публикуемые артефакты
+graphify-out/*
+!graphify-out/graph.html
+!graphify-out/GRAPH_REPORT.md
+!graphify-out/graph.json
