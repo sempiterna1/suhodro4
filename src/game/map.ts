@@ -65,14 +65,19 @@ function pointsFromCells(cells: Cell[]): Vec[] {
   return pts
 }
 
-/** Цепочка клеток по «углам»: от каждого угла до следующего по прямой */
+/** Цепочка клеток по «углам»: от каждого угла к следующему — ортогональной лесенкой
+ *  (сначала по горизонтали, затем по вертикали), чтобы клетки тропы были непрерывны
+ *  строго по сторонам сетки — диагональные углы дают видимую лесенку-«перевал». */
 function cellsFromCorners(corners: Cell[]): Cell[] {
   const cells: Cell[] = [corners[0]]
   for (let i = 1; i < corners.length; i++) {
     let { cx, cy } = cells[cells.length - 1]
     const t = corners[i]
-    while (cx !== t.cx || cy !== t.cy) {
+    while (cx !== t.cx) {
       cx += Math.sign(t.cx - cx)
+      cells.push({ cx, cy })
+    }
+    while (cy !== t.cy) {
       cy += Math.sign(t.cy - cy)
       cells.push({ cx, cy })
     }
@@ -150,11 +155,31 @@ function meanderCells(rand: () => number): Cell[] | null {
 }
 
 /**
- * Карта по зерну: тропа «меандром» от левого края к правому (см. meanderCells).
- * У карт с MapDef.secondExitWave есть и вторая тропа (GDD «Второй выход»).
+ * Карта по зерну. Карты реестра MAP_DEFS имеют фиксированные узоры троп (PATH_SHAPES):
+ * у каждой карты свой характерный вид — петля-улитка, серпантин, короткий зигзаг,
+ * перевальные дуги, W-образная долина (GDD «Карты и сложности»: тропы фиксированы).
+ * У карты с MapDef.secondExitWave есть и вторая тропа (GDD «Второй выход»).
+ * Чужие зёрна (не из реестра) получают случайный меандр — как раньше.
  */
 export function generateMap(seed: number): GameMap {
   if (seed === 0) return CLASSIC_MAP
+  const def = mapDefBySeed(seed)
+  const shape = def.id !== 'tract' ? PATH_SHAPES[def.id] : undefined
+  if (shape) {
+    const cells = cellsFromCorners(shape)
+    if (cells.length >= MIN_CELLS && cells.length <= MAX_CELLS) {
+      const map: GameMap = { seed, cells, points: pointsFromCells(cells) }
+      if (def.secondExitWave) {
+        const cells2 = secondPathCells(seed, cells)
+        if (cells2) {
+          map.cells2 = cells2
+          map.points2 = pointsFromCells(cells2)
+        }
+      }
+      return map
+    }
+    // узор неожиданно не прошёл по длине — запасной случайный меандр ниже
+  }
   const rand = mulberry32(seed)
   for (let attempt = 0; attempt < 500; attempt++) {
     const cells = meanderCells(rand)
@@ -170,6 +195,41 @@ export function generateMap(seed: number): GameMap {
     return map
   }
   return CLASSIC_MAP // крайне маловероятно: генератор не уложился в длину
+}
+
+/**
+ * Узоры троп на сетке GRID_W×GRID_H (угол → угол, клетки достраиваются прямоугольным ходом).
+ * Между параллельными участками всегда ≥1 клетки зазор — под башни. Вход — левый край,
+ * выход — правый; вторая тропа Пепельной долины входит с северной кромки (secondPathCells).
+ */
+const PATH_SHAPES: Record<string, Cell[]> = {
+  // Старая мельница: петля-улитка вокруг двух «карманов» — центр просторный, для площадных башен
+  mill: [
+    { cx: 0, cy: 6 }, { cx: 6, cy: 6 }, { cx: 6, cy: 2 }, { cx: 26, cy: 2 }, { cx: 26, cy: 13 },
+    { cx: 24, cy: 13 }, { cx: 24, cy: 5 }, { cx: 12, cy: 5 }, { cx: 12, cy: 11 }, { cx: 22, cy: 11 },
+    { cx: 22, cy: 16 }, { cx: 31, cy: 16 },
+  ],
+  // Каменный мост: плотный серпантин с шагом в 2 клетки — свободных рядов почти нет
+  bridge: [
+    { cx: 0, cy: 3 }, { cx: 11, cy: 3 }, { cx: 11, cy: 5 }, { cx: 2, cy: 5 }, { cx: 2, cy: 7 },
+    { cx: 11, cy: 7 }, { cx: 11, cy: 9 }, { cx: 2, cy: 9 }, { cx: 2, cy: 11 }, { cx: 11, cy: 11 },
+    { cx: 11, cy: 13 }, { cx: 3, cy: 13 }, { cx: 3, cy: 15 }, { cx: 31, cy: 15 },
+  ],
+  // Заброшенные шахты: короткий зигзаг — остальное поле свободно под стройку
+  mines: [
+    { cx: 0, cy: 7 }, { cx: 9, cy: 7 }, { cx: 9, cy: 14 }, { cx: 17, cy: 14 }, { cx: 17, cy: 3 },
+    { cx: 25, cy: 3 }, { cx: 25, cy: 10 }, { cx: 31, cy: 10 },
+  ],
+  // Ледяной перевал: перевальные дуги — тропа трижды пересекает поле по диагонали-ступеньке
+  pass: [
+    { cx: 0, cy: 3 }, { cx: 20, cy: 3 }, { cx: 26, cy: 9 }, { cx: 14, cy: 9 }, { cx: 8, cy: 15 },
+    { cx: 28, cy: 15 }, { cx: 31, cy: 12 },
+  ],
+  // Пепельная долина: W из трёх хребтов; со 2-й тропой (север) — развилка угроз
+  valley: [
+    { cx: 0, cy: 16 }, { cx: 7, cy: 16 }, { cx: 7, cy: 3 }, { cx: 15, cy: 3 }, { cx: 15, cy: 13 },
+    { cx: 23, cy: 13 }, { cx: 23, cy: 3 }, { cx: 29, cy: 3 }, { cx: 29, cy: 10 }, { cx: 31, cy: 10 },
+  ],
 }
 
 /** Клетки тропы и их ортогональные соседи — зона отчуждения вокруг настила */

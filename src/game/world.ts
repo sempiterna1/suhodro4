@@ -14,9 +14,8 @@ import { radioMast, steamBase, watchtower, wreck, type Baked } from './machines'
 import { swayAt, windAt, windPath } from './wind'
 
 // ─── Палитра земли ───────────────────────────────────────────────────────
-const SNOW_PLATEAU: [number, number, number][] = [[122, 140, 166], [131, 149, 174], [114, 132, 158], [140, 158, 182], [150, 167, 190]]
-const SNOW_LOW: [number, number, number][] = [[92, 108, 134], [99, 116, 142], [86, 101, 127], [106, 123, 149]]
-const MUD: [number, number, number][] = [[112, 101, 96], [104, 94, 90], [120, 108, 101], [97, 88, 85]]
+const SNOW_PLATEAU: [number, number, number][] = [[132, 150, 176], [141, 159, 184], [124, 142, 168], [150, 168, 192], [160, 177, 200]]
+const SNOW_LOW: [number, number, number][] = [[98, 114, 140], [105, 122, 148], [92, 107, 133], [112, 129, 155]]
 const CLIFF = 30 // высота утёса под передним краем поля, экранные пиксели
 
 function hash(x: number, y: number, seed: number) {
@@ -199,16 +198,24 @@ export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasEle
       }
 
       if (road(cx, cy)) {
-        // укатанная мёрзлая земля: колеи вдоль направления, снежная крошка, снежные валы по краям
+        // деревянный настил тракта (как в предпросмотре меню): доски поперёк хода, швы,
+        // снежная пыль на досках; по краям — снежные валы и тёмная подбивка для контраста
         const u = w.x - cx * CELL
         const v = w.y - cy * CELL
-        let c = MUD[Math.floor(hash(Math.floor(w.x / 6), Math.floor(w.y / 6), seed + 8) * MUD.length)]
         const hor = road(cx - 1, cy) || road(cx + 1, cy)
-        const ver = road(cx, cy - 1) || road(cx, cy + 1)
-        const rut = (t: number) => (t > 11 && t < 15) || (t > 25 && t < 29)
-        if ((hor && rut(v) && (road(cx - 1, cy) ? u < 26 : u > 14)) || (ver && rut(u) && (road(cx, cy - 1) ? v < 26 : v > 14))) c = [78, 70, 68]
-        if (dith > 0.9) c = [170, 180, 196]
-        else if (dith < 0.04) c = [70, 63, 62]
+        const across = hor ? v : u // координата поперёк дороги 0..40
+        const along = hor ? u : v // вдоль дороги
+        let c: [number, number, number] = [64, 52, 44] // тёмная подбивка под настилом
+        const seam = across % 10 < 1.7
+        if (seam) c = [54, 42, 34]
+        else {
+          const woodN = hash(Math.floor(across / 10) + cx * 7 + cy * 13, Math.floor(along / 13), seed + 8)
+          const tones: [number, number, number][] = [[188, 150, 102], [168, 130, 86], [200, 162, 112], [154, 118, 76]]
+          c = tones[Math.floor(woodN * tones.length)]
+          if (hash(Math.floor(w.x / 3), Math.floor(w.y / 3), seed + 9) > 0.86) c = [c[0] - 18, c[1] - 15, c[2] - 10] // зерно
+          if (hash(Math.floor(w.x / 5), Math.floor(w.y / 5), seed + 32) > 0.91) c = [212, 222, 236] // снежная пыль
+        }
+        if (dith < 0.03) c = [c[0] * 0.8, c[1] * 0.8, c[2] * 0.82]
         // валы: у стороны, где соседа-дороги нет
         const edgeD = Math.min(
           road(cx - 1, cy) ? 99 : u,
@@ -217,8 +224,8 @@ export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasEle
           road(cx, cy + 1) ? 99 : CELL - v,
         )
         const bank = 4 + hash(Math.floor(w.x / 5), Math.floor(w.y / 5), seed + 31) * 4
-        if (edgeD < bank) c = edgeD < bank * 0.45 ? [200, 212, 228] : [168, 182, 204]
-        else if (edgeD < bank + 3) c = [c[0] * 0.78, c[1] * 0.8, c[2] * 0.88]
+        if (edgeD < bank) c = edgeD < bank * 0.45 ? [204, 216, 232] : [170, 184, 206]
+        else if (edgeD < bank + 3) c = [c[0] * 0.76, c[1] * 0.78, c[2] * 0.86]
         put(bx, by, infect(c, w.x, w.y, infection(w.x, w.y) * 0.6))
         continue
       }
@@ -235,7 +242,7 @@ export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasEle
       if (inside) {
         const u = w.x - cx * CELL
         const v = w.y - cy * CELL
-        if (u < 1.6 || v < 1.6) k = 0.955
+        if (u < 1.6 || v < 1.6) k = 0.93
       }
       // город за правым краем: утоптанный снег с грязью
       if (w.x >= MAP_W && w.y < MAP_H && hash(Math.floor(w.x / 14), Math.floor(w.y / 14), seed + 5) > 0.72) c = [110, 104, 104]
@@ -284,10 +291,10 @@ export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasEle
         const oy = cy * CELL + CELL / 2 + (hash(cx, cy, seed + 8) - 0.5) * 18
         if (infection(ox, oy) > 0.35 || inLake(ox, oy, 8)) continue
         const cell1 = cx + ',' + cy
-        if (roll1 < 0.08) add(pick<AssetName>(['prop-rock', 'prop-rubble']), ox, oy, 0.17, { flip: r() > 0.5, cell: cell1 })
-        else if (roll1 < 0.13) add(pick<AssetName>(['prop-crate', 'prop-barrel', 'prop-box']), ox, oy, 0.24, { cell: cell1 })
-        else if (roll1 < 0.15) add('prop-sign', ox, oy, 0.26, { flip: r() > 0.5, cell: cell1 })
-        else if (roll1 < 0.17) {
+        if (roll1 < 0.05) add(pick<AssetName>(['prop-rock', 'prop-rubble']), ox, oy, 0.17, { flip: r() > 0.5, cell: cell1 })
+        else if (roll1 < 0.09) add(pick<AssetName>(['prop-crate', 'prop-barrel', 'prop-box']), ox, oy, 0.24, { cell: cell1 })
+        else if (roll1 < 0.105) add('prop-sign', ox, oy, 0.26, { flip: r() > 0.5, cell: cell1 })
+        else if (roll1 < 0.12) {
           const p = add('prop-lamp2', ox, oy, 0.28, { cell: cell1 })
           mapLights.push({ x: p.x, y: p.y - 26, kind: 'lantern', seed: cx * 13 + cy })
         }
@@ -307,10 +314,10 @@ export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasEle
         continue
       }
       if (d === 2) {
-        if (roll < 0.16) add('prop-pine', wx, wy, 0.28 + hash(cx, cy, 7) * 0.08, { flip: r() > 0.5, cell })
-        else if (roll < 0.22) add(pick<AssetName>(['prop-rock', 'prop-rubble']), wx, wy, 0.22, { flip: r() > 0.5, cell })
-        else if (roll < 0.26) add(pick<AssetName>(['prop-crate', 'prop-barrel', 'prop-box']), wx, wy, 0.28, { cell })
-        else if (roll < 0.28) {
+        if (roll < 0.09) add('prop-pine', wx, wy, 0.28 + hash(cx, cy, 7) * 0.08, { flip: r() > 0.5, cell })
+        else if (roll < 0.14) add(pick<AssetName>(['prop-rock', 'prop-rubble']), wx, wy, 0.22, { flip: r() > 0.5, cell })
+        else if (roll < 0.18) add(pick<AssetName>(['prop-crate', 'prop-barrel', 'prop-box']), wx, wy, 0.28, { cell })
+        else if (roll < 0.2) {
           const p = add('prop-lamp', wx, wy, 0.3, { cell })
           mapLights.push({ x: p.x, y: p.y - 22, kind: 'lantern', seed: cx * 31 + cy })
         }
@@ -337,10 +344,10 @@ export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasEle
         const p = add(name, wx, wy, 0.36, { flip: r() > 0.5, cell })
         mapLights.push({ x: p.x, y: p.y - 12, kind: name === 'prop-tent' ? 'furnace' : 'window', seed: cx * 3 + cy })
       } else if (roll < 0.22) add(pick<AssetName>(['prop-fence', 'prop-fence2', 'prop-fence3']), wx, wy, 0.32, { flip: r() > 0.5, cell })
-      else if (roll < 0.5) add('prop-pine', wx, wy, 0.3 + hash(cx, cy, 7) * 0.14, { flip: r() > 0.5, cell })
-      else if (roll < 0.6) add('prop-pines', wx, wy, 0.32, { flip: r() > 0.5, cell })
-      else if (roll < 0.66) add(pick<AssetName>(['prop-rock', 'prop-rubble', 'prop-deadtree']), wx, wy, 0.26, { flip: r() > 0.5, cell })
-      else if (roll < 0.7) add(pick<AssetName>(['prop-crates', 'prop-crates2', 'prop-sled', 'prop-sign', 'prop-flag']), wx, wy, 0.3, { flip: r() > 0.5, cell })
+      else if (roll < 0.38) add('prop-pine', wx, wy, 0.3 + hash(cx, cy, 7) * 0.14, { flip: r() > 0.5, cell })
+      else if (roll < 0.46) add('prop-pines', wx, wy, 0.32, { flip: r() > 0.5, cell })
+      else if (roll < 0.54) add(pick<AssetName>(['prop-rock', 'prop-rubble', 'prop-deadtree']), wx, wy, 0.26, { flip: r() > 0.5, cell })
+      else if (roll < 0.6) add(pick<AssetName>(['prop-crates', 'prop-crates2', 'prop-sled', 'prop-sign', 'prop-flag']), wx, wy, 0.3, { flip: r() > 0.5, cell })
     }
   }
 
@@ -509,7 +516,7 @@ export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasEle
   // мягкая холодная виньетка по краям
   const g = L.createRadialGradient(W / 2, H / 2, H * 0.45, W / 2, H / 2, W * 0.62)
   g.addColorStop(0, 'rgba(6,12,30,0)')
-  g.addColorStop(1, 'rgba(6,12,30,0.55)')
+  g.addColorStop(1, 'rgba(6,12,30,0.38)')
   L.fillStyle = g
   L.fillRect(0, 0, W, H)
 
