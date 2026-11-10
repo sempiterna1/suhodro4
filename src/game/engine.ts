@@ -1,7 +1,7 @@
 // Игровой движок прототипа «Железный Разлом»
 // Чистый TypeScript без зависимости от React — в будущем переносится на Unity C#
 
-import { ALL_DEFS, CHAIN_FALLOFF, CHAIN_RANGE, ECONOMY_TOWERS, LINE_WIDTH, MERGED_TOWERS, MIN_INTERVAL, SLAM_STUN, TOWERS } from './data/towers'
+import { ALL_DEFS, CHAIN_FALLOFF, CHAIN_RANGE, ECONOMY_TOWERS, LINE_WIDTH, MERGED_TOWERS, MIN_INTERVAL, RARITY_BY_ID, RARITY_DPS, RARITY_ECON_WEIGHT, SLAM_STUN, TOWERS } from './data/towers'
 import { DAMAGE_MATRIX, ARMOR_HP_MULT, ARMOR_SPEED } from './data/combat'
 import { AVATARS, SELL_RATIO_ENGINEER, VOEVODA_RADIUS, markBonusForLevel, type AvatarId } from './data/avatars'
 import { BOSS_ESCORTS, BOSSES, BOSS_HP_MULT, BOSS_SPEED, TOTAL_WAVES, WAVES, armorsForWave, waveSpeedMult } from './data/waves'
@@ -121,14 +121,32 @@ export function hybridMult(attacks: AttackType[], armor: ArmorType): { mult: num
   return best
 }
 
-/** Случайный пул арсенала: SHOP_SIZE разных башен — боевых и экономических */
-export function rollPool(rng: () => number): string[] {
-  const ids = [...TOWERS, ...ECONOMY_TOWERS].map((t) => t.id)
-  for (let i = ids.length - 1; i > 0; i--) {
-    const j = randInt(rng, i + 1)
-    ;[ids[i], ids[j]] = [ids[j], ids[i]]
+/**
+ * Случайный пул арсенала: SHOP_SIZE разных башен — боевых и экономических.
+ * Выбор взвешенный по редкости (RARITY_*.weight; экономические — RARITY_ECON_WEIGHT),
+ * без замены: одна и та же башня не может выпасть в пуле дважды.
+ * Редкости открываются по волнам (fromWave): Минеральная с 8-й, Разломная с 15-й, гарантий (pity) нет.
+ */
+export function rollPool(rng: () => number, wave = 1): string[] {
+  const available = [...TOWERS, ...ECONOMY_TOWERS].filter(
+    (t) => !t.rarity || RARITY_BY_ID[t.rarity].fromWave <= wave
+  )
+  const rest = [...available]
+  const pool: string[] = []
+  const weightOf = (t: (typeof TOWERS)[number]) => (t.rarity ? RARITY_BY_ID[t.rarity].weight : RARITY_ECON_WEIGHT)
+  while (pool.length < SHOP_SIZE && rest.length > 0) {
+    const total = rest.reduce((s, t) => s + weightOf(t), 0)
+    let roll = rng() * total
+    for (let i = 0; i < rest.length; i++) {
+      roll -= weightOf(rest[i])
+      if (roll <= 0 || i === rest.length - 1) {
+        pool.push(rest[i].id)
+        rest.splice(i, 1)
+        break
+      }
+    }
   }
-  return ids.slice(0, SHOP_SIZE)
+  return pool
 }
 
 export interface ActionResult {
@@ -352,7 +370,7 @@ export class Game {
 
   beginPreview() {
     if (this.phase !== 'intro' && this.phase !== 'wave') return
-    if (this.phase === 'intro' && this.shop.length === 0) this.shop = rollPool(this.rng) // первый пул бесплатный
+    if (this.phase === 'intro' && this.shop.length === 0) this.shop = rollPool(this.rng, this.wave) // первый пул бесплатный
     if (this.phase === 'intro' && this.itemShop.length === 0) this.rollItemOffers() // первая витрина лавки бесплатна
     this.phase = 'preview'
     this.previewRemaining = this.wave === 1 ? FIRST_PREVIEW_TIME : PREVIEW_TIME
@@ -422,7 +440,7 @@ export class Game {
     if (this.gold < ROLL_COST) return { ok: false, error: 'Не хватает золота' }
     this.gold -= ROLL_COST
     this.refillGold()
-    this.shop = [...rollPool(this.rng), ...this.discovered]
+    this.shop = [...rollPool(this.rng, this.wave), ...this.discovered]
     this.logEvent({ type: 'roll', amount: ROLL_COST, text: this.shop.join(',') })
     return { ok: true }
   }
@@ -1229,6 +1247,8 @@ export class Game {
     const l5 = tw.level >= 5
     const attacks: AttackType[] = def.merged ? [...def.attacks] : [def.attack]
     let dmg = def.damage * levelDamageMult(tw.level) * this.auraMult(tw) * this.avatarPassiveMult(tw, def) * this.itemDamageMult(def)
+    // редкость башни: лёгкий множитель ДПС (Латунная ×1 → Разломная ×1.36)
+    if (def.rarity) dmg *= RARITY_DPS[def.rarity]
     if (def.waveGrowth) dmg *= 1 + def.waveGrowth * (this.wave - 1)
 
     let burn = def.burn ? { ...def.burn } : undefined

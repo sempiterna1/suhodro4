@@ -7,7 +7,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, useAnimationControls } from 'framer-motion'
-import { AI_SIGNALS, ALL_DEFS, ALL_ITEMS, ARMOR_COLORS, ARMOR_NAMES, AVATARS, ITEM_REROLL_COST, ITEM_SLOTS, ITEM_SLOTS_TOTAL, TOWERS } from '@/game/config'
+import { AI_SIGNALS, ALL_DEFS, ALL_ITEMS, ARMOR_COLORS, ARMOR_NAMES, AVATARS, ITEM_REROLL_COST, ITEM_SLOTS, ITEM_SLOTS_TOTAL, RARITY_BY_ID, TOWERS } from '@/game/config'
 import { avatarPortrait, towerThumb } from '@/game/pixel'
 import type { AttackType, TowerDefinition, UiState } from '@/game/types'
 import type { MpRole, MpStatus } from './Panels'
@@ -536,16 +536,18 @@ export function ShopModal({ ui, onPick, onRoll, onClose }: {
             const attacks: AttackType[] = t.merged ? t.attacks : [t.attack]
             const desc = t.merged ? t.desc : t.role
             const effects = effectLines(t)
+            const rarity = t.rarity ? RARITY_BY_ID[t.rarity] : null
             return (
               <button
                 key={t.id}
                 type="button"
                 disabled={locked}
                 onClick={() => onPick(t.id)}
-                aria-label={`Купить: ${t.name}, ${DAMAGE_TYPE[attacks[0]].name.toLowerCase()}, цена ${t.price}${affordable ? '' : ', не хватает золота'}`}
-                className={`flex w-[220px] flex-col overflow-hidden rounded-xl text-left transition-transform hover:-translate-y-0.5 active:scale-[0.98] disabled:cursor-not-allowed ${
-                  t.merged ? 'border border-[#ffd70088] bg-[#242a3e]' : 'border border-[#3a4660] bg-[#1f2638]'
+                aria-label={`Купить: ${t.name}, ${rarity ? rarity.name + ' редкость, ' : ''}${DAMAGE_TYPE[attacks[0]].name.toLowerCase()}, цена ${t.price}${affordable ? '' : ', не хватает золота'}`}
+                className={`flex w-[220px] flex-col overflow-hidden rounded-xl border text-left transition-transform hover:-translate-y-0.5 active:scale-[0.98] disabled:cursor-not-allowed ${
+                  t.merged ? 'bg-[#242a3e]' : 'bg-[#1f2638]'
                 } ${locked ? 'opacity-45' : ''}`}
+                style={{ borderColor: rarity ? rarity.color + '66' : t.merged ? '#ffd70088' : '#3a4660' }}
               >
                 <div className="h-1 w-full" style={{ background: `linear-gradient(90deg, ${t.color}, ${t.color}33)` }} />
                 <div className="flex flex-1 flex-col gap-1.5 p-2">
@@ -566,6 +568,14 @@ export function ShopModal({ ui, onPick, onRoll, onClose }: {
                         </span>
                       </div>
                       <div className="mt-0.5 flex flex-wrap items-center gap-1">
+                        {rarity && (
+                          <span
+                            className="rounded-sm border px-1 py-px text-[9px] font-bold uppercase leading-none tracking-wide"
+                            style={{ color: rarity.color, borderColor: rarity.color + '88', background: rarity.color + '1f' }}
+                          >
+                            {rarity.name}
+                          </span>
+                        )}
                         {isEcon(t) ? (
                           <span className="rounded-sm border border-[#e8c17088] bg-[#e8c1701f] px-1 py-px text-[9px] font-bold uppercase leading-none tracking-wide text-[#e8c170]">
                             🪙 экономика
@@ -885,6 +895,13 @@ export function HandTray({
             style={{ width: 44, height: 52, boxSizing: 'border-box' }}
           >
             <span className="text-lg leading-none">{def.glyph}</span>
+            {!on && def.rarity && (
+              <span
+                title={`редкость: ${RARITY_BY_ID[def.rarity].name}`}
+                className="absolute bottom-0 left-0 h-0.5 w-full rounded-b-[10px]"
+                style={{ background: RARITY_BY_ID[def.rarity].color + 'cc' }}
+              />
+            )}
             <span className="absolute right-[3px] top-[3px] text-[8px] font-bold leading-none text-[#7fd0a0]">
               {i + 1}
             </span>

@@ -1,7 +1,7 @@
 // Башни, слияния и механики атаки: определения, способности 5 уровня, константы механик.
 // Лорные имена — docs/towers.md (10.11.2026). id и механика не меняются без обновления документа.
 
-import type { AttackType, MergeDef, TowerDef } from '../types'
+import type { AttackType, MergeDef, RarityId, TowerDef } from '../types'
 
 // ─── 15 боевых башен (GDD: «15 боевых башен») ───────────────────────────
 // Первые 6 — из прототипа; остальные 9 добавлены по таблице GDD.
@@ -240,7 +240,7 @@ export const TOWERS: TowerDef[] = [
     id: 'prism',
     name: 'Шахтный резонатор',
     attack: 'universal',
-    price: 180,
+    price: 240,
     damage: 14,
     interval: 0.9,
     range: 150,
@@ -255,9 +255,73 @@ export const TOWERS: TowerDef[] = [
 ]
 
 
+// ─── Редкости (задача 19): Латунная → Стальная → Кристальная → Минеральная → Разломная ──
+// Ниши + лёгкий множитель ДПС (~+8–12% за ступень): роль важнее тиража — «мусорных»
+// обычных башен нет, редкость оплачивает механику. weight — вес карточки в ролле,
+// fromWave — волна, с которой редкость начинает выпадать (гейтинг без pity).
+// P(карточки данной редкости) при полном ростере: 46/27/14/6/1.2%, экономические ≈ 5% каждая.
+
+export interface RarityDef {
+  id: RarityId
+  name: string
+  color: string
+  /** Множитель урона (применяется один раз, в engine.fireTower) */
+  dpsMult: number
+  /** Вес в взвешенном ролле арсенала */
+  weight: number
+  /** Номер волны, с которой редкость может выпасть */
+  fromWave: number
+}
+
+export const RARITIES: RarityDef[] = [
+  { id: 'brass', name: 'Латунная', color: '#c9a25e', dpsMult: 1, weight: 30, fromWave: 1 },
+  { id: 'steel', name: 'Стальная', color: '#aebdd0', dpsMult: 1.08, weight: 22, fromWave: 1 },
+  { id: 'crystal', name: 'Кристальная', color: '#7cd8e8', dpsMult: 1.17, weight: 15, fromWave: 1 },
+  { id: 'mineral', name: 'Минеральная', color: '#8fe07a', dpsMult: 1.26, weight: 10, fromWave: 8 },
+  { id: 'rift', name: 'Разломная', color: '#c07ce8', dpsMult: 1.36, weight: 4, fromWave: 15 },
+]
+
+export const RARITY_BY_ID: Record<RarityId, RarityDef> = Object.fromEntries(
+  RARITIES.map((r) => [r.id, r])
+) as Record<RarityId, RarityDef>
+
+/** Множители ДПС по редкости: Латунная 1 → Разломная ≈ ×1.36 */
+export const RARITY_DPS: Record<RarityId, number> = Object.fromEntries(
+  RARITIES.map((r) => [r.id, r.dpsMult])
+) as Record<RarityId, number>
+
+/** Вес карточки экономической постройки (стан, шахта) — вне системы редкостей */
+export const RARITY_ECON_WEIGHT = 8
+
+/** Маппинг редкостей по силе/цене башен: Латунные 40–90, Стальные 100–120,
+ * Кристальные 130–150, Минеральные 160–170, Разломная 240 */
+const RARITY_MAP: Record<string, RarityId> = {
+  sentry: 'brass',
+  archer: 'brass',
+  catapult: 'brass',
+  pyro: 'brass',
+  crossbow: 'brass',
+  frost: 'steel',
+  mech_guard: 'steel',
+  mauler: 'steel',
+  lightning: 'steel',
+  hunter: 'crystal',
+  mortar: 'crystal',
+  chrono: 'crystal',
+  golem: 'mineral',
+  ballista: 'mineral',
+  prism: 'rift',
+}
+
+for (const t of TOWERS) {
+  const r = RARITY_MAP[t.id]
+  if (!r) throw new Error(`У боевой башни ${t.id} не задана редкость в RARITY_MAP`)
+  t.rarity = r
+}
+
 // ─── Экономические постройки (этап 3: золото вместо атаки) ─────────────
-// Постоянно доступны в арсенале: не выпадают в ролле, карточка не выбывает
-// после покупки. Прокачка — общей моделью копии, доход растёт с уровнем.
+// Роллятся вместе с боевыми на общих основаниях (вес RARITY_ECON_WEIGHT),
+// редкости не имеют. Прокачка — общей моделью копии, доход растёт с уровнем.
 export const ECONOMY_TOWERS: TowerDef[] = [
   {
     id: 'sluice',
@@ -521,10 +585,15 @@ export const MERGED_TOWERS: MergeDef[] = [
 // Цена карточки слитой башни в магазине = сумма цен родителей: копии из магазина
 // нужны, чтобы качать слитую башню копией из «руки» (решение о прокачке 03.11.2026).
 // Дешёвая «цена слияния» остаётся в invested двух построенных башен — это не затрагивается.
+// Редкость — наследуется старшая из родителей (решение задачи 19).
 for (const m of MERGED_TOWERS) {
   const pa = TOWERS.find((t) => t.id === m.parents[0])
   const pb = TOWERS.find((t) => t.id === m.parents[1])
   if (pa && pb) m.price = pa.price + pb.price
+  const ra = pa?.rarity ? RARITIES.findIndex((r) => r.id === pa.rarity) : -1
+  const rb = pb?.rarity ? RARITIES.findIndex((r) => r.id === pb.rarity) : -1
+  const idx = Math.max(ra, rb)
+  if (idx >= 0) m.rarity = RARITIES[idx].id
 }
 
 // Параметры механик (общие для всех башен)

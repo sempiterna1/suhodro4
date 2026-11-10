@@ -13,6 +13,9 @@ export interface Vec {
 
 export type ProjectileKind = 'arrow' | 'bolt' | 'rock' | 'orb' | 'hammer'
 
+/** Редкости башен (лор «Последнего горизонта»): Латунная → Стальная → Кристальная → Минеральная → Разломная */
+export type RarityId = 'brass' | 'steel' | 'crystal' | 'mineral' | 'rift'
+
 /**
  * Механики атаки, общие для боевых и слитых башен (все поля необязательны).
  * Способности 5 уровня, которые не сводятся к числам, — в engine.ts по id башни.
@@ -56,6 +59,8 @@ export interface TowerDef extends AttackFx {
   glyph: string
   role: string
   l5: string // способность на 5 уровне
+  /** Редкость карточки в арсенале (у экономических построек не задана — вне системы редкостей) */
+  rarity?: RarityId
   merged?: false
 }
 
@@ -75,6 +80,8 @@ export interface MergeDef extends AttackFx {
   glyph: string
   desc: string
   l5: string
+  /** Слитые наследуют старшую редкость родителей — проставляется автоматически в data/towers.ts */
+  rarity?: RarityId
   merged: true
   income?: never // слитые башни не бывают экономическими
   essence?: never

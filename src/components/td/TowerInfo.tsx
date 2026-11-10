@@ -5,7 +5,7 @@
 
 import { motion } from 'framer-motion'
 import { Asterisk, Coins, Crosshair, Hammer, Sparkles } from 'lucide-react'
-import { ALL_DEFS, ARMOR_COLORS, ARMOR_NAMES, DAMAGE_MATRIX, LEVEL_MULT } from '@/game/config'
+import { ALL_DEFS, ARMOR_COLORS, ARMOR_NAMES, DAMAGE_MATRIX, LEVEL_MULT, RARITY_BY_ID } from '@/game/config'
 import type { ArmorType, AttackType, TowerDefinition } from '@/game/types'
 
 export const ATTACK_COLORS: Record<AttackType, string> = {
@@ -141,6 +141,7 @@ export function TowerInfoCard({
   const desc = def.merged ? def.desc : def.role
   const parents = def.merged ? def.parents.map((p) => ALL_DEFS[p]?.name ?? p) : null
   const econ = isEcon(def)
+  const rarity = def.rarity ? RARITY_BY_ID[def.rarity] : null
   const incomeNow = def.income ? def.income * level * (level >= 5 ? 2 : 1) : 0
   const essenceNow = def.essence ? def.essence * level * (level >= 5 ? 2 : 1) : 0
   return (
@@ -168,6 +169,14 @@ export function TowerInfoCard({
               </span>
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-1">
+              {rarity && (
+                <span
+                  className="inline-flex items-center gap-1 rounded-sm border px-1 py-px text-[9px] font-bold uppercase leading-none tracking-wide"
+                  style={{ color: rarity.color, borderColor: rarity.color + '88', background: rarity.color + '1f' }}
+                >
+                  {rarity.name}
+                </span>
+              )}
               {econ ? (
                 <span className="inline-flex items-center gap-1 rounded-sm border border-[#e8c17088] bg-[#e8c1701f] px-1 py-px text-[9px] font-bold uppercase leading-none tracking-wide text-[#e8c170]">
                   🪙 экономика

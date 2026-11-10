@@ -4,7 +4,7 @@
 
 import { Game } from '../src/game/engine'
 import { CLASSIC_MAP } from '../src/game/map'
-import { ALL_DEFS, MERGED_TOWERS, TOWERS } from '../src/game/config'
+import { ALL_DEFS, ECONOMY_IDS, MERGED_TOWERS, RARITIES, RARITY_DPS, TOWERS } from '../src/game/config'
 import type { Creep } from '../src/game/types'
 
 /** Тестовая застройка новой механикой: купить в арсенал → взять из руки → поставить */
@@ -60,6 +60,54 @@ for (const m of MERGED_TOWERS) {
 }
 const pairs = new Set(MERGED_TOWERS.map((m) => [...m.parents].sort().join('+')))
 check('пары родителей не повторяются', pairs.size === MERGED_TOWERS.length)
+
+// ─── редкости (задача 19): данные ───
+{
+  check('редкостей — 5, порядок от дешёвых к дорогим', RARITIES.length === 5 && RARITIES.every((r, i) => i === 0 || RARITIES[i - 1].dpsMult < r.dpsMult))
+  check('у каждой боевой башни есть редкость', TOWERS.every((t) => !!t.rarity), TOWERS.filter((t) => !t.rarity).join(','))
+  check('экономические постройки вне редкостей', ECONOMY_IDS.every((id) => !ALL_DEFS[id].rarity))
+  check('Разломная — Призма вечности за 240', ALL_DEFS.prism.rarity === 'rift' && ALL_DEFS.prism.price === 240, String(ALL_DEFS.prism.price))
+  check('Минеральные — Латунный голем и Гарпунница-стена при 160/170', ['golem', 'ballista'].every((id) => ALL_DEFS[id].rarity === 'mineral'))
+  // слитые наследуют старшую редкость родителей: проверяем по индексу в RARITIES
+  const idx = (id?: string) => RARITIES.findIndex((r) => r.id === id)
+  let inheritOk = true
+  for (const m of MERGED_TOWERS) {
+    const want = Math.max(idx(ALL_DEFS[m.parents[0]].rarity), idx(ALL_DEFS[m.parents[1]].rarity))
+    if (idx(m.rarity) !== want) inheritOk = false
+  }
+  check('слитые наследуют старшую редкость родителей', inheritOk)
+}
+
+// ─── редкости (задача 19): множитель ДПС в бою ───
+// Средний урон Призмы вечности за выстрел (перехват applyHit: меряем заявленный урон выстрела,
+// он не зависит от HP крипов). Волна 1: универсальный урон ×0.8 брони — оба прогона по беде равны,
+// разница объявленного урона = множитель редкости (Свобула ×1 → Разломная ×1.36).
+{
+  const measureAvg = (): number => {
+    const g = setup('prism', 1)
+    let sum = 0
+    let n = 0
+    const gf = g as unknown as { applyHit?: (...a: unknown[]) => void }
+    const orig = gf.applyHit!.bind(g) as (c: unknown, h: unknown) => void
+    gf.applyHit = (c: unknown, h: unknown) => {
+      const hh = h as { sourceDefId?: string; damage: number }
+      if (hh.sourceDefId === 'prism') { sum += hh.damage; n++ }
+      orig(c, h)
+    }
+    for (let t = 0; t < 40; t += 0.05) g.update(0.05)
+    if (n === 0) throw new Error('Призма не выстрелила за 40 с')
+    return sum / n
+  }
+  const prism = ALL_DEFS.prism as typeof ALL_DEFS.prism & { rarity?: typeof RARITIES[number]['id'] }
+  const saved = prism.rarity
+  prism.rarity = undefined // эмулируем Латунную (множитель ×1)
+  const base = measureAvg()
+  prism.rarity = 'rift'
+  const rift = measureAvg()
+  prism.rarity = saved
+  check('Разломная бьёт в 1.36 раза сильнее той же башни без редкости', Math.abs(rift / base - RARITY_DPS.rift) < 0.01, `${base} → ${rift}`)
+  prism.rarity = saved
+}
 
 // ─── каждая башня и слитая башня наносит урон (1 и 5 ур.) ───
 // Проверяем урон, а не убийства: одиночная слабая башня 1 ур. (Морозный конденсатор) может не добить

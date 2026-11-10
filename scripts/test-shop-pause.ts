@@ -3,9 +3,10 @@
 // ролл за 10 золота меняет пул, карточка выбывает после покупки, строить можно только из арсенала.
 // Пауза: время стоит, крипы не двигаются; строить и роллить на паузе можно; кооп-команды работают.
 
-import { Game } from '../src/game/engine'
+import { Game, rollPool } from '../src/game/engine'
 import { CLASSIC_MAP } from '../src/game/map'
-import { ROLL_COST, SHOP_SIZE, TOWERS, MERGED_TOWERS, ECONOMY_IDS, ECONOMY_TOWERS } from '../src/game/config'
+import { mulberry32 } from '../src/game/rng'
+import { ROLL_COST, SHOP_SIZE, TOWERS, MERGED_TOWERS, ECONOMY_IDS, ECONOMY_TOWERS, RARITIES, RARITY_BY_ID, RARITY_DPS } from '../src/game/config'
 
 /** Тестовая застройка новой механикой: купить в арсенал → взять из руки → поставить */
 const buildTower = (g: Game, x: number, y: number, defId: string) => {
@@ -79,6 +80,66 @@ function check(name: string, ok: boolean, info = '') {
   u.unlockAllTowers()
   u.beginPreview()
   check('unlockAllTowers переживает старт игры', u.shop.length === TOWERS.length + MERGED_TOWERS.length + ECONOMY_IDS.length)
+}
+
+// ─── Редкости в ролле (задача 19) ───
+{
+  // 5 редкостей, монотонность и данных достаточно
+  check('редкостей — 5, все уникальны', RARITIES.length === 5 && new Set(RARITIES.map((r) => r.id)).size === 5)
+  check('множитель ДПС растёт со ступенью', RARITIES.every((r, i) => i === 0 || RARITIES[i - 1].dpsMult < r.dpsMult))
+  check('вес и волна открытия заданы', RARITIES.every((r) => r.weight > 0 && r.fromWave >= 1))
+
+  // детерминированный взвешенный ролл: размер и уникальность
+  const p = rollPool(mulberry32(12345), 15)
+  check('rollPool даёт 5 разных башен', p.length === SHOP_SIZE && new Set(p).size === SHOP_SIZE, p.join(','))
+
+  // гейтинг: до 8-й волны не выпадают Минеральная и Разломная, до 15-й — Разломная
+  const lateIds = RARITIES.filter((r) => r.fromWave > 1)
+    .flatMap((r) => TOWERS.filter((t) => t.rarity === r.id).map((t) => t.id))
+  const riftIds = TOWERS.filter((t) => t.rarity === 'rift').map((t) => t.id) // prism
+  let gatedOk = true
+  for (let s = 1; s <= 200; s++) {
+    const w1 = rollPool(mulberry32(s * 777), 1)
+    const w8 = rollPool(mulberry32(s * 777), 8)
+    if (w1.some((id) => lateIds.includes(id))) gatedOk = false
+    if (w8.some((id) => riftIds.includes(id))) gatedOk = false
+  }
+  check('до 8-й волны Минеральная не выпадает, до 15-й — Разломная', gatedOk, lateIds.join(','))
+  const prismId = riftIds[0]
+  let prismAppeared = false
+  for (let s = 1; s <= 200; s++) {
+    if (rollPool(mulberry32(s * 777), 15).includes(prismId)) prismAppeared = true
+  }
+  check('с 15-й волны Разломная выпадает (статистика 200 сидов)', prismAppeared)
+
+  // доли редкостей в длинном прогоне сходятся к весам (без pity, только гейтинг)
+  // веса полного ростера: 150/88/45/20/4/16 → карточка: 46/27/14/6/1.2%, экономическая ≈ 5%
+  const cards: string[] = []
+  for (let s = 1; s <= 3000; s++) cards.push(...rollPool(mulberry32(s * 777 + 1), 15))
+  const shareOf = (ids: string[]) => cards.filter((id) => ids.includes(id)).length / cards.length
+  const expect: [string, number, number, number][] = [
+    ['Латунная', shareOf(TOWERS.filter((t) => t.rarity === 'brass').map((t) => t.id)), 0.4, 0.52],
+    ['Стальная', shareOf(TOWERS.filter((t) => t.rarity === 'steel').map((t) => t.id)), 0.23, 0.31],
+    ['Кристальная', shareOf(TOWERS.filter((t) => t.rarity === 'crystal').map((t) => t.id)), 0.11, 0.17],
+    ['Минеральная', shareOf(TOWERS.filter((t) => t.rarity === 'mineral').map((t) => t.id)), 0.045, 0.082],
+    ['Разломная', shareOf(TOWERS.filter((t) => t.rarity === 'rift').map((t) => t.id)), 0.006, 0.024],
+  ]
+  for (const [name, share, min, max] of expect) {
+    check(`доля карточек редкости ${name} сходится к весу`, share > min && share < max, `${Math.round(share * 1000) / 10}%`)
+  }
+
+  // живая игра: стартовый пул (волна 1) без поздних редкостей, ролл от this.wave
+  const hg = new Game()
+  hg.useMap(CLASSIC_MAP)
+  hg.beginPreview()
+  check('стартовый пул игры без Минеральной и Разломной', hg.shop.every((id) => !lateIds.includes(id)))
+  hg.wave = 15
+  hg.roll()
+  check('ролл на 15-й волне использует гейтинг волны профиля', hg.shop.length === SHOP_SIZE && new Set(hg.shop).size === SHOP_SIZE)
+
+  // множитель ДПС exported и растёт: 1 → ~1.36
+  check('множители по редкости 1 → 1.36', RARITY_DPS.brass === 1 && RARITY_DPS.rift === 1.36)
+  check('бейджи редкостей доступны по id', RARITY_BY_ID.brass.name === 'Латунная' && RARITY_BY_ID.rift.name === 'Разломная')
 }
 
 // ─── Пауза ───
