@@ -24,7 +24,7 @@ import {
   type MpStatus,
 } from './Panels'
 import {
-  BuildConfirmButton, CenterNotices, DMG_COLORS, HandTray, HeroButtons, LavkaButton, LavkaModal, PricePlaque, ShopButton, ShopModal, StartButton, TopBar, WaveBanner, type MenuActions,
+  BuildConfirmButton, CenterNotices, DMG_COLORS, HandTray, HeroButtons, LavkaButton, LavkaModal, PricePlaque, ShopButton, ShopModal, StartButton, TopBar, TowerDamageBoard, WaveBanner, type MenuActions,
 } from './Hud'
 import { Sfx } from '@/game/audio'
 import { towerThumb } from '@/game/pixel'
@@ -1564,7 +1564,8 @@ export default function GameShell() {
               ) : (
                 <>
                   {!contextPanel && (
-                    <div className="pointer-events-none absolute bottom-3 z-10" style={{ left: 'max(52px, env(safe-area-inset-left))' }}>
+                    <div className="pointer-events-none absolute bottom-3 z-10 flex flex-col items-start gap-2" style={{ left: 'max(52px, env(safe-area-inset-left))' }}>
+                      <TowerDamageBoard ui={ui} />
                       {heroButtons}
                     </div>
                   )}
@@ -1634,6 +1635,17 @@ export default function GameShell() {
                 </motion.div>
               )}
             </AnimatePresence>
+            {/* Табличка урона за карту — слева, зеркально панели башни справа */}
+            {hudOn && (
+              <div
+                className="absolute left-2 z-20"
+                style={{ top: 56 * topScale, maxHeight: `calc(100% - ${56 * topScale + 8}px)` }}
+              >
+                <div style={{ zoom: uiScale }}>
+                  <TowerDamageBoard ui={ui} />
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1643,16 +1655,18 @@ export default function GameShell() {
         {hudOn && desktop && (
           <motion.div
             key="bottom"
-            className="pointer-events-auto absolute inset-x-0 bottom-0 z-10 flex items-center justify-center gap-5 px-3 pb-2 pt-3"
+            className="pointer-events-auto absolute inset-x-0 bottom-0 z-10 flex items-center justify-between gap-5 px-3 pb-2 pt-3"
             style={{ zoom: uiScale }}
           >
             {heroButtons}
             <HandTray ui={ui} armedHand={armedHand} onArm={armHand} size="lg" />
-            <div className="flex gap-2">
-              <ShopButton onClick={() => setShopOpen(true)} disabled={!canBuild} />
-              <LavkaButton onClick={() => setLavkaOpen(true)} />
+            <div className="flex items-center gap-3">
+              <div className="flex gap-2">
+                <ShopButton onClick={() => setShopOpen(true)} disabled={!canBuild} />
+                <LavkaButton onClick={() => setLavkaOpen(true)} />
+              </div>
+              <div className="flex w-[150px] justify-start">{startButton}</div>
             </div>
-            <div className="flex w-[150px] justify-start">{startButton}</div>
           </motion.div>
         )}
       </AnimatePresence>

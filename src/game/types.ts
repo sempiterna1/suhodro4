@@ -220,6 +220,8 @@ export interface GameStats {
   bossKills: number
   /** Фактически нанесённый урон (без overkill) — для DPS в симуляторе и статистике */
   damageDealt: number
+  /** Урон по источникам (id башни/аватара) за карту — для таблички HUD */
+  damageByTower: Record<string, number>
 }
 
 /** Тип события в журнале партии (этап 1: разбор баланса и реплеи) */

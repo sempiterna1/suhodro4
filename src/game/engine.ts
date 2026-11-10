@@ -231,7 +231,7 @@ export class Game {
     attackCd: 0,
   }
 
-  stats = { kills: 0, leaked: 0, goldEarned: 0, merges: 0, bossKills: 0, damageDealt: 0 }
+  stats = { kills: 0, leaked: 0, goldEarned: 0, merges: 0, bossKills: 0, damageDealt: 0, damageByTower: {} }
 
   /**
    * Журнал событий партии (build/upgrade/merge/sell/leak/bossPhase/волны).
@@ -282,7 +282,7 @@ export class Game {
     this.effects = []
     this.floats = []
     this.avatar = { x: 90, y: 260, target: null, level: 1, xp: 0, cooldown: 0, attackCd: 0 }
-    this.stats = { kills: 0, leaked: 0, goldEarned: 0, merges: 0, bossKills: 0, damageDealt: 0 }
+    this.stats = { kills: 0, leaked: 0, goldEarned: 0, merges: 0, bossKills: 0, damageDealt: 0, damageByTower: {} }
     this.events = []
     this.spawnQueue = []
     this.waveSpawned = 0
@@ -1095,7 +1095,7 @@ export class Game {
       if (c.isBoss) this.updateBossPhase(c)
       // горение
       if (this.time < c.burnUntil && c.burnDps > 0) {
-        this.damageCreep(c, c.burnDps * dt, 'burn')
+        this.damageCreep(c, c.burnDps * dt, 'burn', c.burnSource)
         if (c.hp <= 0) continue
       }
       if (this.time >= c.stunnedUntil) {
@@ -1122,7 +1122,7 @@ export class Game {
     this.creeps = next
   }
 
-  private damageCreep(c: Creep, amount: number, attacks: AttackType[] | 'burn') {
+  private damageCreep(c: Creep, amount: number, attacks: AttackType[] | 'burn', source?: string) {
     if (c.hp <= 0) return
     let dmg = amount
     if (attacks !== 'burn') {
@@ -1135,7 +1135,11 @@ export class Game {
     if (this.time < c.vulnUntil) dmg *= 1 + c.vulnBonus
     if (c.isBoss) dmg *= this.itemBossMult() // Кольцо палача
     const dealt = Math.min(dmg, Math.max(0, c.hp))
-    if (dealt > 0) this.stats.damageDealt += dealt
+    if (dealt > 0) {
+      this.stats.damageDealt += dealt
+      // копилка урона по источнику (башня/аватар) — для таблички HUD
+      if (source) this.stats.damageByTower[source] = (this.stats.damageByTower[source] ?? 0) + dealt
+    }
     c.hp -= dmg
     if (c.hp <= 0) this.killCreep(c)
   }
@@ -1324,7 +1328,7 @@ export class Game {
       for (const c of targets) {
         const p = pointAtLength(c.dist, c.pathIdx)
         this.applyHit(c, { ...base, damage: dmg * mult })
-        if (chain) this.chainFrom(c, chain, dmg, attacks, spot, def.color)
+        if (chain) this.chainFrom(c, chain, dmg, attacks, spot, def.color, def.id)
         else this.effects.push({ x: spot.x, y: spot.y, r: 0, born: this.time, dur: 0.15, color: def.color, kind: 'beam', points: [spot, p] })
       }
       return
@@ -1402,7 +1406,7 @@ export class Game {
     }
   ) {
     const amount = h.heavyBonus && c.armor === 'heavy' ? h.damage * h.heavyBonus : h.damage
-    this.damageCreep(c, amount, h.attacks)
+    this.damageCreep(c, amount, h.attacks, h.sourceDefId)
     if (c.hp <= 0) return
     if (h.burn) this.applyBurn(c, h.burn, h.sourceDefId)
     if (h.slow) this.applySlow(c, h.slow.pct, h.slow.dur)
@@ -1427,7 +1431,7 @@ export class Game {
   }
 
   /** Цепная молния: от крипа `from` прыгает к ближайшим ещё не задетым */
-  private chainFrom(from: Creep, jumps: number, dmg: number, attacks: AttackType[], start: Vec, color: string) {
+  private chainFrom(from: Creep, jumps: number, dmg: number, attacks: AttackType[], start: Vec, color: string, source?: string) {
     const hit = new Set([from.uid])
     const points: Vec[] = [start, pointAtLength(from.dist, from.pathIdx)]
     let cur = points[1]
@@ -1449,7 +1453,7 @@ export class Game {
       hit.add(next.uid)
       cur = pointAtLength(next.dist, next.pathIdx)
       points.push(cur)
-      this.damageCreep(next, d, attacks)
+      this.damageCreep(next, d, attacks, source)
     }
     this.effects.push({ x: start.x, y: start.y, r: 0, born: this.time, dur: 0.25, color, kind: 'chain', points })
   }
@@ -1495,19 +1499,19 @@ export class Game {
               .sort((a, b) => a.d - b.d)
               .slice(0, pr.chain)
             for (const o of near) {
-              this.damageCreep(o.c, pr.damage * 0.5, pr.attacks)
+              this.damageCreep(o.c, pr.damage * 0.5, pr.attacks, pr.sourceDefId)
               this.effects.push({ x: pr.x, y: pr.y, r: 0, born: this.time, dur: 0.25, color: '#c9b8ff', kind: 'chain', points: [{ x: pr.x, y: pr.y }, o.p] })
             }
           }
         } else if (target) {
           this.applyHit(target, hit)
-          if (pr.chain) this.chainFrom(target, pr.chain, pr.damage, pr.attacks, { x: pr.x, y: pr.y }, '#c9b8ff')
+          if (pr.chain) this.chainFrom(target, pr.chain, pr.damage, pr.attacks, { x: pr.x, y: pr.y }, '#c9b8ff', pr.sourceDefId)
           // способность Шлакомёта 5 ур.: осколки после удара
           if (pr.kind === 'rock' && pr.sourceDefId === 'catapult' && pr.sourceLevel >= 5) {
             for (const c of [...this.creeps]) {
               const p = pointAtLength(c.dist, c.pathIdx)
               if (c !== target && Math.hypot(p.x - pr.x, p.y - pr.y) <= 80) {
-                this.damageCreep(c, pr.damage * 0.4, ['crush'])
+                this.damageCreep(c, pr.damage * 0.4, ['crush'], 'catapult')
               }
             }
             this.effects.push({ x: pr.x, y: pr.y, r: 80, born: this.time, dur: 0.3, color: '#c2874f', kind: 'blast' })
@@ -1658,7 +1662,7 @@ export class Game {
       hand: [...this.hand],
       rollCost: ROLL_COST,
       time: this.time,
-      stats: { ...this.stats },
+      stats: { ...this.stats, damageByTower: { ...this.stats.damageByTower } },
       avatar: {
         level: lvl,
         xp: this.avatar.xp,
@@ -1723,7 +1727,7 @@ export class Game {
       waveSpawned: this.waveSpawned,
       waveTotal: this.waveTotal,
       coop: this.coop,
-      stats: { ...this.stats },
+      stats: { ...this.stats, damageByTower: { ...this.stats.damageByTower } },
       avatarId: this.avatarId,
       avatar: {
         x: this.avatar.x, y: this.avatar.y, target: this.avatar.target,

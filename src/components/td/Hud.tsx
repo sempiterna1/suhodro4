@@ -12,7 +12,7 @@ import { avatarPortrait, towerThumb } from '@/game/pixel'
 import type { AttackType, TowerDefinition, UiState } from '@/game/types'
 import type { MpRole, MpStatus } from './Panels'
 import { DAMAGE_TYPE, DamageBadge, EffectiveVs, effectLines, isEcon } from './TowerInfo'
-import { Store, Music, Volume2, Wind, Gem, RefreshCw } from 'lucide-react'
+import { Store, Music, Volume2, Wind, Gem, RefreshCw, ChevronUp } from 'lucide-react'
 import { Slider } from '@/components/ui/slider'
 import {
   BoltIcon, BuildingIcon, CheckIcon, CloseIcon, CoinIcon, DiceIcon, ExitFullscreenIcon, FullscreenIcon, HelpIcon, InfinityIcon,
@@ -393,14 +393,17 @@ export function HeroButtons({ ui, role, onAbility }: { ui: UiState; role: MpRole
   const cdFrac = Math.min(1, cd / AVATAR.abilityCd)
   const caption = 'text-[10px] font-bold uppercase leading-[14px] tracking-[0.04em] text-[#c3cbe0] [text-shadow:0_1px_2px_#000]'
   return (
-    <div className="pointer-events-auto flex gap-3">
-      <div className="flex w-16 flex-col items-center gap-1" title={`${AVATAR.name}: ${AVATAR.role}. Пассивно: ${AVATAR.passive}`}>
+    <div className="pointer-events-auto flex items-center gap-2">
+      <div className="flex w-[72px] flex-col items-center gap-1" title={`${AVATAR.name}: ${AVATAR.role}. Пассивно: ${AVATAR.passive}`}>
         <div
-          className="h-14 w-14 overflow-hidden rounded-full border-2 border-[#59c27a] bg-[rgba(14,19,31,0.9)]"
+          className="relative h-16 w-16 overflow-hidden rounded-full border-2 border-[#59c27a] bg-[rgba(14,19,31,0.9)]"
           role="img"
           aria-label={AVATAR.name}
         >
-              <img src={avatarPortrait(AVATAR.id, 3)} alt="" className="h-full w-full object-cover object-top" style={{ imageRendering: 'pixelated' }} draggable={false} />
+          <img src={avatarPortrait(AVATAR.id, 3)} alt="" className="h-full w-full object-cover object-top" style={{ imageRendering: 'pixelated' }} draggable={false} />
+          <span className="absolute bottom-0 right-0 rounded-tl-md bg-[#0b0e14cc] px-1 text-[9px] font-bold leading-[13px] text-[#f2c94c]">
+            {ui.avatar.level} ур.
+          </span>
         </div>
         <span className={caption}>{AVATAR.name}</span>
       </div>
@@ -860,6 +863,14 @@ function ShopStat({ label, value, color = '#dde6f0' }: { label: string; value: s
 }
 
 // ─── Рука: купленные башни, ждущие установки или прокачки ──────────────────
+/** Короткое число: 12 / 1,2к / 3,4М */
+export const fmtNum = (n: number): string => {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace('.', ',') + 'М'
+  if (n >= 10_000) return Math.round(n / 1000) + 'к'
+  if (n >= 1_000) return (n / 1000).toFixed(1).replace('.', ',') + 'к'
+  return String(Math.round(n))
+}
+
 export function HandTray({
   ui, armedHand, onArm, size = 'sm',
 }: {
@@ -871,6 +882,9 @@ export function HandTray({
 }) {
   const defOf = (idx: number) => ALL_DEFS[ui.hand[idx]]
   if (!ui.hand.length) return null
+  const cardW = size === 'lg' ? 78 : 66
+  const cardH = size === 'lg' ? 94 : 82
+  const imgH = size === 'lg' ? 46 : 40
   return (
     <div
       className={`${PILL} flex items-center gap-1.5 rounded-[18px] p-1.5`}
@@ -881,28 +895,60 @@ export function HandTray({
         const def = defOf(i)
         if (!def) return null
         const on = armedHand === i
+        const econ = isEcon(def)
+        const rarity = def.rarity ? RARITY_BY_ID[def.rarity] : null
+        // главная характеристика копии: у экономических — доход за волну, у боевых — ДПС
+        const stat = econ
+          ? `${fmtNum((def.income ?? 0))}/волна`
+          : `${fmtNum(def.damage / def.interval)} ДПС`
+        const label = econ ? 'доход' : 'урон'
         return (
           <button
             key={`${i}-${id}`}
             type="button"
             aria-pressed={on}
-            aria-label={`Взять в стол: ${def.name} (копия ${i + 1} из ${ui.hand.length})`}
+            aria-label={`Взять в стол: ${def.name}, ${rarity ? rarity.name + ' редкость, ' : ''}${label} ${stat} (копия ${i + 1} из ${ui.hand.length})`}
             title={on ? 'Снята со стола' : `${def.name} — копия из руки: тап по клетке или по такой же башне`}
             onClick={() => onArm(i)}
-            className={`relative flex shrink-0 grow-0 flex-col items-center justify-center rounded-xl pt-1 ${
-              on ? 'border-2 border-[#7fd0a0] bg-[#1f2d28]' : 'border border-[#3a4660] bg-[#1f2638]'
-            }`}
-            style={{ width: 44, height: 52, boxSizing: 'border-box' }}
+            className={`relative flex shrink-0 grow-0 flex-col items-center overflow-hidden rounded-xl pb-0.5 ${on ? 'border-2 border-[#7fd0a0] bg-[#1f2d28]' : 'border bg-[#1f2638]'}`}
+            style={{
+              width: cardW,
+              height: cardH,
+              boxSizing: 'border-box',
+              borderColor: rarity ? rarity.color + (on ? 'ff' : '66') : on ? undefined : '#3a4660',
+            }}
           >
-            <span className="text-lg leading-none">{def.glyph}</span>
-            {!on && def.rarity && (
+            {/* полная картинка башни — тот же спрайт, что на поле (часть корпуса может ещё грузиться) */}
+            <span
+              className="flex w-full items-end justify-center overflow-hidden"
+              style={{ height: imgH }}
+            >
+              {typeof document === 'undefined' ? (
+                <span className="text-lg leading-none">{def.glyph}</span>
+              ) : (
+                <img
+                  src={towerThumb(def)}
+                  alt=""
+                  className="max-h-full w-auto"
+                  style={{ imageRendering: 'pixelated' }}
+                  draggable={false}
+                />
+              )}
+            </span>
+            <span className="mt-1 w-full truncate px-1 text-center text-[8.5px] font-semibold leading-[10px] text-[#dde6f0]" title={def.name}>
+              {def.name}
+            </span>
+            <span className="mt-0.5 w-full px-1 text-center font-mono text-[9px] font-bold leading-[11px]" style={{ color: econ ? '#7fd0a0' : '#f2c94c' }}>
+              {stat}
+            </span>
+            {rarity && (
               <span
-                title={`редкость: ${RARITY_BY_ID[def.rarity].name}`}
-                className="absolute bottom-0 left-0 h-0.5 w-full rounded-b-[10px]"
-                style={{ background: RARITY_BY_ID[def.rarity].color + 'cc' }}
+                title={`редкость: ${rarity.name}`}
+                className="absolute bottom-0 left-0 h-[3px] w-full rounded-b-[10px]"
+                style={{ background: rarity.color + 'cc' }}
               />
             )}
-            <span className="absolute right-[3px] top-[3px] text-[8px] font-bold leading-none text-[#7fd0a0]">
+            <span className="absolute right-[3px] top-[3px] rounded-full bg-[#0b0e14aa] px-1 text-[8px] font-bold leading-[12px] text-[#7fd0a0]">
               {i + 1}
             </span>
           </button>
@@ -913,6 +959,97 @@ export function HandTray({
           рука
         </span>
       )}
+    </div>
+  )
+}
+
+// ─── Табличка урона: кто сколько урона нанёс за карту (башни + герой) ─────
+export function TowerDamageBoard({ ui }: { ui: UiState }) {
+  const [open, setOpen] = useState(true)
+  const rows = Object.entries(ui.stats.damageByTower ?? {})
+    .filter(([, v]) => v >= 1)
+    .sort((a, b) => b[1] - a[1])
+  if (!rows.length) return null
+  const total = ui.stats.damageDealt
+  const max = rows[0][1]
+  const heroDef = AVATARS[ui.avatar.id]
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-label={`Развернуть табличку урона за карту: всего ${fmtNum(total)}`}
+        title={`Урон за карту: ${Math.round(total)} · нажми, чтобы разложить по башням`}
+        className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-[#3a4660] bg-[rgba(14,19,31,0.92)] px-3 py-1.5 active:scale-95"
+      >
+        <span className="text-[10px] font-bold uppercase tracking-wider text-[#5b6f8c]">Урон</span>
+        <span className="font-mono text-[11px] font-bold text-[#f2c94c]">{fmtNum(total)}</span>
+      </button>
+    )
+  }
+  return (
+    <div
+      role="group"
+      aria-label={`Табличка урона за карту: всего ${fmtNum(total)} за ${rows.length} источника`}
+      className="pointer-events-auto w-[224px] rounded-xl border border-[#3a4660] bg-[rgba(14,19,31,0.92)] p-2 shadow-[0_4px_16px_rgba(0,0,0,0.55)]"
+    >
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-[#5b6f8c]">
+          Урон за карту
+        </span>
+        <span className="font-mono text-[11px] font-bold text-[#f2c94c]">{fmtNum(total)}</span>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          aria-label="Свернуть табличку урона"
+          title="Свернуть"
+          className="rounded p-0.5 text-[#5b6f8c] active:scale-90"
+        >
+          <ChevronUp className="h-3.5 w-3.5" strokeWidth={2.5} />
+        </button>
+      </div>
+      <div className="flex max-h-[min(44vh,300px)] flex-col gap-1 overflow-y-auto pr-0.5">
+        {rows.map(([id, v]) => {
+          const isAvatar = id === 'avatar'
+          const def = (ALL_DEFS as Record<string, TowerDefinition | undefined>)[id]
+          const name = isAvatar ? heroDef.name : def?.name ?? id
+          const barColor = def?.color ?? '#a0aec0'
+          const thumb = isAvatar
+            ? avatarPortrait(heroDef.id, 2)
+            : def && typeof document !== 'undefined'
+              ? towerThumb(def)
+              : ''
+          return (
+            <div
+              key={id}
+              className="flex items-center gap-1.5"
+              title={`${name}: ${Math.round(v)} урона (${Math.round((v / total) * 100)}%)`}
+            >
+              {thumb && (
+                <img
+                  src={thumb}
+                  alt=""
+                  className={`h-4 w-4 shrink-0 ${isAvatar ? 'rounded-full object-cover' : 'object-contain'}`}
+                  style={{ imageRendering: 'pixelated' }}
+                  draggable={false}
+                />
+              )}
+              <span className="w-[84px] shrink-0 truncate text-[10px] font-semibold leading-tight text-[#dde6f0]">
+                {name}
+              </span>
+              <span className="relative h-1.5 min-w-4 flex-1 overflow-hidden rounded-full bg-[#141b27]">
+                <span
+                  className="absolute inset-y-0 left-0 rounded-full"
+                  style={{ width: `${Math.max(5, (v / max) * 100)}%`, background: barColor }}
+                />
+              </span>
+              <span className="w-10 shrink-0 text-right font-mono text-[10px] leading-tight text-[#c3cbe0]">
+                {fmtNum(v)}
+              </span>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
