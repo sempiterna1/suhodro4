@@ -17,6 +17,9 @@ export interface Snap {
   gold: number
   /** Эссенция (этап 3): вторая валюта миссии, добывается шахтами */
   essence: number
+  /** экипированные предметы и витрина лавки (состояние гостя = состояние хоста) */
+  items?: Array<{ id: string; rare: boolean }>
+  itemShop?: Array<{ id: string; rare: boolean }>
   buildingHp: number
   buildingMaxHp: number
   difficulty: DifficultyId
@@ -67,3 +70,6 @@ export type GuestCmd =
   | { t: 'setPaused'; paused: boolean }
   | { t: 'setInfiniteGold'; on: boolean }
   | { t: 'roll' }
+  | { t: 'itemBuy'; idx: number }
+  | { t: 'itemSell'; idx: number }
+  | { t: 'itemRoll' }

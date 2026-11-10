@@ -30,6 +30,7 @@ import {
   waveBonus,
 } from './data/economy'
 import { CREEP_KINDS, KINDS_BY_ARMOR } from './data/creeps'
+import { ALL_ITEMS, ITEM_RARE_CHANCE, ITEM_RARE_WAVE, ITEM_REROLL_COST, ITEM_SHOP_SIZE, ITEM_SLOTS, ITEM_SLOTS_TOTAL, ITEMS, rareK, type ItemDef, type ItemOffer } from './data/items'
 import { mulberry32, randInt } from './rng'
 import {
   type GameMap,
@@ -169,6 +170,10 @@ export class Game {
   shop: string[] = [] // башни, доступные к покупке (пул арсенала + открытые слитые)
   hand: string[] = [] // купленные, но ещё не установленные башни («рука»)
   discovered: string[] = [] // открытые слитые башни — не теряются при ролле арсенала
+  /** Экипированные предметы (лавка, этап 3): 6 слотов по GDD */
+  items: ItemOffer[] = []
+  /** Витрина лавки: 4 случайных предмета, обновление за эссенцию */
+  itemShop: ItemOffer[] = []
   infiniteGold = false // чит для тестов: золото не кончается (переживает рестарт)
   private goldBeforeCheat = 0
   time = 0
@@ -249,6 +254,8 @@ export class Game {
     this.shop = []
     this.hand = []
     this.discovered = []
+    this.items = []
+    this.itemShop = []
     this.time = 0
     this.previewRemaining = 0
     this.creeps = []
@@ -346,6 +353,7 @@ export class Game {
   beginPreview() {
     if (this.phase !== 'intro' && this.phase !== 'wave') return
     if (this.phase === 'intro' && this.shop.length === 0) this.shop = [...rollPool(this.rng), ...ECONOMY_IDS] // первый пул бесплатный
+    if (this.phase === 'intro' && this.itemShop.length === 0) this.rollItemOffers() // первая витрина лавки бесплатна
     this.phase = 'preview'
     this.previewRemaining = this.wave === 1 ? FIRST_PREVIEW_TIME : PREVIEW_TIME
   }
@@ -417,6 +425,179 @@ export class Game {
     this.shop = [...rollPool(this.rng), ...this.discovered, ...ECONOMY_IDS]
     this.logEvent({ type: 'roll', amount: ROLL_COST, text: this.shop.join(',') })
     return { ok: true }
+  }
+
+  // ─── Лавка предметов (этап 3: эссенция → предметы) ─────────────────────
+
+  /** Новая витрина: ITEM_SHOP_SIZE разных предметов; редкие версии — только после 10-й волны */
+  private rollItemOffers() {
+    const ids = ITEMS.map((i) => i.id)
+    for (let i = ids.length - 1; i > 0; i--) {
+      const j = randInt(this.rng, i + 1)
+      ;[ids[i], ids[j]] = [ids[j], ids[i]]
+    }
+    const rareUnlocked = this.wave >= ITEM_RARE_WAVE
+    this.itemShop = ids.slice(0, ITEM_SHOP_SIZE).map((id) => ({
+      id,
+      rare: rareUnlocked && this.rng() < ITEM_RARE_CHANCE,
+    }))
+  }
+
+  /** Обновление витрины лавки за ITEM_REROLL_COST эссенции */
+  rollItems(): ActionResult {
+    if (this.phase === 'over' || this.phase === 'won') return { ok: false, error: 'Игра окончена' }
+    if (this.essence < ITEM_REROLL_COST) return { ok: false, error: 'Не хватает эссенции' }
+    this.essence -= ITEM_REROLL_COST
+    this.rollItemOffers()
+    this.logEvent({ type: 'itemRoll', amount: ITEM_REROLL_COST, text: this.itemShop.map((o) => o.id + (o.rare ? '*' : '')).join(',') })
+    return { ok: true }
+  }
+
+  /** Покупка предмета из витрины: проверка эссенции и свободного слота (2 кольца, остальное по 1) */
+  buyItem(idx: number): ActionResult {
+    const offer = this.itemShop[idx]
+    const def = offer && ALL_ITEMS[offer.id]
+    if (!def) return { ok: false, error: 'Этого предмета нет в лавке' }
+    if (this.phase === 'over' || this.phase === 'won') return { ok: false, error: 'Игра окончена' }
+    if (this.essence < def.price) return { ok: false, error: 'Не хватает эссенции' }
+    const slotCap = ITEM_SLOTS[def.slot].max
+    const inSlot = this.items.filter((o) => ALL_ITEMS[o.id]?.slot === def.slot).length
+    if (inSlot >= slotCap) {
+      return { ok: false, error: `Слот «${ITEM_SLOTS[def.slot].name}» занят (макс. ${slotCap}) — продайте предмет` }
+    }
+    if (this.items.length >= ITEM_SLOTS_TOTAL) return { ok: false, error: 'Все 6 слотов заняты' }
+    this.essence -= def.price
+    this.items.push({ id: def.id, rare: offer.rare })
+    this.itemShop.splice(idx, 1)
+    this.logEvent({ type: 'itemBuy', defId: def.id, amount: def.price, text: offer.rare ? 'редкий' : '' })
+    return { ok: true }
+  }
+
+  /** Продажа экипированного предмета: возврат 50% цены (GDD) */
+  sellItem(idx: number): ActionResult {
+    const owned = this.items[idx]
+    const def = owned && ALL_ITEMS[owned.id]
+    if (!def) return { ok: false, error: 'Такого предмета нет' }
+    const refund = Math.floor(def.price * 0.5)
+    this.essence += refund
+    this.items.splice(idx, 1)
+    this.logEvent({ type: 'itemSell', defId: def.id, amount: refund })
+    return { ok: true }
+  }
+
+  /** Экипированные предметы с их определениями */
+  private ownedItems(): Array<{ def: ItemDef; rare: boolean }> {
+    const out: Array<{ def: ItemDef; rare: boolean }> = []
+    for (const o of this.items) {
+      const def = ALL_ITEMS[o.id]
+      if (def) out.push({ def, rare: o.rare })
+    }
+    return out
+  }
+
+  /** Множитель урона предметов для башни: allDamage + бонус по типам (слитой получает оба своих типа) */
+  private itemDamageMult(def: TowerDefinition): number {
+    let mult = 1
+    const attacks: AttackType[] = def.merged ? def.attacks : [def.attack]
+    for (const { def: item, rare } of this.ownedItems()) {
+      const e = item.effect
+      if (e.kind === 'allDamage') mult *= 1 + e.mult * rareK(rare)
+      if (e.kind === 'attackDamage' && attacks.includes(e.attack)) mult *= 1 + e.mult * rareK(rare)
+    }
+    return mult
+  }
+
+  /** +mult к скорости атаки: интервал делится на 1+mult (амулет ярости; башни и аватар) */
+  private itemSpeedMult(): number {
+    let m = 1
+    for (const { def: item, rare } of this.ownedItems()) {
+      if (item.effect.kind === 'attackSpeed') m *= 1 + item.effect.mult * rareK(rare)
+    }
+    return m
+  }
+
+  private itemRangeMult(): number {
+    let m = 1
+    for (const { def: item, rare } of this.ownedItems()) {
+      if (item.effect.kind === 'range') m *= 1 + item.effect.mult * rareK(rare)
+    }
+    return m
+  }
+
+  /** Шанс и множитель крита от предметов (кольцо охотника; башни и аватар) */
+  private itemCrit(): { chance: number; mult: number } {
+    for (const { def: item, rare } of this.ownedItems()) {
+      if (item.effect.kind === 'crit') return { chance: item.effect.chance * rareK(rare), mult: item.effect.mult }
+    }
+    return { chance: 0, mult: 2 }
+  }
+
+  private itemBossMult(): number {
+    let m = 1
+    for (const { def: item, rare } of this.ownedItems()) {
+      if (item.effect.kind === 'bossDamage') m *= 1 + item.effect.mult * rareK(rare)
+    }
+    return m
+  }
+
+  private itemAbilityCdMult(): number {
+    for (const { def: item, rare } of this.ownedItems()) {
+      if (item.effect.kind === 'abilityCd') return item.effect.mult // перстень один — множитель один
+    }
+    return 1
+  }
+
+  private itemAllDamageMult(): number {
+    let m = 1
+    for (const { def: item, rare } of this.ownedItems()) {
+      if (item.effect.kind === 'allDamage') m *= 1 + item.effect.mult * rareK(rare)
+    }
+    return m
+  }
+
+  /** +mult эссенции со всех шахт (гномья кирка) */
+  private itemEssenceMult(): number {
+    let m = 1
+    for (const { def: item, rare } of this.ownedItems()) {
+      if (item.effect.kind === 'essenceBonus') m *= 1 + item.effect.mult * rareK(rare)
+    }
+    return m
+  }
+
+  /** +эссенции за каждую ауру рядом с шахтой (сердце рудника) */
+  private itemEssencePerAura(): number {
+    let n = 0
+    for (const { def: item, rare } of this.ownedItems()) {
+      if (item.effect.kind === 'essencePerAura') n += item.effect.amount * rareK(rare)
+    }
+    return n
+  }
+
+  /** Сколько «аурирующих» построек в радиусе слияния от точки (Бастион; поддержка — этап 4) */
+  private auraCountNear(tw: Tower): number {
+    let n = 0
+    for (const o of this.towers) {
+      if (o.id === tw.id) continue
+      const od = ALL_DEFS[o.defId]
+      if (od.aura && Math.hypot(o.x - tw.x, o.y - tw.y) <= MERGE_DIST) n++
+    }
+    return n
+  }
+
+  /** Множитель урона по броне с учётом предметов (доспех равновесия, расколотый щит) */
+  armorMult(attack: AttackType, armor: ArmorType): number {
+    let v = DAMAGE_MATRIX[attack][armor]
+    for (const { def: item, rare } of this.ownedItems()) {
+      const e = item.effect
+      const k = rareK(rare)
+      if (e.kind === 'universalArmorUp' && attack === 'universal' && armor !== 'universal') {
+        v = 0.8 + (e.to - 0.8) * k
+      }
+      if (e.kind === 'weakArmorUp' && attack !== 'universal' && DAMAGE_MATRIX[attack][armor] === 0.7) {
+        v = 0.7 + (e.to - 0.7) * k
+      }
+    }
+    return v
   }
 
   // ─── Действия игрока ──────────────────────────────────────────────────
@@ -632,7 +813,7 @@ export class Game {
         t.hasteUntil = this.time + av.abilityDur
         t.hasteMult = 1 + 0.4 * lvlMult
       }
-      this.avatar.cooldown = av.abilityCd
+      this.avatar.cooldown = av.abilityCd * this.itemAbilityCdMult()
       this.effects.push({ x: this.avatar.x, y: this.avatar.y, r: VOEVODA_RADIUS, born: this.time, dur: 0.8, color: av.color, kind: 'blast' })
       return { ok: true }
     }
@@ -649,7 +830,7 @@ export class Game {
       if (!nearest) return { ok: false, error: 'Нет башен' }
       nearest.hasteUntil = this.time + av.abilityDur
       nearest.hasteMult = 2
-      this.avatar.cooldown = av.abilityCd
+      this.avatar.cooldown = av.abilityCd * this.itemAbilityCdMult()
       this.effects.push({ x: nearest.x, y: nearest.y, r: 36, born: this.time, dur: 0.8, color: av.color, kind: 'blast' })
       return { ok: true }
     }
@@ -677,7 +858,7 @@ export class Game {
         const q = pointAtLength(c.dist, c.pathIdx)
         if (Math.hypot(spot.x - q.x, spot.y - q.y) <= R) this.applyHit(c, { damage: dmg, attacks: ['magic'], sourceDefId: 'avatar' })
       }
-      this.avatar.cooldown = av.abilityCd
+      this.avatar.cooldown = av.abilityCd * this.itemAbilityCdMult()
       this.effects.push({ x: spot.x, y: spot.y, r: R, born: this.time, dur: 0.6, color: av.color, kind: 'blast' })
       return { ok: true }
     }
@@ -687,7 +868,7 @@ export class Game {
     best.markedUntil = this.time + av.abilityDur
     best.markedBonus = markBonusForLevel(this.avatar.level)
     best.goldMult = 2
-    this.avatar.cooldown = av.abilityCd
+    this.avatar.cooldown = av.abilityCd * this.itemAbilityCdMult()
     const p = pointAtLength(best.dist, best.pathIdx)
     this.effects.push({ x: p.x, y: p.y, r: 30, born: this.time, dur: 0.7, color: '#e8c170', kind: 'mark' })
     return { ok: true }
@@ -928,13 +1109,14 @@ export class Game {
     if (c.hp <= 0) return
     let dmg = amount
     if (attacks !== 'burn') {
-      // гибридная атака: против каждой цели — лучший множитель из двух типов
+      // гибридная атака: против каждой цели — лучший множитель из двух типов (предметы учтены)
       let mult = 0
-      for (const a of attacks) mult = Math.max(mult, DAMAGE_MATRIX[a][c.armor])
+      for (const a of attacks) mult = Math.max(mult, this.armorMult(a, c.armor))
       dmg = amount * mult
     }
     if (this.time < c.markedUntil) dmg *= 1 + c.markedBonus
     if (this.time < c.vulnUntil) dmg *= 1 + c.vulnBonus
+    if (c.isBoss) dmg *= this.itemBossMult() // Кольцо палача
     const dealt = Math.min(dmg, Math.max(0, c.hp))
     if (dealt > 0) this.stats.damageDealt += dealt
     c.hp -= dmg
@@ -997,7 +1179,7 @@ export class Game {
       const def = ALL_DEFS[tw.defId]
       if (def.income || def.essence) continue // экономические постройки не атакуют (доход — в finishWave)
       tw.cooldown -= dt
-      const range = def.range * levelRangeMult(tw.level)
+      const range = def.range * levelRangeMult(tw.level) * this.itemRangeMult()
 
       // Периодические способности 5 уровня
       if (tw.level >= 5) {
@@ -1013,7 +1195,7 @@ export class Game {
       const inRange = this.creepsInRange(tw.x, tw.y, range).sort((a, b) => progress(b) - progress(a))
       if (inRange.length === 0) continue
 
-      tw.cooldown = Math.max(MIN_INTERVAL, (def.interval * levelIntervalMult(tw.level)) / (tw.rampMult * (tw.hasteUntil && this.time < tw.hasteUntil ? (tw.hasteMult ?? 1) : 1)))
+      tw.cooldown = Math.max(MIN_INTERVAL, (def.interval * levelIntervalMult(tw.level)) / (tw.rampMult * this.itemSpeedMult() * (tw.hasteUntil && this.time < tw.hasteUntil ? (tw.hasteMult ?? 1) : 1)))
       tw.shotCount++
       tw.lastShotAt = this.time
       const tp = pointAtLength(inRange[0].dist, inRange[0].pathIdx)
@@ -1047,7 +1229,7 @@ export class Game {
     const spot = { x: tw.x, y: tw.y }
     const l5 = tw.level >= 5
     const attacks: AttackType[] = def.merged ? [...def.attacks] : [def.attack]
-    let dmg = def.damage * levelDamageMult(tw.level) * this.auraMult(tw) * this.avatarPassiveMult(tw, def)
+    let dmg = def.damage * levelDamageMult(tw.level) * this.auraMult(tw) * this.avatarPassiveMult(tw, def) * this.itemDamageMult(def)
     if (def.waveGrowth) dmg *= 1 + def.waveGrowth * (this.wave - 1)
 
     let burn = def.burn ? { ...def.burn } : undefined
@@ -1057,6 +1239,13 @@ export class Game {
     let vuln = def.vuln
     let chain = def.chain
     let crit = !!def.critEvery && tw.shotCount % def.critEvery === 0
+    let critMult = 3
+    // Кольцо охотника: шанс крита от предмета (множитель своего, ×2)
+    const itemCrit = this.itemCrit()
+    if (!crit && itemCrit.chance > 0 && this.rng() < itemCrit.chance) {
+      crit = true
+      critMult = itemCrit.mult
+    }
 
     // Способности 5 уровня, меняющие параметры выстрела
     if (l5) {
@@ -1148,7 +1337,7 @@ export class Game {
     for (const c of targets) {
       let d = dmgEach
       if (def.id === 'sentry' && l5 && c.isBoss) d *= 1.2
-      if (crit) d *= 3
+      if (crit) d *= critMult
       this.projectiles.push({
         uid: this.uid++,
         x: spot.x,
@@ -1336,16 +1525,19 @@ export class Game {
     if (av.attackCd <= 0) {
       let target: Creep | null = null
       let bestDist = Infinity
+      const avRange = this.av.range * this.itemRangeMult()
       for (const c of this.creeps) {
         const p = pointAtLength(c.dist, c.pathIdx)
         const d = Math.hypot(p.x - av.x, p.y - av.y)
-        if (d <= this.av.range && d < bestDist) {
+        if (d <= avRange && d < bestDist) {
           bestDist = d
           target = c
         }
       }
       if (target) {
-        av.attackCd = this.av.interval
+        av.attackCd = this.av.interval / this.itemSpeedMult()
+        const ic = this.itemCrit()
+        const crit = ic.chance > 0 && this.rng() < ic.chance
         this.projectiles.push({
           uid: this.uid++,
           x: av.x,
@@ -1355,10 +1547,11 @@ export class Game {
           ox: av.x,
           oy: av.y,
           speed: 480,
-          damage: this.av.damage,
+          damage: this.av.damage * this.itemAllDamageMult() * (crit ? ic.mult : 1),
           attacks: ['universal'],
           color: '#e8c170',
           kind: 'arrow',
+          crit,
           fromAvatar: true,
           sourceDefId: 'avatar',
           sourceLevel: 1,
@@ -1389,7 +1582,9 @@ export class Game {
         this.logEvent({ type: 'income', defId: tw.defId, towerId: tw.id, level: tw.level, amount })
       }
       if (def.essence) {
-        const amount = def.essence * tw.level * l5mult
+        // Гномья кирка: +20% с шахт; Сердце рудника: +эссенция за ауру рядом (Бастион, поддержка — этап 4)
+        let amount = def.essence * tw.level * l5mult
+        amount = Math.round(amount * this.itemEssenceMult() + this.itemEssencePerAura() * this.auraCountNear(tw))
         this.essence += amount
         this.addFloat(tw.x, tw.y - 40, `+${amount} 💠`, '#a6f095')
         this.logEvent({ type: 'income', defId: tw.defId, towerId: tw.id, level: tw.level, amount, text: 'essence' })
@@ -1424,6 +1619,8 @@ export class Game {
       phase: this.phase,
       gold: Math.floor(this.gold),
       essence: Math.floor(this.essence),
+      items: this.items.map((o) => ({ ...o })),
+      itemShop: this.itemShop.map((o) => ({ ...o })),
       buildingHp: Math.max(0, this.buildingHp),
       buildingMaxHp: this.buildingMaxHp,
       difficulty: this.difficulty,
@@ -1490,6 +1687,8 @@ export class Game {
       wave: this.wave,
       gold: Math.floor(this.gold),
       essence: Math.floor(this.essence),
+      items: this.items.map((o) => ({ ...o })),
+      itemShop: this.itemShop.map((o) => ({ ...o })),
       buildingHp: Math.max(0, this.buildingHp),
       buildingMaxHp: this.buildingMaxHp,
       difficulty: this.difficulty,
@@ -1548,6 +1747,8 @@ export class Game {
     this.wave = s.wave
     this.gold = s.gold
     this.essence = s.essence ?? 0
+    this.items = (s.items ?? []).map((o) => ({ ...o }))
+    this.itemShop = (s.itemShop ?? []).map((o) => ({ ...o }))
     this.buildingHp = s.buildingHp
     this.buildingMaxHp = s.buildingMaxHp
     this.difficulty = s.difficulty ?? DEFAULT_DIFFICULTY
@@ -1667,6 +1868,15 @@ export class Game {
         return null
       case 'roll':
         res = this.roll()
+        break
+      case 'itemBuy':
+        res = this.buyItem(cmd.idx)
+        break
+      case 'itemSell':
+        res = this.sellItem(cmd.idx)
+        break
+      case 'itemRoll':
+        res = this.rollItems()
         break
       default:
         return 'Неизвестная команда'

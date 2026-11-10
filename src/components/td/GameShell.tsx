@@ -24,7 +24,7 @@ import {
   type MpStatus,
 } from './Panels'
 import {
-  BuildConfirmButton, CenterNotices, DMG_COLORS, HandTray, HeroButtons, PricePlaque, ShopButton, ShopModal, StartButton, TopBar, WaveBanner, type MenuActions,
+  BuildConfirmButton, CenterNotices, DMG_COLORS, HandTray, HeroButtons, LavkaButton, LavkaModal, PricePlaque, ShopButton, ShopModal, StartButton, TopBar, WaveBanner, type MenuActions,
 } from './Hud'
 import { Sfx } from '@/game/audio'
 import { towerThumb } from '@/game/pixel'
@@ -76,9 +76,14 @@ export default function GameShell() {
   // магазин — окно по центру, открывается кнопкой в нижней панели (арсенал не закреплён на экране)
   const [shopOpen, setShopOpen] = useState(false)
   const shopOpenRef = useRef(false)
+  const [lavkaOpen, setLavkaOpen] = useState(false)
+  const lavkaOpenRef = useRef(false)
   useEffect(() => {
     shopOpenRef.current = shopOpen
   }, [shopOpen])
+  useEffect(() => {
+    lavkaOpenRef.current = lavkaOpen
+  }, [lavkaOpen])
   // клетка, выбранная под постройку (центр клетки); башня ставится только кнопкой ✓
   const [buildCell, setBuildCell] = useState<Vec | null>(null)
   const [mergeFrom, setMergeFrom] = useState<number | null>(null)
@@ -710,11 +715,12 @@ export default function GameShell() {
 
   // ─── Постройка: покупка → «рука» → клетка/башня → ✓ ───
 
-  // Esc / ПКМ — отменить выбор башни (в disarm() уже внутри handleTap); Esc сначала закрывает магазин
+  // Esc / ПКМ — отменить выбор башни (в disarm() уже внутри handleTap); Esc сначала закрывает окна
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code === 'Escape') {
         if (shopOpenRef.current) setShopOpen(false)
+        else if (lavkaOpenRef.current) setLavkaOpen(false)
         else disarm()
       }
     }
@@ -893,6 +899,35 @@ export default function GameShell() {
     }
     const res = game.roll()
     if (!res.ok && res.error) errToast('Ролл недоступен', res.error)
+    setUi(game.getUiState())
+  }
+
+  // Лавка предметов: хост исполняет сам, гость шлёт команду (снапшот всё синхронизирует)
+  const doItemBuy = (idx: number) => {
+    if (asGuest && codeRef.current) {
+      sendCmd(codeRef.current, { t: 'itemBuy', idx })
+      return
+    }
+    const res = game.buyItem(idx)
+    if (!res.ok && res.error) errToast('Покупка невозможна', res.error)
+    setUi(game.getUiState())
+  }
+  const doItemSell = (idx: number) => {
+    if (asGuest && codeRef.current) {
+      sendCmd(codeRef.current, { t: 'itemSell', idx })
+      return
+    }
+    const res = game.sellItem(idx)
+    if (!res.ok && res.error) errToast('Продажа невозможна', res.error)
+    setUi(game.getUiState())
+  }
+  const doItemRoll = () => {
+    if (asGuest && codeRef.current) {
+      sendCmd(codeRef.current, { t: 'itemRoll' })
+      return
+    }
+    const res = game.rollItems()
+    if (!res.ok && res.error) errToast('Обновление невозможно', res.error)
     setUi(game.getUiState())
   }
 
@@ -1532,7 +1567,10 @@ export default function GameShell() {
                     {startButton}
                   </div>
                   <HandTray ui={ui} armedHand={armedHand} onArm={armHand} />
-                  <ShopButton onClick={() => setShopOpen(true)} disabled={!canBuild} />
+                  <div className="pointer-events-auto flex gap-2">
+                    <ShopButton onClick={() => setShopOpen(true)} disabled={!canBuild} />
+                    <LavkaButton onClick={() => setLavkaOpen(true)} />
+                  </div>
                 </div>
               ) : (
                 <>
@@ -1547,7 +1585,10 @@ export default function GameShell() {
                   >
                     {startButton}
                     <HandTray ui={ui} armedHand={armedHand} onArm={armHand} />
-                    <ShopButton onClick={() => setShopOpen(true)} disabled={!canBuild} />
+                    <div className="pointer-events-auto flex gap-2">
+                      <ShopButton onClick={() => setShopOpen(true)} disabled={!canBuild} />
+                      <LavkaButton onClick={() => setLavkaOpen(true)} />
+                    </div>
                   </div>
                 </>
               )}
@@ -1618,7 +1659,10 @@ export default function GameShell() {
           >
             {heroButtons}
             <HandTray ui={ui} armedHand={armedHand} onArm={armHand} size="lg" />
-            <ShopButton onClick={() => setShopOpen(true)} disabled={!canBuild} />
+            <div className="flex gap-2">
+              <ShopButton onClick={() => setShopOpen(true)} disabled={!canBuild} />
+              <LavkaButton onClick={() => setLavkaOpen(true)} />
+            </div>
             <div className="flex w-[150px] justify-start">{startButton}</div>
           </motion.div>
         )}
@@ -1636,6 +1680,7 @@ export default function GameShell() {
 
       <AnimatePresence>
         {shopOpen && <ShopModal ui={ui} onPick={doBuy} onRoll={doRoll} onClose={() => setShopOpen(false)} />}
+        {lavkaOpen && <LavkaModal ui={ui} onBuy={doItemBuy} onSell={doItemSell} onRoll={doItemRoll} onClose={() => setLavkaOpen(false)} />}
       </AnimatePresence>
     </div>
   )

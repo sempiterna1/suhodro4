@@ -223,6 +223,9 @@ export type GameEventType =
   | 'sell'
   | 'merge'
   | 'roll'
+  | 'itemBuy'
+  | 'itemSell'
+  | 'itemRoll'
   | 'leak'
   | 'bossPhase'
   | 'bossAbility'
@@ -257,6 +260,10 @@ export interface UiState {
   gold: number
   /** Эссенция (этап 3): вторая валюта миссии, добывается шахтами, тратится в лавке */
   essence: number
+  /** экипированные предметы (макс. 6 слотов: оружие/доспех/амулет/2 кольца/реликвия) */
+  items: Array<{ id: string; rare: boolean }>
+  /** текущие 4 предложения лавки */
+  itemShop: Array<{ id: string; rare: boolean }>
   /** HP главного здания (поражение при 0) */
   buildingHp: number
   buildingMaxHp: number

@@ -7,12 +7,12 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, useAnimationControls } from 'framer-motion'
-import { AI_SIGNALS, ALL_DEFS, ARMOR_COLORS, ARMOR_NAMES, AVATARS, TOWERS } from '@/game/config'
+import { AI_SIGNALS, ALL_DEFS, ALL_ITEMS, ARMOR_COLORS, ARMOR_NAMES, AVATARS, ITEM_REROLL_COST, ITEM_SLOTS, ITEM_SLOTS_TOTAL, TOWERS } from '@/game/config'
 import { avatarPortrait, towerThumb } from '@/game/pixel'
 import type { AttackType, TowerDefinition, UiState } from '@/game/types'
 import type { MpRole, MpStatus } from './Panels'
 import { DAMAGE_TYPE, DamageBadge, EffectiveVs, effectLines, isEcon } from './TowerInfo'
-import { Store, Music, Volume2, Wind } from 'lucide-react'
+import { Store, Music, Volume2, Wind, Gem, RefreshCw } from 'lucide-react'
 import { Slider } from '@/components/ui/slider'
 import {
   BoltIcon, BuildingIcon, CheckIcon, CloseIcon, CoinIcon, DiceIcon, ExitFullscreenIcon, FullscreenIcon, HelpIcon, InfinityIcon,
@@ -660,6 +660,178 @@ export function ShopModal({ ui, onPick, onRoll, onClose }: {
             Ролл
             <span className={`font-mono ${ui.gold >= ui.rollCost ? 'text-[#f2c94c]' : 'text-[#ff8a8a]'}`}>{ui.rollCost}</span>
           </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  )
+}
+
+// ─── Лавка предметов: кнопка + окно (покупка за эссенцию, этап 3) ──────────
+export function LavkaButton({ onClick, disabled = false }: { onClick: () => void; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label="Открыть лавку предметов"
+      title="Лавка: предметы за эссенцию (действуют на аватара и все башни)"
+      className={`${PILL} flex shrink-0 items-center gap-2 rounded-2xl px-4 py-2.5 text-[13px] font-bold uppercase tracking-wide text-[#e8ecf4] transition-colors hover:bg-[rgba(30,38,56,0.95)] active:scale-95 disabled:opacity-40`}
+    >
+      <Gem className="h-5 w-5 shrink-0 text-[#a6f095]" strokeWidth={2.2} />
+      Лавка
+    </button>
+  )
+}
+
+/**
+ * Лавка по центру экрана: 4 предложения (карточка = слот, эффект, цена в эссенции),
+ * обновление витрины за 5 эссенции, снизу — экипированные предметы с продажей за 50%.
+ */
+export function LavkaModal({ ui, onBuy, onSell, onRoll, onClose }: {
+  ui: UiState
+  onBuy: (idx: number) => void
+  onSell: (idx: number) => void
+  onRoll: () => void
+  onClose: () => void
+}) {
+  const canAct = ui.phase === 'preview' || ui.phase === 'wave'
+  const offers = ui.itemShop
+  const slotCount = (slot: string) => ui.items.filter((o) => ALL_ITEMS[o.id]?.slot === slot).length
+  const canRoll = ui.essence >= ITEM_REROLL_COST && canAct
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.15 }}
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Лавка предметов"
+      className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center bg-[rgba(5,7,11,0.72)] p-3"
+    >
+      <motion.div
+        initial={{ scale: 0.92, y: 14 }}
+        animate={{ scale: 1, y: 0 }}
+        exit={{ scale: 0.95, y: 8 }}
+        transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+        onClick={(e) => e.stopPropagation()}
+        className="flex max-h-[92dvh] w-fit max-w-[96vw] flex-col overflow-hidden rounded-2xl border-2 border-[#4e7a5c] bg-[rgba(12,19,15,0.97)] shadow-[0_18px_60px_rgba(0,0,0,0.8)]"
+      >
+        <div className="flex items-center justify-between gap-3 border-b border-[#3a5c46] px-3 py-2">
+          <div className="flex items-center gap-2">
+            <Gem className="h-4 w-4 text-[#a6f095]" strokeWidth={2.2} />
+            <h2 className="text-[13px] font-bold uppercase tracking-[0.12em] text-[#e8ecf4]">Лавка</h2>
+            <span className="text-[11px] text-[#7ba88a]">предметы за эссенцию</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1 font-mono text-xs font-bold text-[#a6f095]">
+              <span className="text-[13px] leading-none">💠</span>
+              {ui.essence}
+            </span>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Закрыть лавку"
+              title="Закрыть (Esc)"
+              className="flex h-7 w-7 items-center justify-center rounded-full border border-[#3a5c46] bg-[rgba(12,19,15,0.92)] text-[#e8ecf4] active:scale-95"
+            >
+              <CloseIcon size={14} />
+            </button>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap justify-center gap-2 overflow-y-auto p-3">
+          {offers.map((o, idx) => {
+            const def = ALL_ITEMS[o.id]
+            if (!def) return null
+            const slot = ITEM_SLOTS[def.slot]
+            const slotFull = slotCount(def.slot) >= slot.max
+            const affordable = ui.essence >= def.price
+            const locked = !affordable || !canAct || slotFull
+            return (
+              <button
+                key={`${idx}-${o.id}`}
+                type="button"
+                disabled={locked}
+                onClick={() => onBuy(idx)}
+                aria-label={`Купить: ${def.name}, ${slot.name}, ${def.price} эссенции${o.rare ? ', редкий' : ''}`}
+                className={`flex w-[210px] flex-col overflow-hidden rounded-xl text-left transition-transform hover:-translate-y-0.5 active:scale-[0.98] ${
+                  o.rare ? 'border border-[#7ad0c8aa] bg-[#1d2e2a]' : 'border border-[#3a5c46] bg-[#18241c]'
+                } ${locked ? 'opacity-45' : ''}`}
+              >
+                <div className="h-1 w-full" style={{ background: o.rare ? 'linear-gradient(90deg,#7ad0c8,#7ad0c833)' : 'linear-gradient(90deg,#a6f095,#a6f09533)' }} />
+                <div className="flex flex-1 flex-col gap-1.5 p-2">
+                  <div className="flex items-start justify-between gap-1">
+                    <p className="font-serif text-[13px] font-black leading-tight text-[#c9e8bd]">{def.name}</p>
+                    <span className={`inline-flex shrink-0 items-center gap-0.5 font-mono text-xs font-bold ${affordable ? 'text-[#a6f095]' : 'text-[#e05252]'}`}>
+                      💠{def.price}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1">
+                    <span className="rounded-sm border border-[#3a5c46] bg-[#0a0f17]/60 px-1 py-px text-[9px] font-bold uppercase leading-none tracking-wide text-[#9fb1c8]">
+                      {slot.name} {slotCount(def.slot)}/{slot.max}
+                    </span>
+                    {o.rare && (
+                      <span className="rounded-sm border border-[#7ad0c888] bg-[#7ad0c81a] px-1 py-px text-[9px] font-bold uppercase leading-none tracking-wide text-[#7ad0c8]">
+                        редкий · эффект +50%
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[10.5px] leading-snug text-[#b9c6d8]">{def.desc}</p>
+                  {slotFull && <p className="text-[9.5px] text-[#e0a050]">Слот занят — продайте предмет ниже</p>}
+                </div>
+              </button>
+            )
+          })}
+          {offers.length === 0 && (
+            <p className="px-6 py-8 text-center text-xs text-[#c3cbe0]">
+              Витрина пуста — обновите её кнопкой ниже
+            </p>
+          )}
+        </div>
+
+        <div className="border-t border-[#3a5c46] bg-[rgba(8,13,10,0.6)] px-3 py-2">
+          {ui.items.length > 0 && (
+            <div className="mb-2 flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[#7ba88a]">надето {ui.items.length}/{ITEM_SLOTS_TOTAL}:</span>
+              {ui.items.map((o, idx) => {
+                const def = ALL_ITEMS[o.id]
+                if (!def) return null
+                return (
+                  <button
+                    key={`${idx}-${o.id}`}
+                    type="button"
+                    onClick={() => onSell(idx)}
+                    disabled={!canAct}
+                    title={`Продать за ${Math.floor(def.price * 0.5)} эссенции (50%)`}
+                    className={`inline-flex items-center gap-1 rounded-lg border px-1.5 py-1 text-[10.5px] font-bold active:scale-95 disabled:opacity-40 ${
+                      o.rare ? 'border-[#7ad0c8aa] bg-[#1d2e2a] text-[#7ad0c8]' : 'border-[#3a5c46] bg-[#18241c] text-[#c9e8bd]'
+                    }`}
+                  >
+                    {def.name}
+                    <span className="font-mono text-[9px] opacity-70">+{Math.floor(def.price * 0.5)}💠</span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[10.5px] leading-snug text-[#7ba88a]">
+              Бонус предмета действует на аватара и все башни. Редкие версии (+50% к эффекту) появляются после 10-й волны. В конце матча всё сгорает.
+            </p>
+            <button
+              type="button"
+              disabled={!canRoll}
+              onClick={onRoll}
+              aria-label={`Обновить витрину за ${ITEM_REROLL_COST} эссенции`}
+              className="flex shrink-0 items-center gap-1.5 rounded-xl border border-[#3a5c46] bg-[#18241c] px-3 py-1.5 text-[12px] font-bold text-[#c3e0c8] active:scale-95 disabled:opacity-40"
+            >
+              <RefreshCw className="h-4 w-4 text-[#a6f095]" strokeWidth={2.4} />
+              Обновить
+              <span className={`font-mono ${ui.essence >= ITEM_REROLL_COST ? 'text-[#a6f095]' : 'text-[#ff8a8a]'}`}>💠{ITEM_REROLL_COST}</span>
+            </button>
+          </div>
         </div>
       </motion.div>
     </motion.div>
