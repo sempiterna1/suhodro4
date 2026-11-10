@@ -52,6 +52,7 @@ const num = (v: number) => String(Math.round(v * 10) / 10)
 /** Особые эффекты башни — по полям AttackFx */
 export function effectLines(def: TowerDefinition): string[] {
   const l: string[] = []
+  if (def.income) l.push(`Золото: +${def.income} за волну за каждый уровень (не атакует)`)
   if (def.splash) l.push(`Урон по площади, радиус ${def.splash}`)
   if (def.slam) l.push('Удар по всем врагам в радиусе')
   if (def.line) l.push('Болт насквозь — бьёт всех на линии')
@@ -80,8 +81,12 @@ export function armorMult(def: TowerDefinition): Record<ArmorType, number> {
   return out
 }
 
+/** Экономическая постройка (этап 3): не атакует, платит золото или эссенцию за волну */
+export const isEcon = (def: TowerDefinition): boolean => !def.merged && !!(def.income || def.essence)
+
 /** Строка «Эффективен против»: броня с множителем, сильные выделены */
 export function EffectiveVs({ def }: { def: TowerDefinition }) {
+  if (isEcon(def)) return null // экономические постройки не бьют по броне
   const m = armorMult(def)
   return (
     <div className="flex flex-wrap items-center gap-1">
@@ -135,6 +140,9 @@ export function TowerInfoCard({
   const effects = effectLines(def)
   const desc = def.merged ? def.desc : def.role
   const parents = def.merged ? def.parents.map((p) => ALL_DEFS[p]?.name ?? p) : null
+  const econ = isEcon(def)
+  const incomeNow = def.income ? def.income * level * (level >= 5 ? 2 : 1) : 0
+  const essenceNow = def.essence ? def.essence * level * (level >= 5 ? 2 : 1) : 0
   return (
     <motion.div
       initial={{ opacity: 0, y: 6, scale: 0.97 }}
@@ -160,7 +168,13 @@ export function TowerInfoCard({
               </span>
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-1">
-              {attacks.map((a, i) => <DamageBadge key={a + i} type={a} />)}
+              {econ ? (
+                <span className="inline-flex items-center gap-1 rounded-sm border border-[#e8c17088] bg-[#e8c1701f] px-1 py-px text-[9px] font-bold uppercase leading-none tracking-wide text-[#e8c170]">
+                  🪙 экономика
+                </span>
+              ) : (
+                attacks.map((a, i) => <DamageBadge key={a + i} type={a} />)
+              )}
               {def.merged && <span className="rounded-sm border border-[#ffd70066] bg-[#ffd7001a] px-1 py-px text-[9px] font-bold uppercase leading-none tracking-wide text-[#ffd700]">слитая</span>}
               {level > 1 && <span className="font-mono text-[10px] text-[#7088a8]">ур. {level}/5</span>}
             </div>
@@ -173,10 +187,30 @@ export function TowerInfoCard({
         <EffectiveVs def={def} />
 
         <div className="grid grid-cols-4 gap-1">
-          <Stat label="Урон" value={num(dmg)} color="#f0b060" />
-          <Stat label="Скорость" value={`${num(1 / interval)}/с`} color="#9fd2ff" />
-          <Stat label="Дальность" value={String(range)} color="#ccd8e6" />
-          <Stat label="В секунду" value={num(dmg / interval)} color="#7fd0a0" />
+          {econ ? (
+            def.income ? (
+              <>
+                <Stat label="Доход" value={`+${incomeNow}/волну`} color="#f0b060" />
+                <Stat label="За уровень" value={`+${def.income}`} color="#e8d9a0" />
+                <Stat label="На 5 ур." value={`+${(def.income ?? 0) * 5 * 2}`} color="#ffd700" />
+                <Stat label="Атака" value="нет" color="#8a96a8" />
+              </>
+            ) : (
+              <>
+                <Stat label="Доход" value={`+${essenceNow}💠/волну`} color="#a6f095" />
+                <Stat label="За уровень" value={`+${def.essence}`} color="#c9e8bd" />
+                <Stat label="На 5 ур." value={`+${(def.essence ?? 0) * 5 * 2}`} color="#7ad0c8" />
+                <Stat label="Атака" value="нет" color="#8a96a8" />
+              </>
+            )
+          ) : (
+            <>
+              <Stat label="Урон" value={num(dmg)} color="#f0b060" />
+              <Stat label="Скорость" value={`${num(1 / interval)}/с`} color="#9fd2ff" />
+              <Stat label="Дальность" value={String(range)} color="#ccd8e6" />
+              <Stat label="В секунду" value={num(dmg / interval)} color="#7fd0a0" />
+            </>
+          )}
         </div>
 
         {effects.length > 0 && (

@@ -11,7 +11,7 @@ import { AI_SIGNALS, ALL_DEFS, ARMOR_COLORS, ARMOR_NAMES, AVATARS, TOWERS } from
 import { avatarPortrait, towerThumb } from '@/game/pixel'
 import type { AttackType, TowerDefinition, UiState } from '@/game/types'
 import type { MpRole, MpStatus } from './Panels'
-import { DAMAGE_TYPE, DamageBadge, EffectiveVs, effectLines } from './TowerInfo'
+import { DAMAGE_TYPE, DamageBadge, EffectiveVs, effectLines, isEcon } from './TowerInfo'
 import { Store, Music, Volume2, Wind } from 'lucide-react'
 import { Slider } from '@/components/ui/slider'
 import {
@@ -113,6 +113,10 @@ export function ResourceBar({ ui }: { ui: UiState }) {
       <motion.span animate={gold} className="flex items-center gap-1.5 text-[#f2c94c]" title="Золото">
         <CoinIcon size={18} /> {ui.infiniteGold ? '∞' : ui.gold}
       </motion.span>
+      <span className="flex items-center gap-1 text-[#a6f095]" title="Эссенция: добывается шахтами, тратится в лавке предметов">
+        <span className="text-[15px] leading-none">💠</span>
+        <span className="font-mono text-[13px] tabular-nums">{ui.essence}</span>
+      </span>
       <span className="flex items-center gap-1.5 text-[#c3cbe0]" title="Волна">
         <SwordsIcon size={18} /> {Math.min(ui.wave, ui.totalWaves)}/{ui.totalWaves}
       </span>
@@ -562,9 +566,15 @@ export function ShopModal({ ui, onPick, onRoll, onClose }: {
                         </span>
                       </div>
                       <div className="mt-0.5 flex flex-wrap items-center gap-1">
-                        {attacks.map((a, i) => (
-                          <DamageBadge key={a + i} type={a} />
-                        ))}
+                        {isEcon(t) ? (
+                          <span className="rounded-sm border border-[#e8c17088] bg-[#e8c1701f] px-1 py-px text-[9px] font-bold uppercase leading-none tracking-wide text-[#e8c170]">
+                            🪙 экономика
+                          </span>
+                        ) : (
+                          attacks.map((a, i) => (
+                            <DamageBadge key={a + i} type={a} />
+                          ))
+                        )}
                         {!!t.merged && (
                           <span className="rounded-sm border border-[#ffd70066] bg-[#ffd7001a] px-1 py-px text-[9px] font-bold uppercase leading-none tracking-wide text-[#ffd700]">
                             слитая
@@ -578,10 +588,30 @@ export function ShopModal({ ui, onPick, onRoll, onClose }: {
                   <EffectiveVs def={t} />
 
                   <div className="grid grid-cols-4 gap-1">
-                    <ShopStat label="Урон" value={num(t.damage)} color="#f0b060" />
-                    <ShopStat label="Скорость" value={`${num(1 / t.interval)}/с`} color="#9fd2ff" />
-                    <ShopStat label="Дальн." value={String(t.range)} color="#ccd8e6" />
-                    <ShopStat label="Урон/с" value={num(t.damage / t.interval)} color="#7fd0a0" />
+                    {isEcon(t) ? (
+                      t.income ? (
+                        <>
+                          <ShopStat label="Доход" value={`+${t.income}/волну`} color="#f0b060" />
+                          <ShopStat label="За уровень" value={`+${t.income}`} color="#e8d9a0" />
+                          <ShopStat label="На 5 ур." value={`+${(t.income ?? 0) * 5 * 2}`} color="#ffd700" />
+                          <ShopStat label="Атака" value="нет" color="#8a96a8" />
+                        </>
+                      ) : (
+                        <>
+                          <ShopStat label="Доход" value={`+${t.essence}💠/волну`} color="#a6f095" />
+                          <ShopStat label="За уровень" value={`+${t.essence}`} color="#c9e8bd" />
+                          <ShopStat label="На 5 ур." value={`+${(t.essence ?? 0) * 5 * 2}`} color="#7ad0c8" />
+                          <ShopStat label="Атака" value="нет" color="#8a96a8" />
+                        </>
+                      )
+                    ) : (
+                      <>
+                        <ShopStat label="Урон" value={num(t.damage)} color="#f0b060" />
+                        <ShopStat label="Скорость" value={`${num(1 / t.interval)}/с`} color="#9fd2ff" />
+                        <ShopStat label="Дальн." value={String(t.range)} color="#ccd8e6" />
+                        <ShopStat label="Урон/с" value={num(t.damage / t.interval)} color="#7fd0a0" />
+                      </>
+                    )}
                   </div>
 
                   {effects.length > 0 && (

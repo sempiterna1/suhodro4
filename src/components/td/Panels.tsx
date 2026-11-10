@@ -20,7 +20,7 @@ import { X, Coins, Repeat2, Trash2, Copy, Check, Clock } from 'lucide-react'
 export type MpRole = 'single' | 'host' | 'guest'
 export type MpStatus = 'off' | 'waiting' | 'linked'
 
-import { ATTACK_COLORS, ARMOR_ICONS, DamageBadge, EffectiveVs, effectLines } from './TowerInfo'
+import { ATTACK_COLORS, ARMOR_ICONS, DamageBadge, EffectiveVs, effectLines, isEcon } from './TowerInfo'
 export { ATTACK_COLORS, ARMOR_ICONS }
 
 function BrassTag({ color, children }: { color: string; children: React.ReactNode }) {
@@ -72,7 +72,8 @@ export function TowerPanel({
   const bestMult = Math.max(...attacks.map((a) => DAMAGE_MATRIX[a][nextArmor]))
   const dps = Math.round(((dmg / interval) * bestMult) * 10) / 10
   const refund = Math.floor(tw.invested * SELL_RATIO)
-  const canMerge = !def.merged && tw.level >= 3
+  const econ = isEcon(def)
+  const canMerge = !def.merged && !econ && tw.level >= 3
   // копии в «руке»: сколько ещё это башню прокачают (рука хоста/гостя синхронизируется снапшотами)
   const copies = game.hand.filter((id) => id === tw.defId).length
 
@@ -89,9 +90,15 @@ export function TowerPanel({
         </button>
       </div>
       <div className="mb-2 flex flex-wrap gap-1.5">
-        {attacks.map((a, i) => (
-          <DamageBadge key={a + i} type={a} className="!text-[10px]" />
-        ))}
+        {econ ? (
+          <span className="inline-flex items-center gap-1 rounded-sm border border-[#e8c17088] bg-[#e8c1701f] px-1 py-px text-[10px] font-bold uppercase leading-none tracking-wide text-[#e8c170]">
+            🪙 экономика
+          </span>
+        ) : (
+          attacks.map((a, i) => (
+            <DamageBadge key={a + i} type={a} className="!text-[10px]" />
+          ))
+        )}
         {def.merged && (
           <BrassTag color="#ffd700">уникальная</BrassTag>
         )}
@@ -102,18 +109,54 @@ export function TowerPanel({
         <EffectiveVs def={def} />
       </div>
       <div className="mb-2 grid grid-cols-3 gap-1 rounded-md border border-[#5b6f8c55] bg-[#0f151f] p-2 text-center font-mono text-xs">
-        <div>
-          <div className="text-[9px] uppercase text-[#5b6f8c]">урон</div>
-          <div className="text-[#f0b060]">{dmg}</div>
-        </div>
-        <div>
-          <div className="text-[9px] uppercase text-[#5b6f8c]">DPS vs след.</div>
-          <div className="text-[#7fd0a0]">{dps}</div>
-        </div>
-        <div>
-          <div className="text-[9px] uppercase text-[#5b6f8c]">радиус</div>
-          <div className="text-[#ccd8e6]">{range}</div>
-        </div>
+        {econ ? (
+          def.income ? (
+            <>
+              <div>
+                <div className="text-[9px] uppercase text-[#5b6f8c]">доход</div>
+                <div className="text-[#f0b060]">+{def.income! * tw.level * (tw.level >= 5 ? 2 : 1)}/волну</div>
+              </div>
+              <div>
+                <div className="text-[9px] uppercase text-[#5b6f8c]">за уровень</div>
+                <div className="text-[#e8d9a0]">+{def.income}</div>
+              </div>
+              <div>
+                <div className="text-[9px] uppercase text-[#5b6f8c]">атака</div>
+                <div className="text-[#8a96a8]">нет</div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <div className="text-[9px] uppercase text-[#5b6f8c]">доход</div>
+                <div className="text-[#a6f095]">+{def.essence! * tw.level * (tw.level >= 5 ? 2 : 1)}💠/волну</div>
+              </div>
+              <div>
+                <div className="text-[9px] uppercase text-[#5b6f8c]">за уровень</div>
+                <div className="text-[#c9e8bd]">+{def.essence}</div>
+              </div>
+              <div>
+                <div className="text-[9px] uppercase text-[#5b6f8c]">атака</div>
+                <div className="text-[#8a96a8]">нет</div>
+              </div>
+            </>
+          )
+        ) : (
+          <>
+            <div>
+              <div className="text-[9px] uppercase text-[#5b6f8c]">урон</div>
+              <div className="text-[#f0b060]">{dmg}</div>
+            </div>
+            <div>
+              <div className="text-[9px] uppercase text-[#5b6f8c]">DPS vs след.</div>
+              <div className="text-[#7fd0a0]">{dps}</div>
+            </div>
+            <div>
+              <div className="text-[9px] uppercase text-[#5b6f8c]">радиус</div>
+              <div className="text-[#ccd8e6]">{range}</div>
+            </div>
+          </>
+        )}
       </div>
       {effectLines(def).length > 0 && (
         <ul className="mb-2 flex flex-col gap-0.5 rounded border border-[#2e3c52] bg-[#0a0f17]/60 px-2 py-1">

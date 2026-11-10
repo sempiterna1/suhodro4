@@ -1,7 +1,7 @@
 // Игровой движок прототипа «Железный Разлом»
 // Чистый TypeScript без зависимости от React — в будущем переносится на Unity C#
 
-import { ALL_DEFS, CHAIN_FALLOFF, CHAIN_RANGE, LINE_WIDTH, MERGED_TOWERS, MIN_INTERVAL, SLAM_STUN, TOWERS } from './data/towers'
+import { ALL_DEFS, CHAIN_FALLOFF, CHAIN_RANGE, ECONOMY_IDS, LINE_WIDTH, MERGED_TOWERS, MIN_INTERVAL, SLAM_STUN, TOWERS } from './data/towers'
 import { DAMAGE_MATRIX, ARMOR_HP_MULT, ARMOR_SPEED } from './data/combat'
 import { AVATARS, SELL_RATIO_ENGINEER, VOEVODA_RADIUS, markBonusForLevel, type AvatarId } from './data/avatars'
 import { BOSS_ESCORTS, BOSSES, BOSS_HP_MULT, BOSS_SPEED, TOTAL_WAVES, WAVES, armorsForWave, waveSpeedMult } from './data/waves'
@@ -158,6 +158,8 @@ export class Game {
   /** Сложность выбирается в меню до старта и живёт после рестарта */
   difficulty: DifficultyId = DEFAULT_DIFFICULTY
   gold = DIFFICULTIES[DEFAULT_DIFFICULTY].startGold
+  /** Эссенция: вторая валюта миссии (этап 3). Не конвертируется в золото */
+  essence = 0
   /** HP главного здания: поражение при 0 (утечки и боссы) */
   buildingMaxHp = Math.round(BUILDING_BASE_HP * DIFFICULTIES[DEFAULT_DIFFICULTY].buildingHpMult)
   buildingHp = this.buildingMaxHp
@@ -236,6 +238,7 @@ export class Game {
   reset() {
     this.phase = 'intro'
     this.gold = this.difficultyDef.startGold
+    this.essence = 0
     this.buildingMaxHp = Math.round(BUILDING_BASE_HP * this.difficultyDef.buildingHpMult)
     this.buildingHp = this.buildingMaxHp
     this.wave = 1
@@ -342,7 +345,7 @@ export class Game {
 
   beginPreview() {
     if (this.phase !== 'intro' && this.phase !== 'wave') return
-    if (this.phase === 'intro' && this.shop.length === 0) this.shop = rollPool(this.rng) // первый пул бесплатный
+    if (this.phase === 'intro' && this.shop.length === 0) this.shop = [...rollPool(this.rng), ...ECONOMY_IDS] // первый пул бесплатный
     this.phase = 'preview'
     this.previewRemaining = this.wave === 1 ? FIRST_PREVIEW_TIME : PREVIEW_TIME
   }
@@ -402,7 +405,7 @@ export class Game {
 
   /** Открыть в арсенале все башни (тесты, будущий режим отладки) */
   unlockAllTowers() {
-    this.shop = [...TOWERS.map((t) => t.id), ...MERGED_TOWERS.map((t) => t.id)]
+    this.shop = [...TOWERS.map((t) => t.id), ...ECONOMY_IDS, ...MERGED_TOWERS.map((t) => t.id)]
   }
 
   /** Ролл арсенала: новый пул из SHOP_SIZE башен за ROLL_COST золота */
@@ -411,7 +414,7 @@ export class Game {
     if (this.gold < ROLL_COST) return { ok: false, error: 'Не хватает золота' }
     this.gold -= ROLL_COST
     this.refillGold()
-    this.shop = [...rollPool(this.rng), ...this.discovered]
+    this.shop = [...rollPool(this.rng), ...this.discovered, ...ECONOMY_IDS]
     this.logEvent({ type: 'roll', amount: ROLL_COST, text: this.shop.join(',') })
     return { ok: true }
   }
@@ -443,7 +446,8 @@ export class Game {
     this.gold -= def.price
     this.refillGold()
     this.hand.push(defId)
-    this.shop = this.shop.filter((id) => id !== defId)
+    // экономические постройки в арсенале постоянны: карточка не выбывает после покупки
+    if (!ECONOMY_IDS.includes(defId)) this.shop = this.shop.filter((id) => id !== defId)
     this.logEvent({ type: 'buy', defId, amount: def.price })
     return { ok: true }
   }
@@ -991,6 +995,7 @@ export class Game {
     this.lastDt = dt
     for (const tw of this.towers) {
       const def = ALL_DEFS[tw.defId]
+      if (def.income || def.essence) continue // экономические постройки не атакуют (доход — в finishWave)
       tw.cooldown -= dt
       const range = def.range * levelRangeMult(tw.level)
 
@@ -1371,6 +1376,25 @@ export class Game {
     this.logEvent({ type: 'waveEnd', amount: bonus, text: `волна ${def.n}` })
     // разгон Автоматического арсенала действует только до конца волны
     for (const tw of this.towers) tw.rampMult = 1
+    // Экономические постройки (этап 3): доход за пройденную волну, растёт с уровнем,
+    // на 5 ур. — ×2. Платят в конце волны, стоя на поле: стан — золото, шахта — эссенция.
+    for (const tw of this.towers) {
+      const def = ALL_DEFS[tw.defId]
+      const l5mult = tw.level >= 5 ? 2 : 1
+      if (def.income) {
+        const amount = def.income * tw.level * l5mult
+        this.gold += amount
+        this.stats.goldEarned += amount
+        this.addFloat(tw.x, tw.y - 26, `+${amount}`, '#e8c170')
+        this.logEvent({ type: 'income', defId: tw.defId, towerId: tw.id, level: tw.level, amount })
+      }
+      if (def.essence) {
+        const amount = def.essence * tw.level * l5mult
+        this.essence += amount
+        this.addFloat(tw.x, tw.y - 40, `+${amount} 💠`, '#a6f095')
+        this.logEvent({ type: 'income', defId: tw.defId, towerId: tw.id, level: tw.level, amount, text: 'essence' })
+      }
+    }
     this.wave++
     // второй выход (GDD): пауза перед волной открытия — тропа подсвечивается и строить на ней нельзя
     setSecondPathActive(this.secondExitOpen)
@@ -1399,6 +1423,7 @@ export class Game {
     return {
       phase: this.phase,
       gold: Math.floor(this.gold),
+      essence: Math.floor(this.essence),
       buildingHp: Math.max(0, this.buildingHp),
       buildingMaxHp: this.buildingMaxHp,
       difficulty: this.difficulty,
@@ -1464,6 +1489,7 @@ export class Game {
       phase: this.phase,
       wave: this.wave,
       gold: Math.floor(this.gold),
+      essence: Math.floor(this.essence),
       buildingHp: Math.max(0, this.buildingHp),
       buildingMaxHp: this.buildingMaxHp,
       difficulty: this.difficulty,
@@ -1521,6 +1547,7 @@ export class Game {
     this.phase = s.phase
     this.wave = s.wave
     this.gold = s.gold
+    this.essence = s.essence ?? 0
     this.buildingHp = s.buildingHp
     this.buildingMaxHp = s.buildingMaxHp
     this.difficulty = s.difficulty ?? DEFAULT_DIFFICULTY

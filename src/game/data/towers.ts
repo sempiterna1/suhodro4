@@ -255,6 +255,46 @@ export const TOWERS: TowerDef[] = [
 ]
 
 
+// ─── Экономические постройки (этап 3: золото вместо атаки) ─────────────
+// Постоянно доступны в арсенале: не выпадают в ролле, карточка не выбывает
+// после покупки. Прокачка — общей моделью копии, доход растёт с уровнем.
+export const ECONOMY_TOWERS: TowerDef[] = [
+  {
+    id: 'sluice',
+    name: 'Промывочный стан',
+    attack: 'universal',
+    price: 70,
+    damage: 0,
+    interval: 1,
+    range: 0,
+    projSpeed: 0,
+    income: 7,
+    color: '#e8c170',
+    glyph: '🪙',
+    role: 'не атакует: золото за каждую пройденную волну',
+    l5: 'Добыча удвоена',
+    merged: false,
+  },
+  {
+    id: 'mine',
+    name: 'Кристальная шахта',
+    attack: 'universal',
+    price: 80,
+    damage: 0,
+    interval: 1,
+    range: 0,
+    projSpeed: 0,
+    essence: 4,
+    color: '#a6f095',
+    glyph: '💠',
+    role: 'не атакует: эссенция за каждую пройденную волну',
+    l5: 'Добыча удвоена',
+    merged: false,
+  },
+]
+
+export const ECONOMY_IDS: string[] = ECONOMY_TOWERS.map((t) => t.id)
+
 // ─── Слитые башни (GDD: «Слияние башен», все 12 рецептов) ───────────────
 export const MERGED_TOWERS: MergeDef[] = [
   {
@@ -495,5 +535,5 @@ export const SLAM_STUN = 0.5
 export const MIN_INTERVAL = 0.08 // предел разгона Автогарпуна (защита от бесконечного цикла)
 
 export const ALL_DEFS: Record<string, TowerDef | MergeDef> = Object.fromEntries(
-  [...TOWERS, ...MERGED_TOWERS].map((d) => [d.id, d])
+  [...TOWERS, ...ECONOMY_TOWERS, ...MERGED_TOWERS].map((d) => [d.id, d])
 )

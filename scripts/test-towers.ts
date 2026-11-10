@@ -189,6 +189,75 @@ function firstCreep(g: Game): Creep | undefined {
   g.towerById(pyroLow)!.level = 3
   check('подходящая пара — без ошибки', g.mergeError(archer, pyroLow) === null && g.merge(archer, pyroLow).ok)
 }
+// ─── Промывочный стан (этап 3): постоянный арсенал, доход за волну, не атакует ───
+{
+  const g = new Game()
+  g.useMap(CLASSIC_MAP)
+  g.beginPreview()
+  check('стан в арсенале сразу (без ролла)', g.shop.includes('sluice'))
+  g.gold = 1e6
+  check('покупка стана', g.buy('sluice').ok)
+  check('стан остаётся в арсенале после покупки', g.shop.includes('sluice'))
+  check('ролл не убирает стан', g.roll().ok && g.shop.includes('sluice'))
+  const idx = g.hand.indexOf('sluice')
+  check('копия стана в руке', idx >= 0)
+  // первая свободная клетка — стан не требует покрытия тропы
+  let cell: { x: number; y: number } | null = null
+  outer: for (let cy = 0; cy < 15; cy++) {
+    for (let cx = 0; cx < 24; cx++) {
+      const x = cx * 40 + 20
+      const y = cy * 40 + 20
+      if (g.canPlace(x, y) === null) {
+        cell = { x, y }
+        break outer
+      }
+    }
+  }
+  check('нашлась свободная клетка', cell !== null)
+  const placed = g.placeFromHand(idx, cell!.x, cell!.y)
+  check('стан встал на поле', placed.ok)
+  // оборона, иначе волна 1 с 20 утечками убивает здание и доход не наступит
+  const def = buildTower(g, SPOT.x, SPOT.y, 'golem').towerId!
+  g.towerById(def)!.level = 5
+  g.startWave()
+  run(g, 90) // волна 1 целиком
+  const inc = g.events.filter((e) => e.type === 'income' && e.defId === 'sluice' && e.wave === 1)
+  check('стан заплатил 7 за волну', inc.length === 1 && inc[0].amount === 7, JSON.stringify(inc))
+  check('стан не атакует (0 выстрелов)', g.towers.find((t) => t.defId === 'sluice')!.shotCount === 0)
+}
+{
+  // доход растёт с уровнем; на 5 ур. — ×2 (7×5×2 = 70)
+  const g = new Game()
+  g.unlockAllTowers()
+  g.useMap(CLASSIC_MAP)
+  g.beginPreview()
+  g.gold = 1e6
+  const id = buildTower(g, 420, 260, 'sluice').towerId!
+  g.towerById(id)!.level = 5
+  const def = buildTower(g, SPOT.x, SPOT.y, 'golem').towerId!
+  g.towerById(def)!.level = 5
+  g.startWave()
+  run(g, 90)
+  const inc = g.events.filter((e) => e.type === 'income' && e.wave === 1)
+  check('доход 5 ур. = 70', inc.length === 1 && inc[0].amount === 70, JSON.stringify(inc))
+}
+{
+  // Кристальная шахта: эссенция за волну, растёт с уровнем (4×2 ур. = 8)
+  const g = new Game()
+  g.unlockAllTowers()
+  g.useMap(CLASSIC_MAP)
+  g.beginPreview()
+  g.gold = 1e6
+  const id = buildTower(g, 420, 260, 'mine').towerId!
+  g.towerById(id)!.level = 2
+  const def = buildTower(g, SPOT.x, SPOT.y, 'golem').towerId!
+  g.towerById(def)!.level = 5
+  check('эссенция 0 до первой волны', g.essence === 0)
+  g.startWave()
+  run(g, 40)
+  const mineInc = g.events.filter((e) => e.type === 'income' && e.defId === 'mine' && e.wave === 1)
+  check('шахта дала 8 эссенции', mineInc.length === 1 && mineInc[0].amount === 8 && g.essence === 8, JSON.stringify(mineInc))
+}
 void firstCreep
 
 console.log(failed ? `\n✗ провалено проверок: ${failed}` : '\n✓✓ Все башни и рецепты работают')

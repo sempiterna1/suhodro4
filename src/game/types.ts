@@ -48,6 +48,10 @@ export interface TowerDef extends AttackFx {
   interval: number // сек между выстрелами
   range: number
   projSpeed: number
+  /** Этап 3: золото за пройденную волну за каждый уровень (экономические постройки не атакуют) */
+  income?: number
+  /** Этап 3: эссенция за пройденную волну за каждый уровень (валюта лавки предметов) */
+  essence?: number
   color: string
   glyph: string
   role: string
@@ -72,6 +76,8 @@ export interface MergeDef extends AttackFx {
   desc: string
   l5: string
   merged: true
+  income?: never // слитые башни не бывают экономическими
+  essence?: never
 }
 
 export type TowerDefinition = TowerDef | MergeDef
@@ -222,6 +228,7 @@ export type GameEventType =
   | 'bossAbility'
   | 'waveStart'
   | 'waveEnd'
+  | 'income'
   | 'win'
   | 'lose'
 
@@ -248,6 +255,8 @@ export interface GameEvent {
 export interface UiState {
   phase: Phase
   gold: number
+  /** Эссенция (этап 3): вторая валюта миссии, добывается шахтами, тратится в лавке */
+  essence: number
   /** HP главного здания (поражение при 0) */
   buildingHp: number
   buildingMaxHp: number

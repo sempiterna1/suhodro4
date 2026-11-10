@@ -15,6 +15,8 @@ export interface Snap {
   phase: Phase
   wave: number
   gold: number
+  /** Эссенция (этап 3): вторая валюта миссии, добывается шахтами */
+  essence: number
   buildingHp: number
   buildingMaxHp: number
   difficulty: DifficultyId

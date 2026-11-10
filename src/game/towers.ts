@@ -13,7 +13,7 @@ type Ctx = CanvasRenderingContext2D
 type Slot = 'top' | 'left' | 'right' | 'front'
 type PartKind =
   | 'shield' | 'gear' | 'gatling' | 'prism' | 'bow' | 'crossbow' | 'net' | 'ballista' | 'catapult'
-  | 'hammer' | 'mortar' | 'ram' | 'ice' | 'hourglass' | 'boiler' | 'rod'
+  | 'hammer' | 'mortar' | 'ram' | 'ice' | 'hourglass' | 'boiler' | 'rod' | 'sluice' | 'crystals'
 
 interface Look {
   art: AssetName
@@ -37,6 +37,9 @@ const LOOKS: Record<string, Look> = {
   sentry: { art: 'tower-coal', parts: [['shield', 'front']] },
   mech_guard: { art: 'tower-coal', glow: '#ffd060', parts: [['gatling', 'right'], ['gear', 'left']] },
   prism: { art: 'art-prism', parts: [] },
+  // экономические (этап 3): промывочный лоток у подножия корпуса
+  sluice: { art: 'tower-coal', glow: '#e8c170', parts: [['sluice', 'front']] },
+  mine: { art: 'tower-frost', glow: '#a6f095', parts: [['crystals', 'front']] },
   // пронзающие
   archer: { art: 'art-archer', parts: [] },
   crossbow: { art: 'art-crossbow', parts: [] },
@@ -361,6 +364,78 @@ const PARTS: Record<PartKind, (c: Ctx, color: string) => void> = {
     c.beginPath()
     c.arc(bx, by, 1.3, 0, Math.PI * 2)
     c.fill()
+  },
+  // промывочный лоток на козлах: деревянный жёлоб, вода с золотыми крупинками, корыто
+  sluice: (c) => {
+    // козлы разной высоты — жёлоб наклонён вниз к корыту
+    box(c, -7.2, -0.8, -5.2, 1.3, 1.3, 5.2, WOOD)
+    box(c, 5.9, -0.8, -3, 1.3, 1.3, 3, WOOD)
+    c.save()
+    c.rotate(0.1)
+    box(c, -9, -0.9, -5.6, 18, 1.7, 0.8, WOOD) // дно
+    box(c, -9, -2.6, -5.6, 18, 1, 2, WOOD) // дальний борт
+    box(c, -9, 0.9, -5.6, 18, 1, 2, WOOD) // ближний борт
+    c.fillStyle = '#4e6a88'
+    c.fillRect(-8.5, -1.7, 17, 2.4) // вода
+    c.fillStyle = '#6f8cab'
+    c.fillRect(-8.5, -1.7, 17, 0.7) // блик
+    c.restore()
+    // золотые крупинки на воде
+    for (const [x, y] of [[-6.5, -6.2], [-3, -5.8], [0.5, -6.3], [4, -5.9], [7, -6.2]]) {
+      c.fillStyle = '#ffd76a'
+      c.fillRect(x, y, 0.8, 0.55)
+      c.fillStyle = '#fff2c0'
+      c.fillRect(x, y, 0.35, 0.3)
+    }
+    // корыто у нижнего конца
+    c.fillStyle = '#0b0e14'
+    c.beginPath()
+    c.ellipse(10.8, -3.1, 2.8, 1.5, 0, 0, Math.PI * 2)
+    c.fill()
+    c.fillStyle = '#7a6248'
+    c.beginPath()
+    c.ellipse(10.8, -3.4, 2.3, 1.2, 0, 0, Math.PI * 2)
+    c.fill()
+    c.fillStyle = '#4e6a88'
+    c.beginPath()
+    c.ellipse(10.8, -3.6, 1.8, 0.9, 0, 0, Math.PI * 2)
+    c.fill()
+    c.fillStyle = '#ffd76a'
+    c.fillRect(10.2, -4, 0.7, 0.5)
+  },
+  // жила минерала у подножия: кластер светящихся зелёных кристаллов в выемке
+  crystals: (c, col) => {
+    c.fillStyle = '#0b0e14'
+    c.beginPath()
+    c.ellipse(0, 0.4, 11, 3.2, 0, 0, Math.PI * 2)
+    c.fill()
+    c.fillStyle = '#1a2418'
+    c.beginPath()
+    c.ellipse(0, 0.2, 10, 2.6, 0, 0, Math.PI * 2)
+    c.fill()
+    const g = c.createRadialGradient(0, -4, 0, 0, -4, 12)
+    g.addColorStop(0, col + '55')
+    g.addColorStop(1, col + '00')
+    c.fillStyle = g
+    c.fillRect(-12, -16, 24, 18)
+    for (const [x, h, w, lean] of [[-6.5, 7, 2.6, -0.25], [-2.5, 10, 3.2, -0.08], [1.5, 8, 2.8, 0.12], [5.5, 6, 2.2, 0.3], [8, 3.6, 1.6, 0.2]] as const) {
+      c.save()
+      c.translate(x, 0)
+      c.rotate(lean)
+      c.fillStyle = '#0b0e14'
+      c.beginPath()
+      c.moveTo(-w / 2 - 0.5, 0.5); c.lineTo(0, -h - 1); c.lineTo(w / 2 + 0.5, 0.5)
+      c.fill()
+      c.fillStyle = '#eaffdf'
+      c.beginPath()
+      c.moveTo(-w / 2, 0); c.lineTo(0, -h); c.lineTo(0, 0)
+      c.fill()
+      c.fillStyle = col
+      c.beginPath()
+      c.moveTo(0, 0); c.lineTo(0, -h); c.lineTo(w / 2, 0)
+      c.fill()
+      c.restore()
+    }
   },
 }
 
