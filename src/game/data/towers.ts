@@ -1,4 +1,5 @@
 // Башни, слияния и механики атаки: определения, способности 5 уровня, константы механик.
+// Лорные имена — docs/towers.md (10.11.2026). id и механика не меняются без обновления документа.
 
 import type { AttackType, MergeDef, TowerDef } from '../types'
 
@@ -8,7 +9,7 @@ import type { AttackType, MergeDef, TowerDef } from '../types'
 export const TOWERS: TowerDef[] = [
   {
     id: 'sentry',
-    name: 'Стражник',
+    name: 'Клапанный пулемёт',
     attack: 'universal',
     price: 40,
     damage: 6,
@@ -16,14 +17,14 @@ export const TOWERS: TowerDef[] = [
     range: 120,
     projSpeed: 420,
     color: '#b0a08a',
-    glyph: '🛡',
+    glyph: '⚙',
     role: 'дешёвая стартовая',
     l5: '+20% урона по боссам',
     merged: false,
   },
   {
     id: 'archer',
-    name: 'Лучница',
+    name: 'Гарпунница',
     attack: 'pierce',
     price: 50,
     damage: 5,
@@ -31,14 +32,14 @@ export const TOWERS: TowerDef[] = [
     range: 140,
     projSpeed: 520,
     color: '#8fae6b',
-    glyph: '🏹',
+    glyph: '🎯',
     role: 'быстрая, одна цель',
     l5: 'Двойной выстрел',
     merged: false,
   },
   {
     id: 'crossbow',
-    name: 'Арбалетчик',
+    name: 'Гвоздемёт',
     attack: 'pierce',
     price: 90,
     damage: 15,
@@ -47,14 +48,14 @@ export const TOWERS: TowerDef[] = [
     projSpeed: 620,
     proj: 'bolt',
     color: '#7f9bb3',
-    glyph: '🎯',
+    glyph: '🔩',
     role: 'критический урон',
     l5: 'Крит ×3 каждый 5-й выстрел',
     merged: false,
   },
   {
     id: 'catapult',
-    name: 'Камнемёт',
+    name: 'Шлакомёт',
     attack: 'crush',
     price: 70,
     damage: 12,
@@ -71,7 +72,7 @@ export const TOWERS: TowerDef[] = [
   },
   {
     id: 'mauler',
-    name: 'Молотобоец',
+    name: 'Паровой копёр',
     attack: 'crush',
     price: 110,
     damage: 20,
@@ -88,7 +89,7 @@ export const TOWERS: TowerDef[] = [
   },
   {
     id: 'pyro',
-    name: 'Пиромант',
+    name: 'Жаровня',
     attack: 'magic',
     price: 70,
     damage: 7,
@@ -106,7 +107,7 @@ export const TOWERS: TowerDef[] = [
   // ── новые башни из таблицы GDD ──
   {
     id: 'hunter',
-    name: 'Ловчий',
+    name: 'Тройная гарпунница',
     attack: 'pierce',
     price: 130,
     damage: 7,
@@ -115,14 +116,14 @@ export const TOWERS: TowerDef[] = [
     projSpeed: 540,
     targets: 3,
     color: '#a3b86c',
-    glyph: '🪤',
+    glyph: '🔱',
     role: 'стрела в 3 цели',
     l5: 'Сеть: замедление 30%',
     merged: false,
   },
   {
     id: 'ballista',
-    name: 'Баллиста',
+    name: 'Шпаломёт',
     attack: 'pierce',
     price: 170,
     damage: 30,
@@ -131,7 +132,7 @@ export const TOWERS: TowerDef[] = [
     projSpeed: 0, // мгновенный болт по линии
     line: true,
     color: '#9c8f6a',
-    glyph: '🔱',
+    glyph: '🛤',
     role: 'пробивает линию врагов',
     l5: 'Болт проходит через всю тропу',
     merged: false,
@@ -155,7 +156,7 @@ export const TOWERS: TowerDef[] = [
   },
   {
     id: 'golem',
-    name: 'Голем-таран',
+    name: 'Латунный голем',
     attack: 'crush',
     price: 160,
     damage: 60,
@@ -171,7 +172,7 @@ export const TOWERS: TowerDef[] = [
   },
   {
     id: 'frost',
-    name: 'Ледяной шпиль',
+    name: 'Морозный конденсатор',
     attack: 'magic',
     price: 100,
     damage: 8,
@@ -188,7 +189,7 @@ export const TOWERS: TowerDef[] = [
   },
   {
     id: 'lightning',
-    name: 'Заклинатель молний',
+    name: 'Разрядник',
     attack: 'magic',
     price: 120,
     damage: 12,
@@ -204,7 +205,7 @@ export const TOWERS: TowerDef[] = [
   },
   {
     id: 'chrono',
-    name: 'Хрономант',
+    name: 'Сигнал ИИ',
     attack: 'magic',
     price: 150,
     damage: 14,
@@ -214,14 +215,14 @@ export const TOWERS: TowerDef[] = [
     proj: 'orb',
     slow: { pct: 0.25, dur: 2 },
     color: '#b48ad8',
-    glyph: '⏳',
-    role: 'замедление и урон',
+    glyph: '📡',
+    role: 'взлом: замедление и урон',
     l5: 'Остановка времени у босса на 1 с',
     merged: false,
   },
   {
     id: 'mech_guard',
-    name: 'Механический страж',
+    name: 'Автоканон',
     attack: 'universal',
     price: 100,
     damage: 10,
@@ -230,14 +231,14 @@ export const TOWERS: TowerDef[] = [
     projSpeed: 520,
     proj: 'bolt',
     color: '#a9a39a',
-    glyph: '🤖',
+    glyph: '🔫',
     role: 'сбалансированная',
     l5: 'Пулемётная очередь',
     merged: false,
   },
   {
     id: 'prism',
-    name: 'Призматический кристалл',
+    name: 'Шахтный резонатор',
     attack: 'universal',
     price: 180,
     damage: 14,
@@ -258,7 +259,7 @@ export const TOWERS: TowerDef[] = [
 export const MERGED_TOWERS: MergeDef[] = [
   {
     id: 'flame_archer',
-    name: 'Огненная лучница',
+    name: 'Горящий гарпун',
     parents: ['archer', 'pyro'],
     price: 60,
     attacks: ['pierce', 'magic'],
@@ -269,13 +270,13 @@ export const MERGED_TOWERS: MergeDef[] = [
     burn: { dps: 5, dur: 3 },
     color: '#e0863f',
     glyph: '☄',
-    desc: 'Горящие стрелы, поджог скапливается',
+    desc: 'Горящие гарпуны, поджог скапливается',
     l5: 'Горение вдвое сильнее',
     merged: true,
   },
   {
     id: 'volcano',
-    name: 'Вулкан',
+    name: 'Шлаковый вулкан',
     parents: ['catapult', 'pyro'],
     price: 70,
     attacks: ['crush', 'magic'],
@@ -295,7 +296,7 @@ export const MERGED_TOWERS: MergeDef[] = [
   // ── 10 рецептов, добавленных по таблице GDD ──
   {
     id: 'thunder_crossbow',
-    name: 'Громовой арбалет',
+    name: 'Громовой гвоздемёт',
     parents: ['crossbow', 'lightning'],
     price: 105,
     attacks: ['pierce', 'magic'],
@@ -313,7 +314,7 @@ export const MERGED_TOWERS: MergeDef[] = [
   },
   {
     id: 'frost_hunter',
-    name: 'Морозный ловчий',
+    name: 'Морозная гарпунница',
     parents: ['hunter', 'frost'],
     price: 115,
     attacks: ['pierce', 'magic'],
@@ -349,7 +350,7 @@ export const MERGED_TOWERS: MergeDef[] = [
   },
   {
     id: 'time_guardian',
-    name: 'Страж времени',
+    name: 'Глушитель',
     parents: ['mauler', 'chrono'],
     price: 130,
     attacks: ['crush', 'magic'],
@@ -425,7 +426,7 @@ export const MERGED_TOWERS: MergeDef[] = [
   },
   {
     id: 'eternity_prism',
-    name: 'Призма вечности',
+    name: 'Око ИИ',
     parents: ['prism', 'chrono'],
     price: 165,
     attacks: ['universal', 'magic'],
@@ -443,7 +444,7 @@ export const MERGED_TOWERS: MergeDef[] = [
   },
   {
     id: 'auto_arsenal',
-    name: 'Автоматический арсенал',
+    name: 'Автогарпун',
     parents: ['archer', 'mech_guard'],
     price: 75,
     attacks: ['pierce', 'universal'],
@@ -460,7 +461,7 @@ export const MERGED_TOWERS: MergeDef[] = [
   },
   {
     id: 'stone_titan',
-    name: 'Каменный титан',
+    name: 'Шлаковый титан',
     parents: ['catapult', 'golem'],
     price: 115,
     attacks: ['crush', 'crush'],
@@ -489,11 +490,10 @@ for (const m of MERGED_TOWERS) {
 // Параметры механик (общие для всех башен)
 export const CHAIN_RANGE = 90 // дальность прыжка молнии
 export const CHAIN_FALLOFF = 0.8 // каждый прыжок — ×0.8 урона
-export const LINE_WIDTH = 16 // полуширина болта Баллисты
+export const LINE_WIDTH = 16 // полуширина болта Шпаломёта
 export const SLAM_STUN = 0.5
-export const MIN_INTERVAL = 0.08 // предел разгона Арсенала (защита от бесконечного цикла)
+export const MIN_INTERVAL = 0.08 // предел разгона Автогарпуна (защита от бесконечного цикла)
 
 export const ALL_DEFS: Record<string, TowerDef | MergeDef> = Object.fromEntries(
   [...TOWERS, ...MERGED_TOWERS].map((d) => [d.id, d])
 )
-

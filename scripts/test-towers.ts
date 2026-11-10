@@ -62,7 +62,7 @@ const pairs = new Set(MERGED_TOWERS.map((m) => [...m.parents].sort().join('+')))
 check('пары родителей не повторяются', pairs.size === MERGED_TOWERS.length)
 
 // ─── каждая башня и слитая башня наносит урон (1 и 5 ур.) ───
-// Проверяем урон, а не убийства: одиночная слабая башня 1 ур. (Ледяной шпиль) может не добить
+// Проверяем урон, а не убийства: одиночная слабая башня 1 ур. (Морозный конденсатор) может не добить
 // ни одного врага — HP видов врагов случайно отличаются на ±15%, и тест «мигал».
 for (const def of [...TOWERS, ...MERGED_TOWERS]) {
   for (const level of [1, 5]) {
@@ -87,7 +87,7 @@ function firstCreep(g: Game): Creep | undefined {
     g.update(0.05)
     slowed = g.creeps.some((c) => g.time < c.slowUntil && c.slowPct > 0)
   }
-  check('Ледяной шпиль замедляет', slowed)
+  check('Морозный конденсатор замедляет', slowed)
 }
 {
   const g = setup('lightning', 1)
@@ -96,7 +96,7 @@ function firstCreep(g: Game): Creep | undefined {
     g.update(0.05)
     chained = g.effects.some((e) => e.kind === 'chain' && (e.points?.length ?? 0) > 2)
   }
-  check('Заклинатель молний бьёт цепью', chained)
+  check('Разрядник бьёт цепью', chained)
 }
 {
   const g = setup('ballista', 1)
@@ -105,7 +105,7 @@ function firstCreep(g: Game): Creep | undefined {
     g.update(0.05)
     beam = g.effects.some((e) => e.kind === 'beam')
   }
-  check('Баллиста стреляет болтом по линии', beam)
+  check('Шпаломёт стреляет болтом по линии', beam)
 }
 {
   const g = setup('steam_boiler', 3)
@@ -120,7 +120,7 @@ function firstCreep(g: Game): Creep | undefined {
   const g = setup('auto_arsenal', 3)
   run(g, 15)
   const tw = g.towers[0]
-  check('Автоматический арсенал разгоняется в волне', tw.rampMult > 1, 'множитель ' + tw.rampMult.toFixed(2))
+  check('Автогарпун разгоняется в волне', tw.rampMult > 1, 'множитель ' + tw.rampMult.toFixed(2))
 }
 {
   // счётчик сбрасывается при смене цели — смотрим максимум за волну;
@@ -131,7 +131,7 @@ function firstCreep(g: Game): Creep | undefined {
     g.update(0.05)
     maxStacks = Math.max(maxStacks, g.towers[0].focusStacks)
   }
-  check('Призма вечности копит фокус на цели', maxStacks > 0, 'макс. стаков ' + maxStacks)
+  check('Око ИИ копит фокус на цели', maxStacks > 0, 'макс. стаков ' + maxStacks)
 }
 {
   // аура Бастиона: урон соседа растёт на 10%
@@ -182,7 +182,7 @@ function firstCreep(g: Game): Creep | undefined {
   const pyroFar = at(860, 60, 'pyro', 3)
   const archer2 = at(500, 260, 'archer', 3)
   const noRecipe = g.mergeError(archer, crossbow) ?? ''
-  check('нет рецепта — так и сказано, с подсказкой партнёров', noRecipe.includes('Нет рецепта') && noRecipe.includes('Пиромант'), noRecipe)
+  check('нет рецепта — так и сказано, с подсказкой партнёров', noRecipe.includes('Нет рецепта') && noRecipe.includes('Жаровня'), noRecipe)
   check('низкий уровень — названы уровни', (g.mergeError(archer, pyroLow) ?? '').includes('сейчас 3 и 2'))
   check('далеко — названо расстояние', (g.mergeError(archer, pyroFar) ?? '').includes('Слишком далеко'))
   check('одинаковые башни — отдельная причина', (g.mergeError(archer, archer2) ?? '').includes('разные'))

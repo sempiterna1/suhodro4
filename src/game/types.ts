@@ -61,7 +61,7 @@ export interface MergeDef extends AttackFx {
   name: string
   parents: [string, string]
   price: number // справочная цена (средняя цен родителей)
-  // одинаковые типы = рецепт одного типа атаки (Паровой котёл, Бастион, Каменный титан)
+  // одинаковые типы = рецепт одного типа атаки (Паровой котёл, Бастион, Шлаковый титан)
   attacks: [AttackType, AttackType]
   damage: number
   interval: number

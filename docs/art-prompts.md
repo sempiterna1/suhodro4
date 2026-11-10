@@ -1,4 +1,4 @@
-# Промпты для ассетов «Железного Разлома»
+# Промпты для ассетов «Последнего горизонта»
 
 Готовые промпты для графических нейросетей (Midjourney, DALL·E / ChatGPT, Stable Diffusion, Leonardo, PixelLab, Retro Diffusion). Промпты написаны на английском: так модели понимают их точнее. Пояснения — на русском.
 
@@ -204,38 +204,38 @@ transparent background
 
 | Башня | Атака | {навершие} |
 |---|---|---|
-| Стражник | универсальная | `a small brass gear turret with a short barrel` |
-| Лучница | пронзающая | `a light crossbow arm with a nocked arrow, quick and slim` |
-| Арбалетчик | пронзающая | `a heavy steel crossbow with a scope, aiming forward` |
-| Ловчий | пронзающая | `a triple crossbow firing three bolts in a fan, net launcher` |
-| Баллиста | пронзающая | `a long ballista with a huge bolt, tension cables` |
-| Камнемёт | сокрушающая | `a catapult arm with a stone in the bucket` |
-| Молотобоец | сокрушающая | `a piston-driven steam hammer` |
+| Клапанный пулемёт | универсальная | `a small brass steam machine gun with a spinning barrel and pressure gauge` |
+| Гарпунница | пронзающая | `a light harpoon launcher with a coiled rope, quick and slim` |
+| Гвоздемёт | пронзающая | `a heavy steel nail press with a scope, aiming forward` |
+| Тройная гарпунница | пронзающая | `a triple harpoon firing three barbs in a fan, net launcher` |
+| Шпаломёт | пронзающая | `a long ballista hurling a rail spike, tension cables` |
+| Шлакомёт | сокрушающая | `a catapult arm with a glowing slag lump in the bucket` |
+| Паровой копёр | сокрушающая | `a piston-driven steam hammer` |
 | Мортира | сокрушающая | `a short wide mortar barrel pointing up, smoke` |
-| Голем-таран | сокрушающая | `a massive battering ram fist on pistons` |
-| Пиромант | магическая | `a brazier with a roaring orange flame and fire crystal` |
-| Ледяной шпиль | магическая | `a pale blue ice crystal spire, frost mist` |
-| Заклинатель молний | магическая | `a tesla coil crackling with violet lightning` |
-| Хрономант | магическая | `a brass hourglass inside spinning clock rings, purple glow` |
-| Механический страж | универсальная | `a twin-barrel rotary machine gun on a swivel` |
-| Призматический кристалл | универсальная | `a floating faceted cyan prism shooting a light beam` |
+| Латунный голем | сокрушающая | `a massive brass golem fist on pistons` |
+| Жаровня | магическая | `a brazier with a roaring orange flame and fire crystal` |
+| Морозный конденсатор | магическая | `a pale blue ice crystal spire, frost mist` |
+| Разрядник | магическая | `a tesla coil crackling with violet lightning` |
+| Сигнал ИИ | магическая | `a brass antenna dish emitting purple rings, red AI eye lens` |
+| Автоканон | универсальная | `a twin-barrel rotary machine gun on a swivel` |
+| Шахтный резонатор | универсальная | `a floating faceted cyan prism shooting a light beam` |
 
 **Слитые башни** (тем же шаблоном, `fusion tower`):
 
 | Башня | {навершие} |
 |---|---|
-| Огненная лучница | `a crossbow shooting flaming arrows` |
-| Вулкан | `a catapult hurling molten lava rocks, lava dripping` |
-| Громовой арбалет | `a steel crossbow with a tesla coil, lightning on the bolt` |
-| Морозный ловчий | `a triple crossbow with ice-tipped bolts, frost` |
+| Горящий гарпун | `a harpoon launcher shooting burning harpoons` |
+| Шлаковый вулкан | `a catapult hurling molten slag rocks, lava dripping` |
+| Громовой гвоздемёт | `a steel nail press with a tesla coil, lightning on the nail` |
+| Морозная гарпунница | `a triple harpoon with ice-tipped barbs, frost` |
 | Осадная машина | `a huge siege ballista on a ram frame` |
-| Страж времени | `a steam hammer wrapped in spinning clock rings` |
+| Глушитель | `a steam hammer wrapped in purple signal rings, red eye lens` |
 | Грозовая мортира | `a mortar with a lightning rod, storm sparks` |
 | Паровой котёл | `a boiler venting a big cloud of white steam, frost and fire pipes` |
 | Бастион | `a fortified brass bunker with twin guns and a banner` |
-| Призма вечности | `a prism inside an hourglass frame, purple-cyan beam` |
-| Автоматический арсенал | `a rack of auto-loading crossbows and gun barrels` |
-| Каменный титан | `a giant stone fist slamming the ground, shockwave` |
+| Око ИИ | `a prism inside an antenna frame, purple-cyan beam` |
+| Автогарпун | `a rack of auto-loading harpoon guns` |
+| Шлаковый титан | `a giant slag fist slamming the ground, shockwave` |
 
 ---
 
@@ -317,8 +317,8 @@ cold green energy, dramatic, empty space at the top center for the game title
 
 ### 10.8 Логотип — 512×160
 ```
-pixel art game logo, the words "ЖЕЛЕЗНЫЙ РАЗЛОМ" in heavy riveted brass letters,
-gears and a crack with green glow behind, transparent background
+pixel art game logo, the words "ПОСЛЕДНИЙ ГОРИЗОНТ" in heavy riveted brass letters,
+gears and a green-glowing horizon line behind, transparent background
 ```
 Нейросети часто путают кириллицу. Если буквы получатся с ошибками, сгенерируйте только **оформление без текста** (`no text, empty banner`) и наложите надпись шрифтом вручную.
 

@@ -102,7 +102,7 @@ export function findRecipe(a: string, b: string): MergeDef | null {
   )
 }
 
-/** С какими башнями сливается эта и что получится: «Пиромант → Огненная лучница, …» */
+/** С какими башнями сливается эта и что получится: «Жаровня → Горящий гарпун, …» */
 export function mergePartnersText(defId: string): string {
   const list = MERGED_TOWERS.filter((m) => m.parents.includes(defId)).map((m) => {
     const other = ALL_DEFS[m.parents[0] === defId ? m.parents[1] : m.parents[0]]
@@ -1289,7 +1289,7 @@ export class Game {
         } else if (target) {
           this.applyHit(target, hit)
           if (pr.chain) this.chainFrom(target, pr.chain, pr.damage, pr.attacks, { x: pr.x, y: pr.y }, '#c9b8ff')
-          // способность Камнемёта 5 ур.: осколки после удара
+          // способность Шлакомёта 5 ур.: осколки после удара
           if (pr.kind === 'rock' && pr.sourceDefId === 'catapult' && pr.sourceLevel >= 5) {
             for (const c of [...this.creeps]) {
               const p = pointAtLength(c.dist, c.pathIdx)

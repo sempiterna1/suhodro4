@@ -1,4 +1,4 @@
-# Промпты для PixelLab — «Железный Разлом»
+# Промпты для PixelLab — «Последний горизонт»
 
 Каждый блок ниже — **готовый текст для поля Description**. Копируйте один блок целиком: одна генерация — один ассет. Пояснения на русском в Description не вставляйте.
 
@@ -179,39 +179,39 @@ gently swaying in the wind, the base stays in place, only the top bends
 
 ## 5. Башни — Create image, 32×48, прозрачный фон
 
-Сначала сделайте **Стражника**. Когда он понравится, ставьте его в **Style reference** для всех остальных башен, чтобы получилась одна серия.
+Сначала сделайте **Клапанный пулемёт**. Когда он понравится, ставьте его в **Style reference** для всех остальных башен, чтобы получилась одна серия.
 
-**Стражник** (с него начать):
+**Клапанный пулемёт** (с него начать):
 ```
-steampunk defense tower, square stone block base with iron rivets, short brass column with a grey stripe, on top a small brass gear turret with a short cannon barrel, front view from slightly above, pixel art, transparent background
-```
-
-Лучница:
-```
-steampunk defense tower, square stone block base with iron rivets, brass column with an olive green stripe, on top a light wooden crossbow with a nocked arrow, front view from slightly above, pixel art, transparent background
+steampunk defense tower, square stone block base with iron rivets, short brass column with a grey stripe, on top a small brass steam machine gun with a spinning barrel and a pressure gauge, front view from slightly above, pixel art, transparent background
 ```
 
-Арбалетчик:
+Гарпунница:
 ```
-steampunk defense tower, square stone block base with iron rivets, brass column with an olive green stripe, on top a heavy steel crossbow with a brass scope, front view from slightly above, pixel art, transparent background
-```
-
-Ловчий:
-```
-steampunk defense tower, square stone block base with iron rivets, brass column with an olive green stripe, on top a triple crossbow and a net launcher, front view from slightly above, pixel art, transparent background
+steampunk defense tower, square stone block base with iron rivets, brass column with an olive green stripe, on top a light harpoon launcher with a coiled rope, front view from slightly above, pixel art, transparent background
 ```
 
-Баллиста:
+Гвоздемёт:
 ```
-steampunk defense tower, square stone block base with iron rivets, brass column with an olive green stripe, on top a long ballista loaded with a huge bolt, front view from slightly above, pixel art, transparent background
-```
-
-Камнемёт:
-```
-steampunk defense tower, square stone block base with iron rivets, brass column with a copper orange stripe, on top a catapult arm with a round stone in the bucket, front view from slightly above, pixel art, transparent background
+steampunk defense tower, square stone block base with iron rivets, brass column with an olive green stripe, on top a heavy steel nail press with a brass scope, front view from slightly above, pixel art, transparent background
 ```
 
-Молотобоец:
+Тройная гарпунница:
+```
+steampunk defense tower, square stone block base with iron rivets, brass column with an olive green stripe, on top a triple harpoon and a net launcher, front view from slightly above, pixel art, transparent background
+```
+
+Шпаломёт:
+```
+steampunk defense tower, square stone block base with iron rivets, brass column with an olive green stripe, on top a long ballista loaded with a rail spike, front view from slightly above, pixel art, transparent background
+```
+
+Шлакомёт:
+```
+steampunk defense tower, square stone block base with iron rivets, brass column with a copper orange stripe, on top a catapult arm with a glowing slag lump in the bucket, front view from slightly above, pixel art, transparent background
+```
+
+Паровой копёр:
 ```
 steampunk defense tower, square stone block base with iron rivets, brass column with a copper orange stripe, on top a heavy piston driven steam hammer, front view from slightly above, pixel art, transparent background
 ```
@@ -221,56 +221,56 @@ steampunk defense tower, square stone block base with iron rivets, brass column 
 steampunk defense tower, square stone block base with iron rivets, brass column with a copper orange stripe, on top a short wide iron mortar barrel pointing up, front view from slightly above, pixel art, transparent background
 ```
 
-Голем-таран:
+Латунный голем:
 ```
-steampunk defense tower, square stone block base with iron rivets, brass column with a copper orange stripe, on top a huge iron battering ram fist on pistons, front view from slightly above, pixel art, transparent background
+steampunk defense tower, square stone block base with iron rivets, brass column with a copper orange stripe, on top a huge brass battering ram fist on pistons, front view from slightly above, pixel art, transparent background
 ```
 
-Пиромант:
+Жаровня:
 ```
 steampunk defense tower, square stone block base with iron rivets, brass column with a red stripe, on top an iron brazier with a roaring orange flame, front view from slightly above, pixel art, transparent background
 ```
 
-Ледяной шпиль:
+Морозный конденсатор:
 ```
 steampunk defense tower, square stone block base with iron rivets, brass column with a red stripe, on top a tall pale blue ice crystal spire with frost mist, front view from slightly above, pixel art, transparent background
 ```
 
-Заклинатель молний:
+Разрядник:
 ```
 steampunk defense tower, square stone block base with iron rivets, brass column with a red stripe, on top a copper tesla coil crackling with violet sparks, front view from slightly above, pixel art, transparent background
 ```
 
-Хрономант:
+Сигнал ИИ:
 ```
-steampunk defense tower, square stone block base with iron rivets, brass column with a red stripe, on top a brass hourglass inside spinning clock rings with a purple glow, front view from slightly above, pixel art, transparent background
+steampunk defense tower, square stone block base with iron rivets, brass column with a red stripe, on top a brass antenna dish emitting purple rings with a glowing red lens, front view from slightly above, pixel art, transparent background
 ```
 
-Механический страж:
+Автоканон:
 ```
 steampunk defense tower, square stone block base with iron rivets, brass column with a grey stripe, on top a twin barrel rotary machine gun on a swivel, front view from slightly above, pixel art, transparent background
 ```
 
-Призматический кристалл:
+Шахтный резонатор:
 ```
 steampunk defense tower, square stone block base with iron rivets, brass column with a grey stripe, on top a floating faceted cyan crystal prism glowing, front view from slightly above, pixel art, transparent background
 ```
 
 **Слитые башни** — та же схема, но с золотыми кольцами:
 
-Огненная лучница:
+Горящий гарпун:
 ```
-ornate fusion steampunk defense tower with golden rings around the brass column, square stone base, olive green and red stripes, on top a crossbow shooting flaming arrows, front view from slightly above, pixel art, transparent background
-```
-
-Вулкан:
-```
-ornate fusion steampunk defense tower with golden rings around the brass column, square stone base, copper and red stripes, on top a catapult with a molten lava rock dripping lava, front view from slightly above, pixel art, transparent background
+ornate fusion steampunk defense tower with golden rings around the brass column, square stone base, olive green and red stripes, on top a harpoon launcher shooting burning harpoons, front view from slightly above, pixel art, transparent background
 ```
 
-Громовой арбалет:
+Шлаковый вулкан:
 ```
-ornate fusion steampunk defense tower with golden rings around the brass column, square stone base, olive green and red stripes, on top a steel crossbow combined with a crackling tesla coil, front view from slightly above, pixel art, transparent background
+ornate fusion steampunk defense tower with golden rings around the brass column, square stone base, copper and red stripes, on top a catapult with a molten slag rock dripping lava, front view from slightly above, pixel art, transparent background
+```
+
+Громовой гвоздемёт:
+```
+ornate fusion steampunk defense tower with golden rings around the brass column, square stone base, olive green and red stripes, on top a steel nail press combined with a crackling tesla coil, front view from slightly above, pixel art, transparent background
 ```
 
 Бастион:
@@ -278,22 +278,22 @@ ornate fusion steampunk defense tower with golden rings around the brass column,
 ornate fusion steampunk defense tower with golden rings, square stone base, on top a small fortified brass bunker with twin guns and a red banner, front view from slightly above, pixel art, transparent background
 ```
 
-Каменный титан:
+Шлаковый титан:
 ```
-ornate fusion steampunk defense tower with golden rings, massive stone base, on top a giant stone fist slamming down, front view from slightly above, pixel art, transparent background
+ornate fusion steampunk defense tower with golden rings, massive stone base, on top a giant slag fist slamming down, front view from slightly above, pixel art, transparent background
 ```
 
 Остальные слитые башни — по той же схеме. В конец после `on top` вставьте навершие:
 
 | Башня | Навершие |
 |---|---|
-| Морозный ловчий | `a triple crossbow with ice tipped bolts and frost` |
+| Морозная гарпунница | `a triple harpoon with ice tipped barbs and frost` |
 | Осадная машина | `a huge siege ballista on a battering ram frame` |
-| Страж времени | `a steam hammer wrapped in spinning clock rings` |
+| Глушитель | `a steam hammer wrapped in purple signal rings with a red lens` |
 | Грозовая мортира | `a mortar with a lightning rod and storm sparks` |
 | Паровой котёл | `a boiler venting a big cloud of white steam` |
-| Призма вечности | `a cyan prism inside a brass hourglass frame` |
-| Автоматический арсенал | `a rack of auto loading crossbows and gun barrels` |
+| Око ИИ | `a cyan prism inside a brass antenna frame` |
+| Автогарпун | `a rack of auto loading harpoon guns` |
 
 **Анимация выстрела:** готовую башню откройте в **Animate**.
 
@@ -486,7 +486,7 @@ iron robot skull icon with one glowing red eye, pixel art, transparent backgroun
 ## 11. С чего начать
 
 1. **Тайлы:** земля и тропа (раздел 1). Проверьте, что они плоские и без швов.
-2. **Стражник** (раздел 5). Затем ставьте его в Style reference для остальных башен.
+2. **Клапанный пулемёт** (раздел 5). Затем ставьте его в Style reference для остальных башен.
 3. **Паровой паук** в Characters, с ходьбой (раздел 6).
 4. **Фонарь, бочка и трава** (разделы 3–4).
 
@@ -498,8 +498,8 @@ iron robot skull icon with one glowing red eye, pixel art, transparent backgroun
 |---|---|
 | Земля | `tile-ground.png` |
 | Тропа | `tile-path.png` |
-| Стражник | `tower-sentry.png` |
+| Клапанный пулемёт | `tower-sentry.png` |
 | Ходьба паука вправо | `creep-scuttler-walk-east.png` |
 | Фонарь | `decor-lantern.png` |
 
-**Куда класть:** `E:\zhelezny-razlom\public\assets\`. Как принесёте первую партию, я подключу её к игре.
+**Куда класть:** `public/assets/` в папке проекта «Последний горизонт». Как принесёте первую партию, я подключу её к игре.
