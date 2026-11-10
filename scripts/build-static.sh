@@ -3,9 +3,10 @@
 # Временно переключает next.config.ts на output:'export' и убирает api/route.ts
 # (игре сервер не нужен), после сборки всё возвращает обратно через trap.
 set -e
-cd /home/z/my-project
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
 
-BAK=/home/z/my-project/scripts/_static_build_backup
+BAK="$ROOT/scripts/_static_build_backup"
 rm -rf "$BAK"
 mkdir -p "$BAK"
 
@@ -43,7 +44,7 @@ echo "[2/5] Временное перемещение src/app/api (игре не
 mv src/app/api "$BAK/api_tmp"
 
 echo "[3/5] Сборка next build (static export)..."
-NEXT_TELEMETRY_DISABLED=1 bunx next build
+NEXT_TELEMETRY_DISABLED=1 npx.cmd next build
 
 echo "[4/5] Поиск выходной папки экспорта..."
 EXPORT_DIR=""
@@ -55,9 +56,11 @@ if [ -z "$EXPORT_DIR" ]; then
   exit 1
 fi
 echo "Экспорт найден: $EXPORT_DIR"
-rm -rf /home/z/my-project/download/zhelezny-razlom-site
-cp -r "$EXPORT_DIR" /home/z/my-project/download/zhelezny-razlom-site
+OUT="$ROOT/download/zhelezny-razlom-site"
+rm -rf "$OUT"
+mkdir -p "$ROOT/download"
+cp -r "$EXPORT_DIR" "$OUT"
 
 echo "[5/5] Готово. Содержимое:"
-ls -la /home/z/my-project/download/zhelezny-razlom-site/
-du -sh /home/z/my-project/download/zhelezny-razlom-site/
+ls -la "$OUT/"
+du -sh "$OUT/"
