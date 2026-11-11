@@ -474,7 +474,15 @@ function StepHero({
               style={{ borderColor: picked ? av.color : undefined }}
               title={`${av.abilityName}: ${av.abilityDesc}`}
             >
-              <AvatarImg id={id} size={64} />
+              {/* портрет во всю ширину карточки: квадрат из верха кадра (табличка SVG с именем обрезается — имя подписано ниже) */}
+              <div className="w-full overflow-hidden rounded-sm border" style={{ aspectRatio: '1 / 1', borderColor: picked ? av.color : '#2e3c52' }}>
+                <img
+                  src={avatarPortrait(id, 3)}
+                  alt=""
+                  className="h-full w-full object-cover object-top"
+                  draggable={false}
+                />
+              </div>
               <span className="font-serif text-sm font-black leading-none" style={{ color: av.color }}>{av.name}</span>
               <span className="text-[10px] leading-tight text-[#b9c6d8]">{av.role}</span>
               <span className="font-mono text-[9px] leading-tight text-[#7088a8]">{av.abilityName} · {av.abilityCd} с</span>
@@ -514,19 +522,6 @@ function StepHero({
         </motion.button>
       </div>
     </div>
-  )
-}
-
-/** Портрет аватара: SVG-файл из public/assets/portraits (статичный путь — гидратация не расходится) */
-function AvatarImg({ id, size = 40 }: { id: AvatarId; size?: number }) {
-  return (
-    <img
-      src={avatarPortrait(id, 3)}
-      alt=""
-      style={{ height: size, width: size }}
-      className="object-contain"
-      draggable={false}
-    />
   )
 }
 
