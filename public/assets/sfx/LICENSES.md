@@ -19,6 +19,8 @@
 ## Собственный синтез (шум + фильтры + огибающие, права принадлежат проекту)
 `catapult-*`, `mortar-*`, `thud-*`, `boom-*`, `fire-*`, `frost-*`, `spark-*`, `time-*`, `prism-1`, `steam-*`, `clank-*`,
 `build-*`, `roll-1`, `leak-1`, `horn-1` — сгенерированы `sfx-synth.mjs`, внешних источников нет.
+`av-hunter-ack/cast`, `av-voevoda-ack/cast`, `av-archmage-ack/cast`, `av-engineer-ack/cast` — звуки аватаров
+(отклик на приказ движения и каст способности, задача 22), тот же синтезатор, внешних источников нет.
 
 Ambient (ветер, гул генератора, костры, скрип, пульс Разлома) целиком синтезируется в Web Audio в `src/game/audio.ts`.
 

@@ -105,10 +105,10 @@ export function placementError(x: number, y: number, towers: Tower[], avatar: Ve
     return footprint > 1 ? `Нужен блок ${footprint}×${footprint}: впритык к краю карты не поставить` : 'За краем карты'
   }
   const block = blockCells(c, footprint)
-  const acell = cellOf(avatar.x, avatar.y) // Охотница не должна стоять в блоке
+  const acell = cellOf(avatar.x, avatar.y) // Сорока не должна стоять в блоке
   for (const b of block) {
     if (isPathCell(b)) return 'Нельзя строить на тракте'
-    if (acell.cx === b.cx && acell.cy === b.cy) return 'Охотница стоит на этом месте'
+    if (acell.cx === b.cx && acell.cy === b.cy) return 'Сорока стоит на этом месте'
   }
   for (const tw of towers) {
     if (tw.id === ignoreId) continue
@@ -1274,7 +1274,7 @@ export class Game {
     return 1 + best
   }
 
-  /** Пассивки аватаров: Воевода +5% башням рядом, Архимаг +10% магическим башням */
+  /** Пассивки аватаров: Кузьма +5% башням рядом, Фитиль +10% магическим башням */
   private avatarPassiveMult(tw: Tower, def: TowerDefinition): number {
     if (this.avatarId === 'voevoda' && Math.hypot(tw.x - this.avatar.x, tw.y - this.avatar.y) <= VOEVODA_RADIUS) return 1.05
     if (this.avatarId === 'archmage' && (def.merged ? def.attacks.includes('magic') : def.attack === 'magic')) return 1.1

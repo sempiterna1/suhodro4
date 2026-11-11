@@ -1,0 +1,137 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 240">
+  <!-- Гайка, механик лагеря. Латунный шлем, гогглы с бирюзовыми линзами, оранжевая куртка, гаечный ключ -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1b1710"/>
+      <stop offset="1" stop-color="#0e0d12"/>
+    </linearGradient>
+    <radialGradient id="vign" cx="0.5" cy="0.42" r="0.75">
+      <stop offset="0.55" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0.55"/>
+    </radialGradient>
+    <linearGradient id="brass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffd76a"/>
+      <stop offset="0.5" stop-color="#d4a85a"/>
+      <stop offset="1" stop-color="#7d5a2c"/>
+    </linearGradient>
+    <linearGradient id="helmet" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffd76a"/>
+      <stop offset="0.6" stop-color="#d4a85a"/>
+      <stop offset="1" stop-color="#8a6432"/>
+    </linearGradient>
+    <linearGradient id="jacket" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#c8742e"/>
+      <stop offset="1" stop-color="#8a4a1c"/>
+    </linearGradient>
+    <linearGradient id="lens" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d5e9ff"/>
+      <stop offset="0.5" stop-color="#9fd2ff"/>
+      <stop offset="1" stop-color="#5a9ac4"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="200" height="240" fill="url(#bg)"/>
+  <!-- мастерская: большая шестерня за спиной, трубы -->
+  <circle cx="100" cy="108" r="62" fill="none" stroke="#2c2925" stroke-width="10"/>
+  <circle cx="100" cy="108" r="62" fill="none" stroke="#3a362f" stroke-width="3"/>
+  <g fill="#3a362f">
+    <rect x="92" y="34" width="16" height="10" rx="3"/>
+    <rect x="92" y="172" width="16" height="10" rx="3"/>
+    <rect x="28" y="100" width="10" height="16" rx="3"/>
+    <rect x="162" y="100" width="10" height="16" rx="3"/>
+  </g>
+  <circle cx="100" cy="108" r="8" fill="#2c2925" stroke="#3a362f" stroke-width="2"/>
+  <rect x="0" y="20" width="90" height="8" fill="#2c2925"/>
+  <rect x="120" y="20" width="80" height="8" fill="#2c2925"/>
+  <rect x="0" y="20" width="90" height="3" fill="#3a362f"/>
+  <rect x="120" y="20" width="80" height="3" fill="#3a362f"/>
+  <path d="M 176 28 Q 186 40 180 50" fill="none" stroke="#ece6d6" stroke-width="3" stroke-linecap="round" opacity="0.55"/>
+
+  <!-- гаечный ключ за плечом -->
+  <g transform="rotate(22 148 150)">
+    <rect x="144" y="96" width="10" height="118" rx="5" fill="#a8adb3" stroke="#140d07" stroke-width="2"/>
+    <rect x="144" y="120" width="10" height="5" fill="#61666d"/>
+    <path d="M 138 96 L 160 96 L 160 78 Q 160 70 152 70 Q 144 70 144 78 L 144 84 L 154 84 L 154 88 L 144 88 Z" fill="#a8adb3" stroke="#140d07" stroke-width="2"/>
+    <rect x="144" y="210" width="10" height="8" rx="3" fill="#d4a85a" stroke="#140d07" stroke-width="2"/>
+  </g>
+
+  <!-- плечи, куртка -->
+  <path d="M 34 226 L 44 172 Q 58 148 84 144 L 116 144 Q 142 148 156 172 L 166 226 Z" fill="url(#jacket)" stroke="#140d07" stroke-width="2.5"/>
+  <path d="M 44 172 Q 58 148 84 144 L 94 144 L 70 226 L 34 226 Z" fill="#5a2f10" opacity="0.45"/>
+  <!-- воротник -->
+  <path d="M 84 144 L 100 170 L 92 144 Z" fill="#8a4a1c" stroke="#140d07" stroke-width="2"/>
+  <path d="M 116 144 L 100 170 L 108 144 Z" fill="#8a4a1c" stroke="#140d07" stroke-width="2"/>
+  <!-- молния с латунными заклёпками -->
+  <path d="M 100 174 L 100 226" stroke="#3f2a18" stroke-width="4"/>
+  <path d="M 100 174 L 100 226" stroke="#d4a85a" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <!-- нашивка-шестерёнка на груди -->
+  <g transform="translate(66 192)">
+    <circle r="9" fill="#d4a85a" stroke="#140d07" stroke-width="2"/>
+    <circle r="3.5" fill="#241708"/>
+    <g fill="#d4a85a" stroke="#140d07" stroke-width="1">
+      <rect x="-2" y="-13" width="4" height="5" rx="1"/><rect x="-2" y="8" width="4" height="5" rx="1"/>
+      <rect x="-13" y="-2" width="5" height="4" rx="1"/><rect x="8" y="-2" width="5" height="4" rx="1"/>
+    </g>
+  </g>
+
+  <!-- хвост из-под шлема -->
+  <path d="M 126 100 Q 148 112 150 140 Q 152 158 140 168 Q 146 148 138 130 Q 132 114 122 108 Z" fill="#c06a2a" stroke="#140d07" stroke-width="2.5"/>
+  <circle cx="141" cy="166" r="5" fill="#d4a85a" stroke="#140d07" stroke-width="2"/>
+
+  <!-- шея и голова -->
+  <rect x="90" y="122" width="20" height="24" rx="8" fill="#d09b70" stroke="#140d07" stroke-width="2"/>
+  <circle cx="100" cy="98" r="32" fill="#e8b48a" stroke="#140d07" stroke-width="2.5"/>
+  <path d="M 100 66 A 32 32 0 0 1 132 98 L 100 98 Z" fill="#f2c9a0" opacity="0.35"/>
+
+  <!-- веснушки -->
+  <g fill="#d09b70">
+    <circle cx="80" cy="108" r="1.4"/><circle cx="85" cy="112" r="1.4"/><circle cx="76" cy="113" r="1.2"/>
+    <circle cx="120" cy="108" r="1.4"/><circle cx="115" cy="112" r="1.4"/><circle cx="124" cy="113" r="1.2"/>
+  </g>
+  <!-- брови и глаза под линзами -->
+  <path d="M 82 92 Q 88 88 94 91" fill="none" stroke="#8a4a1c" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M 118 92 Q 112 88 106 91" fill="none" stroke="#8a4a1c" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="89" cy="99" r="3" fill="#241708"/>
+  <circle cx="111" cy="99" r="3" fill="#241708"/>
+  <!-- улыбка механика -->
+  <path d="M 90 112 Q 100 120 110 112" fill="none" stroke="#3f2a18" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M 100 120 L 100 114" stroke="#3f2a18" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- латунный шлем -->
+  <path d="M 66 94 Q 66 58 100 54 Q 134 58 134 94 L 134 98 L 66 98 Z" fill="url(#helmet)" stroke="#140d07" stroke-width="2.5"/>
+  <path d="M 72 86 Q 76 60 100 58 L 100 86 Z" fill="#ffd76a" opacity="0.4"/>
+  <ellipse cx="100" cy="98" rx="40" ry="8" fill="#8a6432" stroke="#140d07" stroke-width="2.5"/>
+  <ellipse cx="100" cy="96" rx="40" ry="7" fill="url(#brass)" stroke="#140d07" stroke-width="2"/>
+  <g fill="#7d5a2c">
+    <circle cx="74" cy="76" r="2"/><circle cx="126" cy="76" r="2"/><circle cx="100" cy="58" r="2"/>
+  </g>
+  <!-- маленькая труба на шлеме -->
+  <rect x="100" y="40" width="7" height="16" rx="3" fill="#61666d" stroke="#140d07" stroke-width="2"/>
+  <path d="M 103 40 Q 96 32 100 24" fill="none" stroke="#ece6d6" stroke-width="2.5" stroke-linecap="round" opacity="0.8"/>
+
+  <!-- гогглы -->
+  <path d="M 66 96 Q 100 88 134 96 L 134 102 L 66 102 Z" fill="#3f2a18" stroke="#140d07" stroke-width="2"/>
+  <line x1="100" y1="90" x2="100" y2="120" stroke="#3f2a18" stroke-width="5"/>
+  <circle cx="88" cy="104" r="13" fill="#3f2a18" stroke="#140d07" stroke-width="2.5"/>
+  <circle cx="112" cy="104" r="13" fill="#3f2a18" stroke="#140d07" stroke-width="2.5"/>
+  <circle cx="88" cy="104" r="9" fill="url(#lens)" stroke="#7d5a2c" stroke-width="2"/>
+  <circle cx="112" cy="104" r="9" fill="url(#lens)" stroke="#7d5a2c" stroke-width="2"/>
+  <path d="M 83 100 A 9 9 0 0 1 92 98" fill="none" stroke="#e8f4ff" stroke-width="2" stroke-linecap="round"/>
+  <path d="M 107 100 A 9 9 0 0 1 116 98" fill="none" stroke="#e8f4ff" stroke-width="2" stroke-linecap="round"/>
+  <!-- блик линз -->
+  <circle cx="88" cy="104" r="2" fill="#241708" opacity="0.55"/>
+  <circle cx="112" cy="104" r="2" fill="#241708" opacity="0.55"/>
+
+  <rect width="200" height="240" fill="url(#vign)"/>
+
+  <!-- латунная рамка -->
+  <rect x="6" y="6" width="188" height="228" rx="14" fill="none" stroke="url(#brass)" stroke-width="6"/>
+  <rect x="13" y="13" width="174" height="214" rx="10" fill="none" stroke="#7d5a2c" stroke-width="2"/>
+  <g fill="#ffd76a" stroke="#7d5a2c" stroke-width="1.5">
+    <circle cx="16" cy="16" r="3.5"/><circle cx="184" cy="16" r="3.5"/>
+    <circle cx="16" cy="224" r="3.5"/><circle cx="184" cy="224" r="3.5"/>
+  </g>
+  <!-- табличка -->
+  <rect x="52" y="214" width="96" height="17" rx="4" fill="url(#brass)" stroke="#140d07" stroke-width="2"/>
+  <text x="100" y="227" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="12" font-weight="bold" letter-spacing="3" fill="#241708">ГАЙКА</text>
+</svg>

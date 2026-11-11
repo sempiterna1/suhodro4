@@ -5,6 +5,7 @@
 // Поэтому звук работает и у гостя в коопе, которому мир приходит снапшотами.
 
 import { ALL_DEFS, MAP_W, bossForWave } from './config'
+import { type AvatarId } from './data/avatars'
 import { pointAtLength, type Game } from './engine'
 import type { CreepKind, TowerDefinition } from './types'
 import { windAt } from './wind'
@@ -24,12 +25,24 @@ const readAmbientVolume = () => {
 type Sound =
   | 'bow' | 'crossbow' | 'catapult' | 'mortar' | 'thud' | 'boom' | 'fire' | 'frost' | 'spark' | 'time' | 'prism' | 'steam' | 'clank'
   | 'die' | 'leak' | 'smash' | 'roar' | 'horn' | 'build' | 'roll' | 'victory' | 'defeat'
+  | 'avHunterAck' | 'avHunterCast' | 'avVoevodaAck' | 'avVoevodaCast'
+  | 'avArchmageAck' | 'avArchmageCast' | 'avEngineerAck' | 'avEngineerCast'
 type Synth = 'twang' | 'thud' | 'boom' | 'zap' | 'fire' | 'chime' | 'warp' | 'clank' | 'die' | 'leak' | 'smash' | 'roar' | 'horn' | 'build' | 'roll' | 'victory' | 'defeat'
 
 /** Запасной синтез, пока файла нет или он ещё грузится */
 const SYNTH: Record<Sound, Synth> = {
   bow: 'twang', crossbow: 'clank', catapult: 'thud', mortar: 'boom', thud: 'thud', boom: 'boom', fire: 'fire', frost: 'chime',
   spark: 'zap', time: 'warp', prism: 'chime', steam: 'fire', clank: 'clank', die: 'die', leak: 'leak', smash: 'smash', roar: 'roar', horn: 'horn', build: 'build', roll: 'roll', victory: 'victory', defeat: 'defeat',
+  avHunterAck: 'chime', avHunterCast: 'fire', avVoevodaAck: 'thud', avVoevodaCast: 'horn',
+  avArchmageAck: 'fire', avArchmageCast: 'boom', avEngineerAck: 'clank', avEngineerCast: 'fire',
+}
+
+/** Звуки аватаров (задача 22): у каждого героя свой отклик на приказ движения и каст способности */
+const AVATAR_SOUNDS: Record<AvatarId, { ack: Sound; cast: Sound }> = {
+  hunter: { ack: 'avHunterAck', cast: 'avHunterCast' },         // Сорока: свист / дым-пшик
+  voevoda: { ack: 'avVoevodaAck', cast: 'avVoevodaCast' },      // Кузьма: шаг сапога / гудок смены
+  archmage: { ack: 'avArchmageAck', cast: 'avArchmageCast' },   // Фитиль: чирк спички / фитиль+взрыв
+  engineer: { ack: 'avEngineerAck', cast: 'avEngineerCast' },   // Гайка: трещотка / паровой клапан
 }
 
 /** Звук выстрела по башне: камнемёт — скрип и глухой «бух», арбалет — тугая тетива, лук — тетива и свист, огонь — «фух», мороз — звон… */
@@ -88,6 +101,15 @@ const SAMPLES: Record<Sound, { files: string[]; gain: number }> = {
   defeat: { files: [], gain: 0.25 },
   horn: { files: wavs('horn', 1), gain: 0.5 },
   die: { files: wavs('monster', 10), gain: 0.4 },
+  // аватары (задача 22): отклик на приказ движения и каст способности
+  avHunterAck: { files: ['av-hunter-ack.wav'], gain: 0.45 },
+  avHunterCast: { files: ['av-hunter-cast.wav'], gain: 0.55 },
+  avVoevodaAck: { files: ['av-voevoda-ack.wav'], gain: 0.55 },
+  avVoevodaCast: { files: ['av-voevoda-cast.wav'], gain: 0.6 },
+  avArchmageAck: { files: ['av-archmage-ack.wav'], gain: 0.45 },
+  avArchmageCast: { files: ['av-archmage-cast.wav'], gain: 0.65 },
+  avEngineerAck: { files: ['av-engineer-ack.wav'], gain: 0.45 },
+  avEngineerCast: { files: ['av-engineer-cast.wav'], gain: 0.6 },
 }
 /** Высота голоса гибели по виду врага: тяжёлые гудят ниже, лёгкие — выше */
 const DIE_RATE: Partial<Record<CreepKind, number>> = { titan: 0.6, golem: 0.72, juggernaut: 0.8, trooper: 0.9, rider: 1.05, swarm: 1.25, wisp: 1.3 }
@@ -96,6 +118,9 @@ const MAX_VOICES = 8 // сэмплов одновременно — чтобы �
 const MIN_GAP: Partial<Record<Sound, number>> = {
   die: 0.05, clank: 0.06, bow: 0.05, crossbow: 0.06, spark: 0.08, boom: 0.12, catapult: 0.1, mortar: 0.12, thud: 0.1, fire: 0.08, frost: 0.08,
   leak: 0.3, smash: 0.8, roar: 2.5, victory: 2, defeat: 2,
+  // аватары: спам кликов не превращается в треск; у кастов зазор больше (долгие звуки)
+  avHunterAck: 0.25, avVoevodaAck: 0.25, avArchmageAck: 0.25, avEngineerAck: 0.25,
+  avHunterCast: 0.5, avVoevodaCast: 0.5, avArchmageCast: 0.5, avEngineerCast: 0.5,
 }
 
 /** Шаги мобов: чем тяжелее — тем глуше и ниже; тише выстрелов в 2–4 раза. stride — сколько пикселей пути между шагами */
@@ -166,6 +191,9 @@ export class Sfx {
   private wave = -1
   private phase = ''
   private shop = ''
+  /** Состояние аватара прошлого кадра: кулдаун (прыжок вверх = каст) и цель (новая = отклик) */
+  private avatarCd = -1
+  private avatarTarget: { x: number; y: number } | null = null
   private ambient: {
     amb: GainNode
     windGain: GainNode
@@ -589,6 +617,21 @@ export class Sfx {
     if (dmg > 0) play(dmg >= 50 ? 'smash' : 'leak', MAP_W)
     this.creeps = alive
     this.buildingHp = game.buildingHp
+
+    // аватар: кулдаун прыгнул вверх = каст способности; появилась новая цель = отклик на приказ.
+    // События не приходят из движка — сравниваем состояние между кадрами, поэтому работает и у гостя коопа.
+    const av = game.avatar
+    const avSnd = AVATAR_SOUNDS[game.avatarId]
+    const prevCd = this.avatarCd
+    const prevTarget = this.avatarTarget
+    this.avatarCd = av.cooldown
+    this.avatarTarget = av.target ? { x: av.target.x, y: av.target.y } : null
+    if (!fresh && prevCd >= 0) {
+      if (av.cooldown > prevCd + 1) play(avSnd.cast, av.x)
+      else if (av.target && (!prevTarget || Math.hypot(av.target.x - prevTarget.x, av.target.y - prevTarget.y) > 24)) {
+        play(avSnd.ack, av.x)
+      }
+    }
 
     // шаги: каждые stride пикселей пройденного пути — один шаг (по разнице dist между кадрами, поэтому слышно и у гостя коопа)
     let stepBudget = MAX_STEPS_PER_FRAME

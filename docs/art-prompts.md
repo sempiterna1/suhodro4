@@ -59,7 +59,7 @@ jpeg artifacts, noise, high detail texture, isometric
 | Растения | `#4f5f22` · `#5e6e2a` · `#6f7d34` · сухая `#7a6f34` |
 | Броня врагов | лёгкая `#d4b483` · средняя `#9aa0a6` · тяжёлая `#6b6f76` · универсальная `#7aa874` |
 | Типы атаки башен | пронзающая `#8fae6b` · сокрушающая `#c2874f` · магическая `#d4694f` · универсальная `#b0a08a` |
-| Охотница | плащ `#3f7a5a` · `#275040` · кожа `#6b4a2e` · лицо `#e8b48a` |
+| Сорока (следопытка) | плащ `#3f7a5a` · `#275040` · кожа `#6b4a2e` · лицо `#e8b48a` |
 
 ---
 
@@ -171,19 +171,21 @@ transparent background
 
 ---
 
-## 7. Охотница (герой) — 12×13, вид сбоку, смотрит вправо
+## 7. Сорока, следопытка конвоя (герой) — 12×13, вид сбоку, смотрит вправо
 
 ```
 [стиль] sprite sheet, 4-frame walk cycle, each 12x13 pixels, side view facing right,
-a hooded female hunter in a dark green cloak, leather straps, holding a brass steampunk bow,
+a lean scout in a dark green cloak and wide-brim hat, leather straps,
+holding a long steel carbine with brass fittings, smoke flare hanging from her belt,
 determined, small and readable, transparent background
 ```
-Ещё 2 кадра: стойка и выстрел (`drawing the bow` / `releasing an arrow`).
+Ещё 2 кадра: стойка и бросок шашки (`lighting a smoke flare` / `tossing the flare`).
 
-Портрет для HUD — 48×48:
+Портрет для HUD — SVG (public/assets/portraits/hunter.svg, задача 22; нейросетевой вариант не нужен,
+но если хочется крупнее — вот промпт):
 ```
-[стиль] character portrait icon 48x48 pixels, hooded female steampunk hunter, green cloak,
-brass goggles pushed up, confident look, inside a round brass frame, dark background
+[стиль] character portrait, female steampunk scout in dark green cloak and wide-brim hat,
+long steel carbine, smoke flare, confident smirk, dark industrial background, brass frame
 ```
 
 ---

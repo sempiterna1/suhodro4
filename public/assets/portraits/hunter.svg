@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 240">
+  <!-- Сорока, следопытка конвоя. Палитра игры: плащ #3f7a5a/#275040, кожа #e8b48a, латунь #d4a85a -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1b1710"/>
+      <stop offset="1" stop-color="#0e0d12"/>
+    </linearGradient>
+    <radialGradient id="vign" cx="0.5" cy="0.42" r="0.75">
+      <stop offset="0.55" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0.55"/>
+    </radialGradient>
+    <linearGradient id="brass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffd76a"/>
+      <stop offset="0.5" stop-color="#d4a85a"/>
+      <stop offset="1" stop-color="#7d5a2c"/>
+    </linearGradient>
+    <linearGradient id="cloak" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3f7a5a"/>
+      <stop offset="1" stop-color="#275040"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="200" height="240" fill="url(#bg)"/>
+  <!-- индустриальный фон: труба, шестерня, снег -->
+  <rect x="0" y="18" width="200" height="9" fill="#2c2925"/>
+  <rect x="0" y="18" width="200" height="3" fill="#3a362f"/>
+  <circle cx="166" cy="64" r="26" fill="none" stroke="#2c2925" stroke-width="7"/>
+  <circle cx="166" cy="64" r="26" fill="none" stroke="#3a362f" stroke-width="2"/>
+  <g fill="#3a362f">
+    <rect x="160" y="28" width="12" height="7" rx="2"/>
+    <rect x="160" y="93" width="12" height="7" rx="2"/>
+    <rect x="124" y="60" width="7" height="12" rx="2" transform="rotate(0)"/>
+    <rect x="201" y="60" width="7" height="12" rx="2"/>
+  </g>
+  <g fill="#5e5137" opacity="0.5">
+    <circle cx="34" cy="40" r="1.4"/><circle cx="52" cy="70" r="1.1"/><circle cx="26" cy="96" r="1.4"/>
+    <circle cx="150" cy="24" r="1.1"/><circle cx="186" cy="110" r="1.4"/><circle cx="40" cy="126" r="1.1"/>
+  </g>
+
+  <!-- карабин за плечом -->
+  <g transform="rotate(24 150 160)">
+    <rect x="146" y="108" width="9" height="104" rx="4" fill="#61666d" stroke="#140d07" stroke-width="2"/>
+    <rect x="144" y="128" width="13" height="6" rx="2" fill="#d4a85a" stroke="#140d07" stroke-width="1.5"/>
+    <rect x="144" y="196" width="13" height="6" rx="2" fill="#d4a85a" stroke="#140d07" stroke-width="1.5"/>
+    <rect x="146" y="104" width="9" height="8" rx="2" fill="#d4a85a" stroke="#140d07" stroke-width="2"/>
+  </g>
+
+  <!-- плащ и плечи -->
+  <path d="M 34 226 L 44 174 Q 58 150 82 146 L 118 146 Q 142 150 156 174 L 166 226 Z" fill="url(#cloak)" stroke="#140d07" stroke-width="2.5"/>
+  <path d="M 44 174 Q 58 150 82 146 L 92 146 L 70 226 L 34 226 Z" fill="#275040" opacity="0.55"/>
+  <!-- воротник -->
+  <path d="M 82 146 L 100 168 L 92 146 Z" fill="#3f7a5a" stroke="#140d07" stroke-width="2"/>
+  <path d="M 118 146 L 100 168 L 108 146 Z" fill="#3f7a5a" stroke="#140d07" stroke-width="2"/>
+  <!-- портупея -->
+  <path d="M 66 150 L 128 226 L 108 226 L 54 158 Z" fill="#3f2a18" stroke="#140d07" stroke-width="2"/>
+  <rect x="112" y="188" width="16" height="13" rx="2" fill="url(#brass)" stroke="#140d07" stroke-width="2"/>
+
+  <!-- дымовая шашка на поясе -->
+  <g>
+    <rect x="58" y="186" width="15" height="26" rx="4" fill="#b03a32" stroke="#140d07" stroke-width="2"/>
+    <rect x="58" y="186" width="15" height="8" rx="4" fill="#6e2220" stroke="none"/>
+    <rect x="61" y="181" width="9" height="7" rx="2" fill="url(#brass)" stroke="#140d07" stroke-width="1.5"/>
+    <path d="M 65 181 Q 60 172 66 166 Q 72 160 66 152" fill="none" stroke="#ece6d6" stroke-width="2.5" stroke-linecap="round" opacity="0.8"/>
+  </g>
+
+  <!-- шея и голова -->
+  <rect x="90" y="124" width="20" height="24" rx="8" fill="#d09b70" stroke="#140d07" stroke-width="2"/>
+  <circle cx="100" cy="100" r="34" fill="#e8b48a" stroke="#140d07" stroke-width="2.5"/>
+  <path d="M 100 66 A 34 34 0 0 1 134 100 L 100 100 Z" fill="#f2c9a0" opacity="0.35"/>
+  <!-- пряди волос из-под шляпы -->
+  <path d="M 68 96 Q 64 116 70 130 Q 74 118 72 104 Z" fill="#c06a2a" stroke="#140d07" stroke-width="1.5"/>
+  <path d="M 132 96 Q 136 116 130 130 Q 126 118 128 104 Z" fill="#c06a2a" stroke="#140d07" stroke-width="1.5"/>
+  <!-- лицо -->
+  <path d="M 84 96 Q 86 90 92 92" fill="none" stroke="#3f2a18" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M 116 96 Q 114 90 108 92" fill="none" stroke="#3f2a18" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="90" cy="104" r="3.2" fill="#241708"/>
+  <circle cx="110" cy="104" r="3.2" fill="#241708"/>
+  <circle cx="91" cy="103" r="1" fill="#ffd76a"/>
+  <circle cx="111" cy="103" r="1" fill="#ffd76a"/>
+  <path d="M 98 116 Q 104 120 110 115" fill="none" stroke="#3f2a18" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M 84 112 L 88 111 M 116 112 L 112 111" stroke="#d09b70" stroke-width="1.6" stroke-linecap="round"/>
+  <!-- шрам через бровь -->
+  <path d="M 106 92 L 112 98" stroke="#b3705a" stroke-width="1.8" stroke-linecap="round"/>
+
+  <!-- широкополая шляпа -->
+  <path d="M 46 88 Q 100 70 154 88 Q 100 104 46 88 Z" fill="#3f2a18" stroke="#140d07" stroke-width="2.5"/>
+  <path d="M 46 88 Q 100 76 154 88 Q 100 96 46 88 Z" fill="#5a3d24" opacity="0.6"/>
+  <path d="M 74 88 L 78 62 Q 100 54 122 62 L 126 88 Q 100 94 74 88 Z" fill="#3f2a18" stroke="#140d07" stroke-width="2.5"/>
+  <path d="M 78 62 Q 100 54 122 62 L 121 70 Q 100 63 79 70 Z" fill="#5a3d24"/>
+  <rect x="74" y="84" width="52" height="6" fill="#b03a32" stroke="#140d07" stroke-width="1.5"/>
+  <circle cx="100" cy="87" r="4" fill="#d4a85a" stroke="#140d07" stroke-width="1.5"/>
+
+  <rect width="200" height="240" fill="url(#vign)"/>
+
+  <!-- латунная рамка -->
+  <rect x="6" y="6" width="188" height="228" rx="14" fill="none" stroke="url(#brass)" stroke-width="6"/>
+  <rect x="13" y="13" width="174" height="214" rx="10" fill="none" stroke="#7d5a2c" stroke-width="2"/>
+  <g fill="#ffd76a" stroke="#7d5a2c" stroke-width="1.5">
+    <circle cx="16" cy="16" r="3.5"/><circle cx="184" cy="16" r="3.5"/>
+    <circle cx="16" cy="224" r="3.5"/><circle cx="184" cy="224" r="3.5"/>
+  </g>
+  <!-- табличка -->
+  <rect x="56" y="214" width="88" height="17" rx="4" fill="url(#brass)" stroke="#140d07" stroke-width="2"/>
+  <text x="100" y="227" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="12" font-weight="bold" letter-spacing="3" fill="#241708">СОРОКА</text>
+</svg>

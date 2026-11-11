@@ -174,7 +174,7 @@ export function render(ctx: CanvasRenderingContext2D, game: Game, view: ViewStat
   drawAvatarGround(L, game, view)
   drawGroundEffects(L, game)
 
-  drawEntities(L, game, view, now) // деревья, дома, башни, враги, Охотница — по глубине
+  drawEntities(L, game, view, now) // деревья, дома, башни, враги, Сорока — по глубине
   drawProjectiles(L, game, view.skin)
   drawBolts(L, game)
   drawSmoke(L, now)
@@ -664,7 +664,7 @@ function drawBolts(ctx: CanvasRenderingContext2D, game: Game) {
   }
 }
 
-// ─── Охотница ────────────────────────────────────────────────────────────
+// ─── Сорока ───────────────────────────────────────────────────────────────
 function drawAvatarGround(ctx: CanvasRenderingContext2D, game: Game, view: ViewState) {
   const av = game.avatar
   const near = view.mouse && Math.hypot(view.mouse.x - av.x, view.mouse.y - av.y) < 26

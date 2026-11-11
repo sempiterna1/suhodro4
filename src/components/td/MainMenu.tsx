@@ -517,18 +517,13 @@ function StepHero({
   )
 }
 
-/** Портрет аватара: рисуется на холсте, подставляется после монтирования (гидратация не расходится) */
+/** Портрет аватара: SVG-файл из public/assets/portraits (статичный путь — гидратация не расходится) */
 function AvatarImg({ id, size = 40 }: { id: AvatarId; size?: number }) {
-  const [src, setSrc] = useState('')
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- холст доступен только в браузере
-    setSrc(avatarPortrait(id, 3))
-  }, [id])
   return (
     <img
-      src={src || undefined}
+      src={avatarPortrait(id, 3)}
       alt=""
-      style={{ imageRendering: 'pixelated', height: size, width: size }}
+      style={{ height: size, width: size }}
       className="object-contain"
       draggable={false}
     />

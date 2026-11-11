@@ -13,7 +13,7 @@
 | Что делаем | Где в PixelLab |
 |---|---|
 | Тайлы, башни, декор, снаряды, иконки | слева **Create** → **Create image** |
-| Враги и Охотница | сверху **Characters** (персонаж сразу в 4 направлениях) |
+| Враги и аватары | сверху **Characters** (персонаж сразу в 4 направлениях) |
 | Анимация (ходьба, огонь, выстрел) | слева **Animate**, на уже готовую картинку |
 | Предметы на карте | сверху **Objects** (или тот же Create image) |
 
@@ -378,7 +378,7 @@ breaking apart into flying gears and bolts with a burst of white steam
 
 ---
 
-## 7. Охотница — Characters, 32, 4 направления
+## 7. Сорока — Characters, 32, 4 направления
 
 ```
 hooded female hunter, dark green cloak, brown leather straps, holding a brass steampunk bow, pixel art

@@ -153,7 +153,7 @@ export interface Tower {
   focusStacks: number
   lastShotAt: number // время последнего выстрела (для анимации атаки)
   aim: number // угол на последнюю цель, рад
-  hasteUntil?: number // до какого времени башня ускорена (Боевой клич Воеводы ×1.4, Перегрузка Инженера ×2)
+  hasteUntil?: number // до какого времени башня ускорена (Гудок Кузьмы ×1.4, Перегрузка Гайки ×2)
   hasteMult?: number
   moved?: boolean // башню уже переносили: перенос доступен один раз
 }

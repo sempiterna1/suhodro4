@@ -336,7 +336,7 @@ function firstCreep(g: Game): Creep | undefined {
   check('тропа блокирует и соты, и блок 2×2', onPath)
   // аватар стоит в блоке
   const acell = g.canPlace(60, 260, 2)
-  check('аватар блокирует блок 2×2', acell === 'Охотница стоит на этом месте', acell ?? 'null')
+  check('аватар блокирует блок 2×2', acell === 'Сорока стоит на этом месте', acell ?? 'null')
   // чужая башня в блоке: чистый блок, ставим в него 1×1 — блок становится занят
   let occCell: { x: number; y: number } | null = null
   outer: for (let cy = 0; cy < GRID_H - 1; cy++)

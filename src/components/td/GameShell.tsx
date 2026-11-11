@@ -454,7 +454,7 @@ export default function GameShell() {
 
   // ─── Ввод ──────────────────────────────────────────────────────────────
   // Камера изометрическая: точка на холсте → точка на земле поля (iso.ts). Вне ромба поля точка
-  // тоже считается — так Охотница может дойти до края, а постройка там просто не пройдёт.
+  // тоже считается — так Сорока может дойти до края, а постройка там просто не пройдёт.
   /** Точка окна → точка холста 960×600 с учётом приближения и сдвига камеры */
   const toCanvas = (clientX: number, clientY: number, r: DOMRect) => {
     const v = viewRef.current
@@ -819,7 +819,7 @@ export default function GameShell() {
       setSelectedTower(null)
       return
     }
-    // Охотница одна — ею управляет только хост
+    // Сорока одна — ею управляет только хост
     if (roleRef.current === 'guest') {
       if (!movedHintShown.current) {
         movedHintShown.current = true
@@ -851,7 +851,7 @@ export default function GameShell() {
 
   const doAbility = () => {
     const res = game.useAbility()
-    if (!res.ok && res.error) errToast('Метка добычи', res.error)
+    if (!res.ok && res.error) errToast(game.av.abilityName, res.error)
   }
 
   const doStartWave = () => {

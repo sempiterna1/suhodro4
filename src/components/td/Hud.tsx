@@ -400,7 +400,7 @@ export function HeroButtons({ ui, role, onAbility }: { ui: UiState; role: MpRole
           role="img"
           aria-label={AVATAR.name}
         >
-          <img src={avatarPortrait(AVATAR.id, 3)} alt="" className="h-full w-full object-cover object-top" style={{ imageRendering: 'pixelated' }} draggable={false} />
+          <img src={avatarPortrait(AVATAR.id, 3)} alt="" className="h-full w-full object-cover object-top" draggable={false} />
           <span className="absolute bottom-0 right-0 rounded-tl-md bg-[#0b0e14cc] px-1 text-[9px] font-bold leading-[13px] text-[#f2c94c]">
             {ui.avatar.level} ур.
           </span>

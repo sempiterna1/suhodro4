@@ -1,5 +1,5 @@
 // Пиксельные спрайты «Железного Разлома»: палитра и существа, нарисованные строками символов
-// (Охотница, кристалл и искра Разлома; остальные враги — картинки из листа, см. assets.ts).
+// (Сорока, кристалл и искра Разлома; остальные враги — картинки из листа, см. assets.ts).
 // Плюс снегопад поверх мира и превью башен для карточек арсенала.
 
 import { ARMOR_COLORS, MAP_H, MAP_W } from './config'
@@ -401,79 +401,77 @@ export const SPRITES: Record<CreepKind | 'hunter' | 'voevoda' | 'archmage' | 'en
       ],
     ],
   },
-  // Воевода: латы, красное знамя на древке
+  // Кузьма, старшина смены: шахтёрский шлем с лампой, кожаная куртка, паровой гудок на шесте
   voevoda: {
     fps: 8,
     frames: [
       [
-        '....KKK..bRR',
-        '...KMMMK.bRR',
-        '..KMmTTK.bRr',
-        '..KMTTTK.b..',
-        '...KTTK..b..',
-        '..KMMMMK.b..',
-        '.KMMPMMMKb..',
-        '.KMMPMMMKB..',
-        '.KmMPMMmKb..',
-        '..KmPPmK.b..',
-        '..KpKKpK.b..',
-        '..Kp..Kp.b..',
-        '.Kpp..Kpp.b.',
+        '....KKK...BW',
+        '...KYYYK..BB',
+        '..KYYfYK..b.',
+        '..KTTHHK..b.',
+        '...KHHK...b.',
+        '..KPPPPK..b.',
+        '.KPPYPPPK.b.',
+        '.KPPYPPPKBB.',
+        '.KpPYPPpKb..',
+        '..KpYYpK....',
+        '..KpKKpK....',
+        '..Kp..Kp....',
+        '.Kpp..Kpp...',
       ],
       [
-        '....KKK..bRR',
-        '...KMMMK.bRR',
-        '..KMmTTK.bRr',
-        '..KMTTTK.b..',
-        '...KTTK..b..',
-        '..KMMMMK.b..',
-        '.KMMPMMMKb..',
-        '.KMMPMMMKB..',
-        '.KmMPMMmKb..',
-        '..KmPPmK.b..',
-        '..KpKKpK.b..',
-        '...KpKp..b..',
-        '..KppKpp.b..',
+        '....KKK...BW',
+        '...KYYYK..BB',
+        '..KYYfYK..b.',
+        '..KTTHHK..b.',
+        '...KHHK...b.',
+        '..KPPPPK..b.',
+        '.KPPYPPPK.b.',
+        '.KPPYPPPKBB.',
+        '.KpPYPPpKb..',
+        '..KpYYpK....',
+        '..KpKKpK....',
+        '...KpKp.....',
+        '..KppKpp....',
       ],
     ],
   },
-  // Архимаг: остроконечный колпак, фиолетовая мантия, посох с кристаллом
+  // Фитиль, подрывник: растрёпанные волосы, красный шарф, кожаная куртка, шахтный заряд с фитилём
   archmage: {
     fps: 8,
     frames: [
       [
-        '....K....gLg',
-        '...KVK...bg.',
-        '..KVVVK..b..',
-        '.KVVTTVK.b..',
-        '..KVTTK..b..',
-        '..KVVVVK.b..',
-        '.KVVYVVVKb..',
-        '.KVVYVVVKB..',
-        '.KvVYVVvKb..',
-        '..KvVVvK.b..',
-        '.KvvvvvvKb..',
-        '..KpKKpK.b..',
-        '..Kp..Kp.b..',
+        '...KKKK......',
+        '..KHHHHK.....',
+        '..KHTTTK.....',
+        '...KTTK......',
+        '..KRRRRK...f.',
+        '.KPPBPPPKKDDK',
+        '.KPPBPPPKKDDK',
+        '.KPpPPpPKKDDK',
+        '..KpYYpK.....',
+        '..KpKKpK.....',
+        '..Kp..Kp.....',
+        '.Kpp..Kpp....',
       ],
       [
-        '....K....gLg',
-        '...KVK...bg.',
-        '..KVVVK..b..',
-        '.KVVTTVK.b..',
-        '..KVTTK..b..',
-        '..KVVVVK.b..',
-        '.KVVYVVVKb..',
-        '.KVVYVVVKB..',
-        '.KvVYVVvKb..',
-        '..KvVVvK.b..',
-        '.KvvvvvvKb..',
-        '...KpKp..b..',
-        '..KppKpp.b..',
+        '...KKKK......',
+        '..KHHHHK.....',
+        '..KHTTTK.....',
+        '...KTTK......',
+        '..KRRRRK..f..',
+        '.KPPBPPPKKDDK',
+        '.KPPBPPPKKDDK',
+        '.KPpPPpPKKDDK',
+        '..KpYYpK.....',
+        '..KpKKpK.....',
+        '...KpKp......',
+        '..KppKpp.....',
       ],
     ],
   },
-  // Инженер: очки-гогглы, латунный шлем, оранжевая куртка, гаечный ключ
+  // Гайка, механик лагеря: очки-гогглы, латунный шлем, оранжевая куртка, гаечный ключ
   engineer: {
     fps: 8,
     frames: [
@@ -509,39 +507,39 @@ export const SPRITES: Record<CreepKind | 'hunter' | 'voevoda' | 'archmage' | 'en
       ],
     ],
   },
-  // Охотница: капюшон-плащ, латунный лук
+  // Сорока, следопытка конвоя: широкополая шляпа, зелёный плащ, карабин, дымовая шашка на поясе
   hunter: {
     fps: 8,
     frames: [
       [
-        '....KKK.....',
-        '...KCCCK....',
-        '..KCcTTK....',
-        '..KCTTHK....',
-        '...KTTK..B..',
-        '..KCCCCK.bB.',
-        '.KCCPCCCKBb.',
-        '.KCCPCCCKB..',
-        '.KcCPCCcKb..',
-        '..KcPPcK.B..',
-        '..KpKKpK....',
-        '..Kp..Kp....',
-        '.Kpp..Kpp...',
+        '.....KKK.......',
+        '....KpppK......',
+        '..KKKpppKKK....',
+        '..KpppppppppK..',
+        '.....KTTHK.....',
+        '....KTTK.......',
+        '..KCCCCCK......',
+        '.KCCPCCCK......',
+        '.KcCPCCcKPSSB..',
+        '..KRKcPPcK.....',
+        '...KpKKpK......',
+        '...Kp..Kp......',
+        '..Kpp..Kpp.....',
       ],
       [
-        '....KKK.....',
-        '...KCCCK....',
-        '..KCcTTK....',
-        '..KCTTHK....',
-        '...KTTK..B..',
-        '..KCCCCK.bB.',
-        '.KCCPCCCKBb.',
-        '.KCCPCCCKB..',
-        '.KcCPCCcKb..',
-        '..KcPPcK.B..',
-        '..KpKKpK....',
-        '...KpKp.....',
-        '..KppKpp....',
+        '.....KKK.......',
+        '....KpppK......',
+        '..KKKpppKKK....',
+        '..KpppppppppK..',
+        '.....KTTHK.....',
+        '....KTTK.......',
+        '..KCCCCCK......',
+        '.KCCPCCCK......',
+        '.KcCPCCcKPSSB..',
+        '..KRKcPPcK.....',
+        '...KpKKpK......',
+        '....KpKp.......',
+        '...KppKpp......',
       ],
     ],
   },
@@ -569,26 +567,6 @@ function buildSprite(rows: string[], body: string, flip: boolean): HTMLCanvasEle
   return cv
 }
 
-const portraitCache = new Map<string, string>()
-/** Портрет аватара для HUD и выбора: первый кадр спрайта, крупно, без сглаживания (data URL) */
-export function avatarPortrait(id: 'hunter' | 'voevoda' | 'archmage' | 'engineer', scale = 4): string {
-  if (typeof document === 'undefined') return ''
-  const key = id + scale
-  let url = portraitCache.get(key)
-  if (!url) {
-    const src = buildSprite(SPRITES[id].frames[0], '#888888', false)
-    const cv = document.createElement('canvas')
-    cv.width = src.width * scale
-    cv.height = src.height * scale
-    const g = cv.getContext('2d')!
-    g.imageSmoothingEnabled = false
-    g.drawImage(src, 0, 0, cv.width, cv.height)
-    url = cv.toDataURL()
-    portraitCache.set(key, url)
-  }
-  return url
-}
-
 function sprite(id: keyof typeof SPRITES, frame: number, body: string, flip: boolean) {
   const key = `${id}|${frame}|${body}|${flip ? 1 : 0}`
   let cv = spriteCache.get(key)
@@ -601,7 +579,7 @@ function sprite(id: keyof typeof SPRITES, frame: number, body: string, flip: boo
 
 /**
  * Пиксельный спрайт ногами в точку экрана (sx, sy), увеличенный в scale раз без сглаживания.
- * Нужен существам без картинки из листа: Охотнице, адаптанту и искре минерала (и как запасной вариант).
+ * Нужен существам без картинки из листа: Сороке, адаптанту и искре минерала (и как запасной вариант).
  */
 export function drawSprite(
   ctx: CanvasRenderingContext2D, id: keyof typeof SPRITES, sx: number, sy: number, time: number, seed: number,
@@ -626,6 +604,15 @@ export function drawSprite(
 
 export function armorBody(armor: ArmorType) {
   return ARMOR_COLORS[armor]
+}
+
+/**
+ * Портрет аватара для HUD и выбора: векторный SVG из public/assets/portraits (задача 22).
+ * Масштаб в вызовах сохранён для совместимости — SVG масштабируется сам, размер задаёт <img>.
+ */
+export function avatarPortrait(id: 'hunter' | 'voevoda' | 'archmage' | 'engineer', scale = 4): string {
+  void scale
+  return `/assets/portraits/${id}.svg`
 }
 
 // ─── Превью башни для карточек арсенала — тот же спрайт, что на поле ─────

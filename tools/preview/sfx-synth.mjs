@@ -241,4 +241,96 @@ for (let v = 0; v < 2; v++) {
   x = layer(x, mul(filt(noise(n), 'bp', 900, 0.6), env(n, 0.2, 0.3, 0.7)), 0, 0.15)
   finish('horn-1', filt(x, 'lp', 520, 0.707, 2), 0.7, 650)
 }
+
+// ─── Аватары (задача 22): отклик на приказ движения и каст способности ───
+for (let v = 0; v < 1; v++) {
+  seed = 1600
+  // Сорока — отклик: короткий двусложный свист
+  const n = Math.round(0.35 * SR)
+  let x = mul(osc(n, glide(1500, 2600, 0.1)), env(n, 0.008, 0.06))
+  x = layer(x, mul(osc(n, glide(1800, 3000, 0.08)), env(n, 0.006, 0.05)), 0.16, 0.9)
+  x = layer(x, mul(filt(noise(n), 'bp', 3400, 1), env(n, 0.006, 0.02)), 0, 0.12)
+  finish('av-hunter-ack', x, 0.5, 5200)
+}
+{
+  seed = 1700
+  // Кузьма — отклик: тяжёлый шаг сапога по щебню, скрип латунной пряжки
+  const n = Math.round(0.4 * SR)
+  let x = mul(drive(osc(n, glide(140, 70, 0.12)), 2.2), env(n, 0.008, 0.07))
+  x = layer(x, mul(filt(noise(n), 'lp', 800, 0.707, 2), env(n, 0.006, 0.05)), 0, 0.6)
+  x = layer(x, mul(filt(noise(n), 'bp', 2500, 2), env(n, 0.004, 0.015)), 0.02, 0.2)
+  finish('av-voevoda-ack', x, 0.65, 1600)
+}
+{
+  seed = 1800
+  // Фитиль — отклик: чирк спички и вспышка серы
+  const n = Math.round(0.4 * SR)
+  let x = zeros(0.4)
+  for (let k = 0; k < 3; k++) {
+    const sn = Math.round((0.03 + rnd() * 0.02) * SR)
+    x = layer(x, mul(filt(noise(sn), 'hp', 2200), env(sn, 0.003, 0.012)), k * 0.05, 0.7 - k * 0.15)
+  }
+  const pn = Math.round(0.2 * SR)
+  x = layer(x, mul(filt(noise(pn), 'bp', 700, 0.7), env(pn, 0.04, 0.1, 0.02)), 0.18, 0.5)
+  finish('av-archmage-ack', x, 0.5, 3600)
+}
+{
+  seed = 1900
+  // Гайка — отклик: трещотка ключа, четыре щелчка с подъёмом
+  const n = Math.round(0.4 * SR)
+  let x = zeros(0.4)
+  for (let k = 0; k < 4; k++) {
+    const cn = Math.round(0.04 * SR)
+    let c = mul(osc(cn, () => 700 + k * 160), env(cn, 0.003, 0.012))
+    c = layer(c, mul(filt(noise(cn), 'bp', 2400 + k * 300, 2), env(cn, 0.002, 0.008)), 0, 0.5)
+    x = layer(x, c, k * 0.07, 1)
+  }
+  finish('av-engineer-ack', x, 0.5, 3200)
+}
+{
+  seed = 2000
+  // Сорока — каст: «поп» шашки и шипящий дым-пшик
+  const n = Math.round(0.7 * SR)
+  let x = mul(osc(n, glide(300, 90, 0.06)), env(n, 0.004, 0.03))
+  x = layer(x, mul(filt(filt(noise(n), 'bp', 1800, 0.6), 'hp', 700), env(n, 0.02, 0.28, 0.04)), 0.02, 0.8)
+  x = layer(x, mul(filt(noise(n), 'lp', 350, 0.707), env(n, 0.03, 0.3)), 0.02, 0.4)
+  finish('av-hunter-cast', x, 0.6, 2600)
+}
+{
+  seed = 2100
+  // Кузьма — каст: паровой гудок смены, дрожащий и короткий
+  const n = Math.round(1.1 * SR)
+  let x = mul(osc(n, () => 220, 'saw'), env(n, 0.04, 0.28, 0.25))
+  x = layer(x, mul(osc(n, () => 277, 'saw'), env(n, 0.05, 0.26, 0.2)), 0, 0.7)
+  x = layer(x, mul(filt(noise(n), 'bp', 1200, 0.6), env(n, 0.05, 0.2, 0.2)), 0, 0.25)
+  x = x.map((v, i) => v * (0.85 + 0.15 * Math.sin(2 * Math.PI * 6 * i / SR)))
+  finish('av-voevoda-cast', filt(x, 'lp', 900, 0.707, 2), 0.65, 1600)
+}
+{
+  seed = 2200
+  // Фитиль — каст: фитиль шипит с треском искр, затем взрыв
+  const n = Math.round(1.5 * SR)
+  let x = zeros(1.5)
+  const fn = Math.round(0.32 * SR)
+  let f = mul(filt(noise(fn), 'hp', 3000), env(fn, 0.05, 0.18, 0.06))
+  f = f.map((v) => v * (0.6 + 0.4 * rnd()))
+  x = layer(x, f, 0, 0.5)
+  const bn = Math.round(1.1 * SR)
+  let b = mul(filt(noise(bn), 'lp', 520, 0.707, 2), env(bn, 0.015, 0.3))
+  b = layer(b, mul(drive(osc(bn, glide(110, 45, 0.5)), 2), env(bn, 0.015, 0.32)), 0, 0.9)
+  x = layer(x, b, 0.34, 1)
+  finish('av-archmage-cast', x, 0.8, 1500)
+}
+{
+  seed = 2300
+  // Гайка — каст: щелчок клапана и выброс пара пульсами
+  const n = Math.round(0.9 * SR)
+  let x = mul(osc(n, glide(400, 150, 0.05)), env(n, 0.003, 0.02))
+  x = layer(x, mul(filt(noise(n), 'bp', 2600, 2), env(n, 0.002, 0.01)), 0, 0.5)
+  for (let k = 0; k < 3; k++) {
+    const sn = Math.round(0.3 * SR)
+    x = layer(x, mul(filt(filt(noise(sn), 'bp', 1600, 0.6), 'hp', 800), env(sn, 0.03, 0.16, 0.03)), 0.05 + k * 0.14, 0.7 - k * 0.15)
+  }
+  finish('av-engineer-cast', x, 0.6, 3000)
+}
 console.log('ok')

@@ -1,5 +1,5 @@
-// Аватары (GDD, приложение): выбор до первой волны, способности Воеводы, Архимага, Инженера и Охотницы,
-// пассивки, снапшот коопа переносит выбор и ускорение башен.
+// Аватары (GDD, приложение): выбор до первой волны, способности Кузьмы, Фитиля, Гайки и Сороки,
+// пассивки, снапшот коопа переносит выбор и ускорение башен. Внутренние ids не менялись (задача 22).
 
 import { Game } from '../src/game/engine'
 import { CLASSIC_MAP, pointAtLength } from '../src/game/map'
@@ -42,7 +42,7 @@ check('в GDD 4 аватара', AVATAR_IDS.length === 4 && AVATAR_IDS.join() ==
 // выбор
 {
   const g = new Game()
-  check('по умолчанию Охотница', g.avatarId === 'hunter')
+  check('по умолчанию Сорока', g.avatarId === 'hunter')
   g.beginPreview()
   check('выбор до первой волны', g.setAvatar('voevoda').ok && g.avatarId === 'voevoda')
   check('неизвестный id отклонён', !g.setAvatar('nobody' as never).ok)
@@ -51,7 +51,7 @@ check('в GDD 4 аватара', AVATAR_IDS.length === 4 && AVATAR_IDS.join() ==
   check('UI знает аватара', g.getUiState().avatar.id === 'voevoda')
 }
 
-// Воевода: клич ускоряет башни рядом на 40%, пассивка +5%
+// Кузьма: гудок ускоряет башни рядом на 40%, пассивка +5%
 {
   const g = fresh()
   g.setAvatar('voevoda')
@@ -61,13 +61,13 @@ check('в GDD 4 аватара', AVATAR_IDS.length === 4 && AVATAR_IDS.join() ==
   check('башни построены', near.ok && far.ok)
   const nt = g.towerById(near.towerId!)!, ft = g.towerById(far.towerId!)!
   const r = g.useAbility()
-  check('Боевой клич срабатывает', r.ok && g.avatar.cooldown === AVATARS.voevoda.abilityCd)
+  check('Гудок смены срабатывает', r.ok && g.avatar.cooldown === AVATARS.voevoda.abilityCd)
   check('башня рядом ускорена, дальняя — нет', (nt.hasteMult ?? 0) >= 1.4 && !ft.hasteUntil)
   check('перезарядка блокирует повтор', !g.useAbility().ok)
   const g2 = fresh()
   g2.setAvatar('voevoda')
   check('без башен рядом — ошибка', !g2.useAbility().ok)
-  check('радиус клича — 3 места', VOEVODA_RADIUS === 120)
+  check('радиус гудка — 3 места', VOEVODA_RADIUS === 120)
 }
 
 // Инженер: Перегрузка ×2 ближайшей башне; продажа 85%
@@ -90,7 +90,7 @@ check('в GDD 4 аватара', AVATAR_IDS.length === 4 && AVATAR_IDS.join() ==
   check('у остальных — 70%', h.gold - g1 === Math.floor(50 * SELL_RATIO), String(h.gold - g1) + ' vs ' + Math.floor(50 * SELL_RATIO))
 }
 
-// Архимаг: Метеор по площади, 500% урона
+// Фитиль: шахтный заряд по площади, 500% урона
 {
   const g = fresh()
   g.setAvatar('archmage')
@@ -100,7 +100,7 @@ check('в GDD 4 аватара', AVATAR_IDS.length === 4 && AVATAR_IDS.join() ==
   const hp0 = g.creeps.map((c) => c.hp)
   const r = g.useAbility()
   const dealt = g.creeps.map((c, i) => hp0[i] - c.hp)
-  check('Метеор срабатывает', r.ok && g.avatar.cooldown === AVATARS.archmage.abilityCd)
+  check('Шахтный заряд срабатывает', r.ok && g.avatar.cooldown === AVATARS.archmage.abilityCd)
   check('урон по скоплению', dealt.every((d) => d > 0), dealt.join(','))
   const expected = AVATARS.archmage.damage * 5 * (g.creeps[0].armor === 'light' ? 1 : 1)
   check('урон около 500% урона аватара (множитель брони из матрицы)', Math.abs(dealt[0] - expected) <= expected * 0.6, `${dealt[0]} vs ${expected}`)
@@ -111,13 +111,13 @@ check('в GDD 4 аватара', AVATAR_IDS.length === 4 && AVATAR_IDS.join() ==
   void pointAtLength
 }
 
-// Охотница: метка (как раньше)
+// Сорока: дымовая шашка (механика метки не менялась)
 {
   const g = fresh()
   g.startWave()
   g.creeps = []
   addCreeps(g, 2, 300)
-  check('Метка добычи работает', g.useAbility().ok && g.creeps.some((c) => c.goldMult === 2))
+  check('Дымовая шашка работает', g.useAbility().ok && g.creeps.some((c) => c.goldMult === 2))
 }
 
 // кооп: снапшот переносит аватара и ускорение башен
