@@ -4,7 +4,7 @@
 // отсортированные по глубине. Всё, что лежит на земле (радиусы, кольца, взрывы), рисуется через
 // groundPath — в той же проекции, поэтому круги становятся эллипсами на снегу.
 
-import { ALL_DEFS, ARMOR_COLORS, CELL, MAP_H, MAP_W, bossForWave, defFootprint } from './config'
+import { ALL_DEFS, ARMOR_COLORS, CELL, MAP_H, MAP_W, RARITY_BY_ID, bossForWave, defFootprint } from './config'
 import type { Game } from './engine'
 import { pointAtLength } from './engine'
 import { getMap } from './map'
@@ -237,6 +237,18 @@ function drawEntities(ctx: CanvasRenderingContext2D, game: Game, view: ViewState
 }
 
 // ─── Башни ───────────────────────────────────────────────────────────────
+/** hex (#rrggbb) → rgba с альфой: цвета редкостей и фолбэков хранятся в hex */
+function hexA(hex: string, a: number): string {
+  const n = parseInt(hex.slice(1), 16)
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`
+}
+
+/** Цвет hover/выбора башни: редкость (Латунная…Разломная), слитые без редкости — золото, прочие — тёплый янтарь */
+function towerHoverColor(tw: Tower): string {
+  const def = ALL_DEFS[tw.defId]
+  return def.rarity ? RARITY_BY_ID[def.rarity].color : def.merged ? '#ffd700' : '#ffbe6e'
+}
+
 function drawTowerRings(ctx: CanvasRenderingContext2D, game: Game, view: ViewState) {
   for (const tw of game.towers) {
     const fp = defFootprint(ALL_DEFS[tw.defId])
@@ -244,14 +256,18 @@ function drawTowerRings(ctx: CanvasRenderingContext2D, game: Game, view: ViewSta
     const isMergeTarget = view.mergeFrom !== null && game.mergeTargetsFor(view.mergeFrom).includes(tw.id)
     const isMergeSource = view.mergeFrom === tw.id
 
-    // подсветка выбранной/под курсором: рамка блока под башней — без огромного круга радиуса атаки
+    // подсветка выбранной/под курсором: рамка блока под башней — цветом редкости со свечением
     if (hovered) {
+      const rc = towerHoverColor(tw)
       groundPath(ctx, () => ctx.rect(tw.x - CELL / 2 + 1, tw.y - CELL / 2 + 1, fp * CELL - 2, fp * CELL - 2))
-      ctx.fillStyle = 'rgba(255,190,110,0.12)'
+      ctx.fillStyle = hexA(rc, 0.12)
       ctx.fill()
-      ctx.strokeStyle = 'rgba(255,190,110,0.85)'
+      ctx.strokeStyle = hexA(rc, 0.9)
       ctx.lineWidth = 2
+      ctx.shadowColor = rc
+      ctx.shadowBlur = 14
       ctx.stroke()
+      ctx.shadowBlur = 0
     }
     // пульс-подсветка целей слияния
     if (isMergeTarget) {
@@ -798,7 +814,8 @@ function drawOverlayLabels(ctx: CanvasRenderingContext2D, game: Game, view: View
   if (ft && view.skin === 'steam') {
     const def = ALL_DEFS[ft.defId]
     const s = toScreen(ft.x, ft.y)
-    text(`${def.glyph} ${def.name}`, s.x, s.y - 66, '#ffc46b', 11)
+    // подпись в цвете редкости башни (совпадает со свечением рамки)
+    text(`${def.glyph} ${def.name}`, s.x, s.y - 66, towerHoverColor(ft), 11)
   }
   text('РАЗЛОМ', roadEnds.entry.x, roadEnds.entry.y - 34, '#a6f095')
   text('ЛАГЕРЬ', roadEnds.exit.x + 10, roadEnds.exit.y - 46, '#ffb347')

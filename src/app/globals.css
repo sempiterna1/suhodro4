@@ -122,3 +122,16 @@
     font-variant-numeric: tabular-nums;
   }
 }
+
+/* ─── Hover-свечение: подсветка любого объекта меню/HUD в своём цвете ─── */
+/* Цвет задаётся инлайном: style={{ ['--glow']: rarity.color }}; по умолчанию — тёплый янтарный */
+.hover-glow {
+  --glow: #ffc46b;
+  transition: box-shadow 0.25s ease;
+}
+.hover-glow:hover:not(:disabled) {
+  box-shadow:
+    0 0 9px color-mix(in srgb, var(--glow) 55%, transparent),
+    0 0 24px color-mix(in srgb, var(--glow) 30%, transparent),
+    0 0 48px color-mix(in srgb, var(--glow) 16%, transparent);
+}

@@ -7,7 +7,7 @@
 //   Этап 4 — выбор героя: портреты, способности, «В бой» / «Вдвоём».
 // Состояние шага живёт внутри меню: после партии меню монтируется заново — с главной.
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Music } from 'lucide-react'
 import { Slider } from '@/components/ui/slider'
@@ -160,7 +160,8 @@ function StepMain({ onPlay, onHelp, onToggleFullscreen, fullscreen }: MainMenuPr
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.97 }}
         onClick={onPlay}
-        className="h-16 w-full max-w-sm rounded-md border-2 border-[#93a9c6] bg-gradient-to-b from-[#2e3c52] to-[#1f2a3b] px-10 font-serif text-xl font-black tracking-wide text-[#ffd700] shadow-[0_8px_32px_rgba(60,90,140,0.4)] hover:from-[#34475f]"
+        className="hover-glow h-16 w-full max-w-sm rounded-md border-2 border-[#93a9c6] bg-gradient-to-b from-[#2e3c52] to-[#1f2a3b] px-10 font-serif text-xl font-black tracking-wide text-[#ffd700] shadow-[0_8px_32px_rgba(60,90,140,0.4)] hover:from-[#34475f]"
+        style={{ '--glow': '#ffd700' } as CSSProperties}
       >
         ⚙ ИГРАТЬ
       </motion.button>
@@ -199,7 +200,7 @@ function StepMap({
               whileHover={{ y: -3 }}
               whileTap={{ scale: 0.97 }}
               onClick={() => onPickMap(m.seed)}
-              className={`overflow-hidden rounded-md border-2 bg-gradient-to-b from-[#172030] to-[#0a0f17] text-left transition-colors ${
+              className={`hover-glow overflow-hidden rounded-md border-2 bg-gradient-to-b from-[#172030] to-[#0a0f17] text-left transition-colors ${
                 picked ? 'border-[#ffc46b] shadow-[0_0_16px_#ffd70055]' : 'border-[#2e3c52] hover:border-[#4a5f80]'
               }`}
               title={m.feature}
@@ -407,7 +408,7 @@ function StepDifficulty({
               whileHover={{ y: -3 }}
               whileTap={{ scale: 0.97 }}
               onClick={() => onPickDifficulty(id)}
-              className={`flex flex-col rounded-md border-2 bg-gradient-to-b from-[#172030] to-[#0a0f17] px-4 py-4 text-left transition-colors ${
+              className={`hover-glow flex flex-col rounded-md border-2 bg-gradient-to-b from-[#172030] to-[#0a0f17] px-4 py-4 text-left transition-colors ${
                 picked ? 'shadow-[0_0_18px_#ffd70044]' : 'border-[#2e3c52] opacity-85 hover:opacity-100'
               }`}
               style={{ borderColor: picked ? d.color : undefined }}
@@ -468,10 +469,10 @@ function StepHero({
               whileHover={{ y: -3 }}
               whileTap={{ scale: 0.97 }}
               onClick={() => onPickAvatar(id)}
-              className={`flex flex-col items-center gap-1.5 rounded-md border-2 bg-gradient-to-b from-[#172030] to-[#0a0f17] px-2 py-3 text-center transition-colors ${
+              className={`hover-glow flex flex-col items-center gap-1.5 rounded-md border-2 bg-gradient-to-b from-[#172030] to-[#0a0f17] px-2 py-3 text-center transition-colors ${
                 picked ? 'shadow-[0_0_16px_#ffd70055]' : 'border-[#2e3c52] opacity-80 hover:opacity-100'
               }`}
-              style={{ borderColor: picked ? av.color : undefined }}
+              style={{ borderColor: picked ? av.color : undefined, '--glow': av.color } as CSSProperties}
               title={`${av.abilityName}: ${av.abilityDesc}`}
             >
               {/* портрет во всю ширину карточки: квадрат из верха кадра (табличка SVG с именем обрезается — имя подписано ниже) */}
@@ -507,7 +508,8 @@ function StepHero({
           whileHover={{ scale: 1.04 }}
           whileTap={{ scale: 0.97 }}
           onClick={onStart}
-          className="h-12 rounded-md border-2 border-[#93a9c6] bg-gradient-to-b from-[#2e3c52] to-[#1f2a3b] px-8 font-serif text-base font-black tracking-wide text-[#ffd700] shadow-[0_6px_20px_rgba(60,90,140,0.35)] hover:from-[#34475f]"
+          className="hover-glow h-12 rounded-md border-2 border-[#93a9c6] bg-gradient-to-b from-[#2e3c52] to-[#1f2a3b] px-8 font-serif text-base font-black tracking-wide text-[#ffd700] shadow-[0_6px_20px_rgba(60,90,140,0.35)] hover:from-[#34475f]"
+          style={{ '--glow': '#ffd700' } as CSSProperties}
         >
           ⚔ В БОЙ
         </motion.button>
@@ -516,7 +518,8 @@ function StepHero({
           whileHover={{ scale: 1.04 }}
           whileTap={{ scale: 0.97 }}
           onClick={onStartCoop}
-          className="h-12 rounded-md border-2 border-[#7fd0a0] bg-[#1f2d24] px-6 font-serif text-sm font-bold text-[#7fd0a0] hover:bg-[#243a2c]"
+          className="hover-glow h-12 rounded-md border-2 border-[#7fd0a0] bg-[#1f2d24] px-6 font-serif text-sm font-bold text-[#7fd0a0] hover:bg-[#243a2c]"
+          style={{ '--glow': '#7fd0a0' } as CSSProperties}
         >
           👥 ВДВОЁМ
         </motion.button>
@@ -532,7 +535,7 @@ function MenuBtn({ children, onClick }: { children: React.ReactNode; onClick: ()
     <button
       type="button"
       onClick={onClick}
-      className="h-11 rounded-md border border-[#5b6f8c] bg-transparent px-4 text-sm text-[#ccd8e6] transition-colors hover:bg-[#1f2a3b]"
+      className="hover-glow h-11 rounded-md border border-[#5b6f8c] bg-transparent px-4 text-sm text-[#ccd8e6] transition-colors hover:bg-[#1f2a3b]"
     >
       {children}
     </button>
@@ -548,7 +551,8 @@ function MenuFooter({ onBack, onNext, nextLabel }: { onBack: () => void; onNext:
         whileHover={{ scale: 1.03 }}
         whileTap={{ scale: 0.97 }}
         onClick={onNext}
-        className="h-11 rounded-md border-2 border-[#93a9c6] bg-gradient-to-b from-[#2e3c52] to-[#1f2a3b] px-6 font-serif text-sm font-bold tracking-wide text-[#ffd700] hover:from-[#34475f]"
+        className="hover-glow h-11 rounded-md border-2 border-[#93a9c6] bg-gradient-to-b from-[#2e3c52] to-[#1f2a3b] px-6 font-serif text-sm font-bold tracking-wide text-[#ffd700] hover:from-[#34475f]"
+        style={{ '--glow': '#ffd700' } as CSSProperties}
       >
         {nextLabel}
       </motion.button>

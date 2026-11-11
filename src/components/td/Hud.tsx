@@ -5,7 +5,7 @@
 // (прокручиваемый ряд карточек + закреплённый ролл) · «Начать». Раскладку задаёт GameShell.
 // Стиль: Rubik, панели rgba(14,19,31,.9) с рамкой #3a4660, золото #f2c94c, линейные иконки.
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { AnimatePresence, motion, useAnimationControls } from 'framer-motion'
 import { AI_SIGNALS, ALL_DEFS, ALL_ITEMS, ARMOR_COLORS, ARMOR_NAMES, AVATARS, ITEM_REROLL_COST, ITEM_SLOTS, ITEM_SLOTS_TOTAL, RARITY_BY_ID, TOWERS, defFootprint, econIncomeAt, econIncomeAt5, econIncomeBase } from '@/game/config'
 import { avatarPortrait, towerThumb } from '@/game/pixel'
@@ -547,10 +547,14 @@ export function ShopModal({ ui, onPick, onRoll, onClose }: {
                 disabled={locked}
                 onClick={() => onPick(t.id)}
                 aria-label={`Купить: ${t.name}, ${rarity ? rarity.name + ' редкость, ' : ''}${DAMAGE_TYPE[attacks[0]].name.toLowerCase()}, цена ${t.price}${affordable ? '' : ', не хватает золота'}`}
-                className={`flex w-[220px] flex-col overflow-hidden rounded-xl border text-left transition-transform hover:-translate-y-0.5 active:scale-[0.98] disabled:cursor-not-allowed ${
+                className={`hover-glow flex w-[220px] flex-col overflow-hidden rounded-xl border text-left transition-transform hover:-translate-y-0.5 active:scale-[0.98] disabled:cursor-not-allowed ${
                   t.merged ? 'bg-[#242a3e]' : 'bg-[#1f2638]'
                 } ${locked ? 'opacity-45' : ''}`}
-                style={{ borderColor: rarity ? rarity.color + '66' : t.merged ? '#ffd70088' : '#3a4660' }}
+                style={{
+                  borderColor: rarity ? rarity.color + '66' : t.merged ? '#ffd70088' : '#3a4660',
+                  // свечение при наведении — в цвет редкости; слитые без редкости — золото, экономические — тёплый
+                  '--glow': rarity ? rarity.color : t.merged ? '#ffd700' : '#f0b060',
+                } as CSSProperties}
               >
                 <div className="h-1 w-full" style={{ background: `linear-gradient(90deg, ${t.color}, ${t.color}33)` }} />
                 <div className="flex flex-1 flex-col gap-1.5 p-2">
@@ -910,13 +914,15 @@ export function HandTray({
             aria-label={`Взять в стол: ${def.name}, ${rarity ? rarity.name + ' редкость, ' : ''}${label} ${stat} (копия ${i + 1} из ${ui.hand.length})`}
             title={on ? 'Снята со стола' : `${def.name} — копия из руки: тап по клетке или по такой же башне`}
             onClick={() => onArm(i)}
-            className={`relative flex shrink-0 grow-0 flex-col items-center overflow-hidden rounded-xl pb-0.5 ${on ? 'border-2 border-[#7fd0a0] bg-[#1f2d28]' : 'border bg-[#1f2638]'}`}
+            className={`hover-glow relative flex shrink-0 grow-0 flex-col items-center overflow-hidden rounded-xl pb-0.5 ${on ? 'border-2 border-[#7fd0a0] bg-[#1f2d28]' : 'border bg-[#1f2638]'}`}
             style={{
               width: cardW,
               height: cardH,
               boxSizing: 'border-box',
               borderColor: rarity ? rarity.color + (on ? 'ff' : '66') : on ? undefined : '#3a4660',
-            }}
+              // свечение при наведении — в цвет редкости; слитые без редкости — золото, экономические — тёплый
+              '--glow': rarity ? rarity.color : def.merged ? '#ffd700' : '#f0b060',
+            } as CSSProperties}
           >
             {/* полная картинка башни — тот же спрайт, что на поле (часть корпуса может ещё грузиться) */}
             <span
