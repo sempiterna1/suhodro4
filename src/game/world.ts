@@ -1,7 +1,10 @@
-// Мир вокруг тропы в изометрии: земля (снег, укатанная дорога, утёс, низина) запекается в один
-// холст по зерну карты; деревья, скалы, дома, генератор, стены и фонари — спрайты-«пропсы»,
-// которые рисуются каждый кадр вместе с башнями и врагами, отсортированные по глубине.
+// Мир вокруг тропы в изометрии: земля запекается в один холст по зерну карты; у каждой карты —
+// свой биом (biomes.ts): палитра земли, материал настила, утёс, озеро, мелочи на грунте, наборы
+// пропсов, частицы и цвет сумрака. Деревья, скалы, дома, генератор, стены и фонари — спрайты-
+// «пропсы», которые рисуются каждый кадр вместе с башнями и врагами, отсортированные по глубине.
 // Внутри поля пропсы стоят на свободных клетках и прячутся, когда на клетку ставят башню.
+// Вход и выход тропы — на разных кромках у каждой карты: портал Разлома стоит за кромкой входа,
+// лагерь беженцев с паровой базой — за кромкой выхода, частокол с воротами — вдоль этой кромки.
 
 import { CELL, MAP_H, MAP_W } from './config'
 import { ASSETS, asset, drawAsset, type AssetName } from './assets'
@@ -9,14 +12,24 @@ import { drawLongShadow } from './shadows'
 import { crispDraw } from './pixelart'
 import { ISO_OX, ISO_TW, toScreen, toWorld } from './iso'
 import type { GameMap } from './map'
-import { GRID_H, GRID_W } from './map'
+import { GRID_H, GRID_W, cellCenter } from './map'
+import { mapDefBySeed } from './data/maps'
+import { biomeOf, type BiomeDef, type PropEntry, type RGB, type RoadStyle } from './biomes'
 import { radioMast, steamBase, watchtower, wreck, type Baked } from './machines'
 import { swayAt, windAt, windPath } from './wind'
+import type { Vec } from './types'
 
-// ─── Палитра земли ───────────────────────────────────────────────────────
-const SNOW_PLATEAU: [number, number, number][] = [[132, 150, 176], [141, 159, 184], [124, 142, 168], [150, 168, 192], [160, 177, 200]]
-const SNOW_LOW: [number, number, number][] = [[98, 114, 140], [105, 122, 148], [92, 107, 133], [112, 129, 155]]
 const CLIFF = 30 // высота утёса под передним краем поля, экранные пиксели
+
+/** Цвета обочин настила: верх вала и низ, по материалу дороги */
+const ROAD_BANK: Record<RoadStyle, { hi: RGB; lo: RGB }> = {
+  wood: { hi: [204, 216, 232], lo: [170, 184, 206] }, // снежные валы
+  bogwood: { hi: [76, 86, 64], lo: [56, 64, 48] }, // кочки и мох
+  stone: { hi: [152, 140, 122], lo: [112, 100, 88] }, // щебень
+  gravel: { hi: [92, 82, 66], lo: [66, 58, 50] }, // отвалы породы
+  ice: { hi: [216, 228, 244], lo: [180, 194, 214] }, // снежные валы
+  ash: { hi: [108, 102, 110], lo: [78, 72, 80] }, // пепел
+}
 
 function hash(x: number, y: number, seed: number) {
   let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ Math.imul(seed | 0, 1442695041)
@@ -66,6 +79,51 @@ function belowFrontEdge(sx: number, sy: number) {
   return sy - toScreen(x, MAP_H).y
 }
 
+// ─── Кромки поля: вход и выход тропы ─────────────────────────────────────
+type Edge = 'W' | 'E' | 'N' | 'S'
+
+/** Кромка входа: куда смотрит первый шаг тропы */
+function entryEdgeOf(cells: { cx: number; cy: number }[]): Edge {
+  const a = cells[0]
+  const b = cells[1]
+  if (b.cx > a.cx) return 'W'
+  if (b.cx < a.cx) return 'E'
+  return b.cy > a.cy ? 'N' : 'S'
+}
+
+/** Кромка выхода: куда смотрит последний шаг тропы */
+function exitEdgeOf(cells: { cx: number; cy: number }[]): Edge {
+  const a = cells[cells.length - 2]
+  const b = cells[cells.length - 1]
+  if (b.cx > a.cx) return 'E'
+  if (b.cx < a.cx) return 'W'
+  return b.cy > a.cy ? 'S' : 'N'
+}
+
+/** Точка поля на кромке, где тропу пересекает граница (центр мира) */
+function edgePoint(edge: Edge, line: number): Vec {
+  if (edge === 'W') return { x: 0, y: line * CELL + CELL / 2 }
+  if (edge === 'E') return { x: MAP_W, y: line * CELL + CELL / 2 }
+  if (edge === 'N') return { x: line * CELL + CELL / 2, y: 0 }
+  return { x: line * CELL + CELL / 2, y: MAP_H }
+}
+
+/** Наружная нормаль кромки — куда продолжается тропа за поле */
+const OUT_DIR: Record<Edge, Vec> = { W: { x: -1, y: 0 }, E: { x: 1, y: 0 }, N: { x: 0, y: -1 }, S: { x: 0, y: 1 } }
+
+/** Взвешенный выбор записи пропсов из набора биома (веса в наборе относительные) */
+function pickProp(list: PropEntry[], roll: number): PropEntry | null {
+  let total = 0
+  for (const e of list) total += e.w
+  if (total <= 0) return null
+  let x = roll * total
+  for (const e of list) {
+    x -= e.w
+    if (x <= 0) return e
+  }
+  return list[list.length - 1]
+}
+
 // ─── Земля ───────────────────────────────────────────────────────────────
 /** withSecond — запечь и вторую тропу (GDD «Второй выход» открылся) */
 export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasElement {
@@ -79,6 +137,7 @@ export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasEle
   cv.height = H
   const L = cv.getContext('2d')!
   const seed = map.seed + 17
+  const B: BiomeDef = biomeOf(mapDefBySeed(map.seed).biome)
   const second = withSecond && map.cells2 ? map.cells2 : null
   const onPath = new Set(map.cells.map((c) => c.cx + ',' + c.cy))
   if (second) for (const c of second) onPath.add(c.cx + ',' + c.cy)
@@ -86,24 +145,65 @@ export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasEle
   const last = map.cells[map.cells.length - 1]
   const first2 = second ? second[0] : null
   const last2 = second ? second[second.length - 1] : null
-  const entryY = first.cy * CELL + CELL / 2
-  const exitY = last.cy * CELL + CELL / 2
-  const exit2Y = last2 ? last2.cy * CELL + CELL / 2 : -999
-  const entry2Y = first2 ? first2.cy * CELL + CELL / 2 : -999
+  // кромки входа и выхода — у каждой карты свои (не всегда слева направо)
+  const inEdge = entryEdgeOf(map.cells)
+  const outEdge = exitEdgeOf(map.cells)
+  const inEdge2 = first2 && second ? entryEdgeOf(second) : null
+  const outEdge2 = last2 && second ? exitEdgeOf(second) : null
+  const entryP = cellCenter(first)
+  const exitP = cellCenter(last)
+  const inDir = { x: Math.sign(map.cells[1].cx - first.cx), y: Math.sign(map.cells[1].cy - first.cy) }
+  const outDir = { x: Math.sign(last.cx - map.cells[map.cells.length - 2].cx), y: Math.sign(last.cy - map.cells[map.cells.length - 2].cy) }
+  const exitLine = outEdge === 'W' || outEdge === 'E' ? last.cy : last.cx
+  const exit2Line = last2 && outEdge2 === outEdge ? (outEdge === 'W' || outEdge === 'E' ? last2.cy : last2.cx) : null
   roadEnds.entry2 = { x: 0, y: 0 }
   roadEnds.exit2 = { x: 0, y: 0 }
-  /** Коридор к лагерю — не застраивать домами и кострами (учитывает второй выход) */
-  const nearExit = (y: number, pad: number) => Math.abs(y - exitY) < pad || (!!last2 && Math.abs(y - exit2Y) < pad)
+  /** Коридор к воротам — не застраивать домами и кострами (у второй тропы свои ворота там же) */
+  const nearGate = (wx: number, wy: number, pad: number) => {
+    const c = outEdge === 'W' || outEdge === 'E' ? wy : wx
+    if (Math.abs(c - (exitLine * CELL + CELL / 2)) < pad) return true
+    return exit2Line !== null && Math.abs(c - (exit2Line * CELL + CELL / 2)) < pad
+  }
 
-  /** Клетка дороги? Вне поля дорога продолжается от входа влево/вверх и от выхода вправо */
+  /** Дороги за краем поля: продолжение тропы за каждую кромку входа/выхода */
+  const arms: { edge: Edge; line: number }[] = [
+    { edge: inEdge, line: inEdge === 'W' || inEdge === 'E' ? first.cy : first.cx },
+    { edge: outEdge, line: exitLine },
+  ]
+  if (first2 && inEdge2) arms.push({ edge: inEdge2, line: inEdge2 === 'W' || inEdge2 === 'E' ? first2.cy : first2.cx })
+  if (last2 && outEdge2) arms.push({ edge: outEdge2, line: outEdge2 === 'W' || outEdge2 === 'E' ? last2.cy : last2.cx })
+
+  /** Клетка дороги? Внутри поля — клетки тропы, за краем — продолжения входов/выходов */
   const road = (cx: number, cy: number) => {
-    if (cx < 0) return cy === first.cy
-    if (cx >= GRID_W)
-      return (cy === last.cy || (!!last2 && cy === last2.cy)) && cy >= 0 && cy < GRID_H
-    if (cy < 0) return !!first2 && cx === first2.cx // северная дорога ко второму входу
-    if (cy >= GRID_H) return false
+    if (cx < 0) return arms.some((a) => a.edge === 'W' && a.line === cy)
+    if (cx >= GRID_W) return arms.some((a) => a.edge === 'E' && a.line === cy)
+    if (cy < 0) return arms.some((a) => a.edge === 'N' && a.line === cx)
+    if (cy >= GRID_H) return arms.some((a) => a.edge === 'S' && a.line === cx)
     return onPath.has(cx + ',' + cy)
   }
+
+  /** Точка мира у дороги за краем поля (для отсева леса и расстановки фонарей) */
+  const nearArm = (wx: number, wy: number, pad: number) =>
+    arms.some((a) => {
+      const line = a.line * CELL + CELL / 2
+      if (a.edge === 'W') return wx < 0 && Math.abs(wy - line) < pad
+      if (a.edge === 'E') return wx > MAP_W && Math.abs(wy - line) < pad
+      if (a.edge === 'N') return wy < 0 && Math.abs(wx - line) < pad
+      return wy > MAP_H && Math.abs(wx - line) < pad
+    })
+
+  /** Портал Разлома за кромкой входа; у южного входа — ниже кромки утёса, в низине */
+  const portalW: Vec = inEdge === 'W' ? { x: -70, y: entryP.y }
+    : inEdge === 'E' ? { x: MAP_W + 70, y: entryP.y }
+    : inEdge === 'N' ? { x: entryP.x, y: -90 }
+    : { x: entryP.x, y: MAP_H + 120 }
+
+  /** Рамка лагеря: зона построек за кромкой выхода (мировые координаты) */
+  const campBox = outEdge === 'E' ? { x0: MAP_W + 8, x1: MAP_W + 460, y0: -20, y1: MAP_H + 20 }
+    : outEdge === 'W' ? { x0: -460, x1: -8, y0: -20, y1: MAP_H + 20 }
+    : outEdge === 'N' ? { x0: 20, x1: MAP_W - 20, y0: -300, y1: -8 }
+    : { x0: 20, x1: MAP_W - 20, y0: MAP_H + 130, y1: MAP_H + 340 }
+  const inCamp = (wx: number, wy: number) => wx >= campBox.x0 && wx <= campBox.x1 && wy >= campBox.y0 && wy <= campBox.y1
 
   // расстояние каждой клетки до тропы (в шагах по клеткам): декор — не ближе 2, крупный — от 3
   const dist = new Map<string, number>()
@@ -124,8 +224,8 @@ export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasEle
   }
   const far = (cx: number, cy: number) => dist.get(cx + ',' + cy) ?? 0
 
-  // заражение: от Разлома по снегу расползается живой минерал — серо-зелёная корка и светящиеся жилы
-  const rift = { x: -70, y: entryY }
+  // заражение: от портала Разлома по земле расползается живой минерал — серо-зелёная корка и светящиеся жилы
+  const rift = portalW
   const infection = (wx: number, wy: number) => {
     const d = Math.hypot(wx - rift.x, (wy - rift.y) * 1.3)
     const n = hash(Math.floor(wx / 40), Math.floor(wy / 40), seed + 61)
@@ -140,9 +240,9 @@ export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasEle
     return [c[0] + (52 - c[0]) * t, c[1] + (78 - c[1]) * t, c[2] + (90 - c[2]) * t]
   }
 
-  // замёрзшее озеро — на самом дальнем от тропы и от Разлома месте поля
+  // водоём — на самом дальнем от тропы и от портала месте поля: замёрзшее озеро или болото
   let lake: { x: number; y: number; rx: number; ry: number } | null = null
-  {
+  if (B.lake !== 'none') {
     let best = 2
     for (const [k, d] of dist) {
       const [x, y] = k.split(',').map(Number)
@@ -183,40 +283,66 @@ export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasEle
       const dith = hash(bx, by, seed + 9)
       const inside = w.x >= 0 && w.y >= 0 && w.x < MAP_W && w.y < MAP_H
 
-      // утёс под передним левым краем поля
       const depth = w.y >= MAP_H ? belowFrontEdge(sx, sy) : -1
-      if (depth >= 0 && depth < CLIFF) {
-        const snowTop = 3 + Math.floor(hash(bx >> 1, 7, seed) * 5)
-        if (depth < snowTop) put(bx, by, depth < 2 ? [214, 225, 238] : [178, 192, 212])
-        else {
-          const streak = hash(bx, Math.floor(depth / 6), seed + 3)
-          const tone = streak > 0.75 ? [58, 66, 82] : streak > 0.4 ? [44, 51, 65] : [35, 41, 53]
-          const fade = depth > CLIFF - 6 ? 0.85 : 1
-          put(bx, by, (dith > 0.94 ? [120, 136, 160] : tone) as [number, number, number], fade)
-        }
-        continue
-      }
-
+      // настил тропы: и на поле, и за краем (у южного входа/выхода — рез-овраг сквозь утёс)
       if (road(cx, cy)) {
-        // деревянный настил тракта (как в предпросмотре меню): доски поперёк хода, швы,
-        // снежная пыль на досках; по краям — снежные валы и тёмная подбивка для контраста
         const u = w.x - cx * CELL
         const v = w.y - cy * CELL
         const hor = road(cx - 1, cy) || road(cx + 1, cy)
         const across = hor ? v : u // координата поперёк дороги 0..40
         const along = hor ? u : v // вдоль дороги
-        let c: [number, number, number] = [64, 52, 44] // тёмная подбивка под настилом
+        let c: RGB = [40, 34, 28] // тёмная подбивка под настилом
         const seam = across % 10 < 1.7
-        if (seam) c = [54, 42, 34]
-        else {
-          const woodN = hash(Math.floor(across / 10) + cx * 7 + cy * 13, Math.floor(along / 13), seed + 8)
-          const tones: [number, number, number][] = [[188, 150, 102], [168, 130, 86], [200, 162, 112], [154, 118, 76]]
-          c = tones[Math.floor(woodN * tones.length)]
-          if (hash(Math.floor(w.x / 3), Math.floor(w.y / 3), seed + 9) > 0.86) c = [c[0] - 18, c[1] - 15, c[2] - 10] // зерно
-          if (hash(Math.floor(w.x / 5), Math.floor(w.y / 5), seed + 32) > 0.91) c = [212, 222, 236] // снежная пыль
+        if (B.road === 'wood') {
+          // деревянный настил тракта: доски поперёк хода, швы, снежная пыль
+          if (seam) c = [54, 42, 34]
+          else {
+            const woodN = hash(Math.floor(across / 10) + cx * 7 + cy * 13, Math.floor(along / 13), seed + 8)
+            const tones: RGB[] = [[188, 150, 102], [168, 130, 86], [200, 162, 112], [154, 118, 76]]
+            c = tones[Math.floor(woodN * tones.length)]
+            if (hash(Math.floor(w.x / 3), Math.floor(w.y / 3), seed + 9) > 0.86) c = [c[0] - 18, c[1] - 15, c[2] - 10] // зерно
+            if (hash(Math.floor(w.x / 5), Math.floor(w.y / 5), seed + 32) > 0.91) c = [212, 222, 236] // снежная пыль
+          }
+        } else if (B.road === 'bogwood') {
+          // старый настил по болоту: тёмные доски, между ними сочится мох
+          if (seam) c = [38, 32, 26]
+          else {
+            const woodN = hash(Math.floor(across / 10) + cx * 7 + cy * 13, Math.floor(along / 13), seed + 8)
+            const tones: RGB[] = [[118, 100, 78], [98, 84, 66], [130, 110, 86], [88, 76, 60]]
+            c = tones[Math.floor(woodN * tones.length)]
+            if (hash(Math.floor(w.x / 4), Math.floor(w.y / 4), seed + 9) > 0.9) c = [76, 90, 58] // мох
+          }
+        } else if (B.road === 'stone') {
+          // каменные плиты моста: крупные квадры поперёк хода, тёмные швы и щербины
+          const slab = across % 14 < 2.2
+          if (slab) c = [46, 40, 34]
+          else {
+            const slabN = hash(Math.floor(across / 14) + cx * 11 + cy * 3, Math.floor(along / 16), seed + 8)
+            const tones: RGB[] = [[128, 116, 100], [112, 102, 88], [140, 128, 110], [100, 92, 80]]
+            c = tones[Math.floor(slabN * tones.length)]
+            if (hash(Math.floor(w.x / 3), Math.floor(w.y / 3), seed + 9) > 0.88) c = [82, 74, 64] // щербинка
+          }
+        } else if (B.road === 'gravel') {
+          // укатанный гравий шахтёрской дороги с галькой
+          const n = hash(Math.floor(w.x / 6), Math.floor(w.y / 6), seed + 8)
+          const tones: RGB[] = [[72, 62, 52], [62, 54, 46], [80, 68, 56], [56, 48, 42]]
+          c = tones[Math.floor(n * tones.length)]
+          if (hash(Math.floor(w.x / 2.5), Math.floor(w.y / 2.5), seed + 9) > 0.93) c = [96, 84, 70] // галька
+        } else if (B.road === 'ice') {
+          // укатанный снежно-ледяной наст перевала: блестит полосами вдоль хода
+          const n = hash(Math.floor(w.x / 9), Math.floor(w.y / 9), seed + 8)
+          const tones: RGB[] = [[196, 208, 226], [182, 196, 216], [208, 220, 236], [172, 186, 208]]
+          c = tones[Math.floor(n * tones.length)]
+          if (Math.sin(along * 0.35 + across * 0.2) > 0.86) c = [228, 238, 250] // ледяной отблеск
+        } else {
+          // пепельный рез долины: тёмный шлак, из трещин сочится зелень минерала
+          const n = hash(Math.floor(w.x / 7), Math.floor(w.y / 7), seed + 8)
+          const tones: RGB[] = [[64, 58, 62], [56, 50, 54], [72, 64, 68], [48, 44, 48]]
+          c = tones[Math.floor(n * tones.length)]
+          if (hash(Math.floor(w.x / 4), Math.floor(w.y / 4), seed + 9) > 0.92) c = [58, 96, 78] // жилы минерала
         }
         if (dith < 0.03) c = [c[0] * 0.8, c[1] * 0.8, c[2] * 0.82]
-        // валы: у стороны, где соседа-дороги нет
+        // обочины: у стороны, где соседа-дороги нет
         const edgeD = Math.min(
           road(cx - 1, cy) ? 99 : u,
           road(cx + 1, cy) ? 99 : CELL - u,
@@ -224,19 +350,33 @@ export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasEle
           road(cx, cy + 1) ? 99 : CELL - v,
         )
         const bank = 4 + hash(Math.floor(w.x / 5), Math.floor(w.y / 5), seed + 31) * 4
-        if (edgeD < bank) c = edgeD < bank * 0.45 ? [204, 216, 232] : [170, 184, 206]
+        const bankC = ROAD_BANK[B.road]
+        if (edgeD < bank) c = edgeD < bank * 0.45 ? bankC.hi : bankC.lo
         else if (edgeD < bank + 3) c = [c[0] * 0.76, c[1] * 0.78, c[2] * 0.86]
         put(bx, by, infect(c, w.x, w.y, infection(w.x, w.y) * 0.6))
         continue
       }
 
-      // снег: на поле светлее, за краем (лес, низина) — темнее; пятна идут ромбами по сетке мира
-      const pal = inside ? SNOW_PLATEAU : SNOW_LOW
+      // утёс под передним левым краем поля (дорога рисуется раньше — прорезает его)
+      if (depth >= 0 && depth < CLIFF) {
+        const capTop = 3 + Math.floor(hash(bx >> 1, 7, seed) * 5)
+        if (depth < capTop) put(bx, by, depth < 2 ? B.cliff.cap : B.cliff.capDeep)
+        else {
+          const streak = hash(bx, Math.floor(depth / 6), seed + 3)
+          const tone = streak > 0.75 ? B.cliff.face[0] : streak > 0.4 ? B.cliff.face[1] : B.cliff.face[2]
+          const fade = depth > CLIFF - 6 ? 0.85 : 1
+          put(bx, by, dith > 0.94 ? B.cliff.streak : tone, fade)
+        }
+        continue
+      }
+
+      // земля: на поле светлее, за краем (лес, низина) — темнее; пятна идут ромбами по сетке мира
+      const pal = inside ? B.ground.plateau : B.ground.lowland
       const n = hash(Math.floor(w.x / 9), Math.floor(w.y / 9), seed)
       const big = hash(Math.floor(w.x / 50), Math.floor(w.y / 50), seed + 3)
       let c = pal[Math.floor((n * 0.5 + big * 0.5) * pal.length) % pal.length]
-      if (dith > 0.985) c = [228, 236, 246]
-      else if (dith < 0.012) c = [70, 82, 104]
+      if (dith > 0.985) c = B.ground.dithHi
+      else if (dith < 0.012) c = B.ground.dithLo
       // еле заметная сетка клеток на поле — видно, куда ставить башню
       let k = 1
       if (inside) {
@@ -244,13 +384,17 @@ export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasEle
         const v = w.y - cy * CELL
         if (u < 1.6 || v < 1.6) k = 0.93
       }
-      // город за правым краем: утоптанный снег с грязью
-      if (w.x >= MAP_W && w.y < MAP_H && hash(Math.floor(w.x / 14), Math.floor(w.y / 14), seed + 5) > 0.72) c = [110, 104, 104]
-      // лёд озера: тёмно-синий с трещинами и бликами, по краю — снежная кромка
+      // утоптанный грунт вокруг лагеря беженцев
+      if (!inside && inCamp(w.x, w.y) && hash(Math.floor(w.x / 14), Math.floor(w.y / 14), seed + 5) > 1 - B.camp.trample) c = B.camp.dirt
+      // вода: замёрзшее озеро с трещинами или мутное болото; по краю — кромка
       if (lake && inLake(w.x, w.y, 6)) {
         const e = ((w.x - lake.x) / lake.rx) ** 2 + ((w.y - lake.y) / lake.ry) ** 2
-        if (e > 1) c = [196, 208, 226]
-        else {
+        if (e > 1) c = B.lake === 'bog' ? [96, 100, 80] : [196, 208, 226]
+        else if (B.lake === 'bog') {
+          const rn = hash(Math.floor(w.x / 8), Math.floor(w.y / 8), seed + 21)
+          c = rn > 0.8 ? [58, 74, 54] : rn > 0.4 ? [42, 56, 46] : [34, 46, 40] // тёмная вода с рябью
+          if (dith > 0.97) c = [76, 92, 68]
+        } else {
           const cr = Math.abs(Math.sin(w.x * 0.11 + Math.sin(w.y * 0.07) * 3) * Math.sin(w.y * 0.09 + w.x * 0.02))
           c = cr < 0.05 ? [150, 186, 214] : e < 0.5 ? [64, 98, 136] : [80, 116, 152]
           if (dith > 0.97) c = [214, 232, 248]
@@ -260,7 +404,7 @@ export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasEle
     }
   }
   L.putImageData(img, 0, 0)
-  groundDetails(L, map, seed, (cx, cy) => road(cx, cy), inLake)
+  groundDetails(L, seed, (cx, cy) => road(cx, cy), inLake, B)
 
   // ─── Пропсы ───────────────────────────────────────────────────────────
   let rs = (seed * 2654435761) >>> 0
@@ -276,11 +420,24 @@ export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasEle
   const pick = <T,>(a: T[]) => a[Math.floor(r() * a.length)]
 
   // декор на поле — подальше от тропы, чтобы не занимать лучшие места под башни:
-  // в 1 клетке от тропы ничего, в 2 — редкие ели, камни, ящики и фонари, от 3 — постройки и рощи
+  // в 1 клетке от тропы мелочи биома, в 2 — редкие, от 3 — постройки, костры и рощи.
+  // Наборы берутся из биома карты (biomes.ts): тайга — ели и сани, болото — сухостой,
+  // ущелье — скалы, пустошь — обломки и шлак.
   let tower = false
   let crash = false
   let huts = 0
   let fires = 0
+  /** Поставить пропс из записи набора: имя случайно из списка, масштаб из диапазона */
+  const place = (e: PropEntry, x: number, y: number, cell?: string) => {
+    const s = e.s ? e.s[0] + r() * (e.s[1] - e.s[0]) : 0.2 + r() * 0.08
+    const p = add(e.names[Math.floor(r() * e.names.length)], x, y, s, {
+      flip: e.flip ? r() > 0.5 : false,
+      ...(cell ? { cell } : {}),
+    })
+    if (e.light === 'lantern') mapLights.push({ x: p.x, y: p.y - 26, kind: 'lantern', seed: Math.floor(x * 3 + y) })
+    else if (e.light === 'window') mapLights.push({ x: p.x, y: p.y - 14, kind: 'window', seed: Math.floor(x + y) })
+    return p
+  }
   for (let cx = 0; cx < GRID_W; cx++) {
     for (let cy = 0; cy < GRID_H; cy++) {
       const d = far(cx, cy)
@@ -290,13 +447,9 @@ export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasEle
         const ox = cx * CELL + CELL / 2 + (hash(cx, cy, seed + 7) - 0.5) * 18
         const oy = cy * CELL + CELL / 2 + (hash(cx, cy, seed + 8) - 0.5) * 18
         if (infection(ox, oy) > 0.35 || inLake(ox, oy, 8)) continue
-        const cell1 = cx + ',' + cy
-        if (roll1 < 0.05) add(pick<AssetName>(['prop-rock', 'prop-rubble']), ox, oy, 0.17, { flip: r() > 0.5, cell: cell1 })
-        else if (roll1 < 0.09) add(pick<AssetName>(['prop-crate', 'prop-barrel', 'prop-box']), ox, oy, 0.24, { cell: cell1 })
-        else if (roll1 < 0.105) add('prop-sign', ox, oy, 0.26, { flip: r() > 0.5, cell: cell1 })
-        else if (roll1 < 0.12) {
-          const p = add('prop-lamp2', ox, oy, 0.28, { cell: cell1 })
-          mapLights.push({ x: p.x, y: p.y - 26, kind: 'lantern', seed: cx * 13 + cy })
+        if (roll1 < 0.13) {
+          const e = pickProp(B.props.near, roll1 / 0.13)
+          if (e) place(e, ox, oy, cx + ',' + cy)
         }
         continue
       }
@@ -305,7 +458,7 @@ export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasEle
       const wy = cy * CELL + CELL / 2 + (hash(cx, cy, seed + 6) - 0.5) * 14
       if (inLake(wx, wy, 12)) continue
       const cell = cx + ',' + cy
-      // у Разлома лес уже мёртв: друзы минерала и сухие деревья вместо елей
+      // у Разлома лес уже мёртв: друзы минерала и сухие деревья вместо елей (лор — на всех картах)
       if (infection(wx, wy) > 0.35) {
         if (roll < 0.35) {
           const p = add('crystal', wx, wy, 0.55 + hash(cx, cy, 9) * 0.4, { cell })
@@ -314,66 +467,72 @@ export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasEle
         continue
       }
       if (d === 2) {
-        if (roll < 0.09) add('prop-pine', wx, wy, 0.28 + hash(cx, cy, 7) * 0.08, { flip: r() > 0.5, cell })
-        else if (roll < 0.14) add(pick<AssetName>(['prop-rock', 'prop-rubble']), wx, wy, 0.22, { flip: r() > 0.5, cell })
-        else if (roll < 0.18) add(pick<AssetName>(['prop-crate', 'prop-barrel', 'prop-box']), wx, wy, 0.28, { cell })
-        else if (roll < 0.2) {
-          const p = add('prop-lamp', wx, wy, 0.3, { cell })
-          mapLights.push({ x: p.x, y: p.y - 22, kind: 'lantern', seed: cx * 31 + cy })
+        if (roll < 0.2) {
+          const e = pickProp(B.props.mid, roll / 0.2)
+          if (e) place(e, wx, wy, cell)
         }
         continue
       }
-      if (!tower && roll < 0.08) {
+      // дальняя зона: одна вышка с прожектором, обломки вездехода, костры и хижины биома,
+      // остальное — дальний набор; у scatter свой бросок зерна
+      const roll3 = hash(cx, cy, seed + 205)
+      if (B.props.tower && !tower && roll < 0.08) {
         tower = true
         const p = add('baked', wx, wy, 0.75, { baked: watchtower(), cell })
         mapLights.push({ x: p.x, y: p.y - 46, kind: 'window', seed: cx })
         // прожектор вышки шарит лучом по полю
         mapLights.push({ x: p.x + 2, y: p.y - 50, kind: 'search', seed: cx, gx: p.x, gy: p.y })
-      } else if (fires < 2 && roll > 0.7 && roll < 0.74) {
+      } else if (fires < B.props.fires && roll > 0.7 && roll < 0.74) {
         fires++
         const p = add('fire', wx, wy, 1, { cell })
         mapLights.push({ x: p.x, y: p.y - 6, kind: 'furnace', seed: cx * 5 + cy })
-      } else if (!crash && roll < 0.14) {
+      } else if (B.props.wreck && !crash && roll < 0.14) {
         crash = true
         add('baked', wx, wy, 0.7, { baked: wreck(), cell })
-      } else if (roll < 0.2 && huts >= 3) {
-        add('prop-pine', wx, wy, 0.34, { flip: r() > 0.5, cell })
-      } else if (roll < 0.2) {
+      } else if (huts < B.props.huts && roll > 0.2 && roll < 0.42) {
         huts++
-        const name = pick<AssetName>(['prop-shed', 'prop-cabin', 'prop-tent'])
+        const name = pick<AssetName>(B.props.hutPool)
         const p = add(name, wx, wy, 0.36, { flip: r() > 0.5, cell })
         mapLights.push({ x: p.x, y: p.y - 12, kind: name === 'prop-tent' ? 'furnace' : 'window', seed: cx * 3 + cy })
-      } else if (roll < 0.22) add(pick<AssetName>(['prop-fence', 'prop-fence2', 'prop-fence3']), wx, wy, 0.32, { flip: r() > 0.5, cell })
-      else if (roll < 0.38) add('prop-pine', wx, wy, 0.3 + hash(cx, cy, 7) * 0.14, { flip: r() > 0.5, cell })
-      else if (roll < 0.46) add('prop-pines', wx, wy, 0.32, { flip: r() > 0.5, cell })
-      else if (roll < 0.54) add(pick<AssetName>(['prop-rock', 'prop-rubble', 'prop-deadtree']), wx, wy, 0.26, { flip: r() > 0.5, cell })
-      else if (roll < 0.6) add(pick<AssetName>(['prop-crates', 'prop-crates2', 'prop-sled', 'prop-sign', 'prop-flag']), wx, wy, 0.3, { flip: r() > 0.5, cell })
+      } else if (roll3 < 0.42) {
+        const e = pickProp(B.props.far, roll3 / 0.42)
+        if (e) place(e, wx, wy, cell)
+      }
     }
   }
 
-  // лагерь беженцев за выходом (лор GDD): сердце паровой базы — генератор, вокруг палатки,
-  // лазарет, мастерская и склад базы, сани и ящики; частокол с воротами у дороги.
-  // Все координаты — относительно краёв поля (MAP_W/MAP_H), экранная зона лагеря — доли холста
-  const CAMP_X = MAP_W + 120 // генератор — сердце лагеря за правым краем поля
-  const CAMP_Y = Math.round(MAP_H * 0.55)
-  const gen = add('bld-generator', CAMP_X, CAMP_Y, 0.72)
+  // ─── Лагерь беженцев за кромкой выхода ─────────────────────────────────
+  // Сердце паровой базы — генератор; вокруг палатки, лазарет, мастерская и склад, сани и ящики;
+  // частокол с воротами у дороги. Лагерь всегда зимний — беженцы тащат свой снег за собой (лор),
+  // но стоит он за кромкой выхода, а она у каждой карты своя: вся геометрия — от ворот (gateW).
+  const outV = OUT_DIR[outEdge]
+  const perp = outV.x !== 0 ? { x: 0, y: 1 } : { x: 1, y: 0 } // поперёк дороги
+  const inV = OUT_DIR[inEdge]
+  const perpIn = inV.x !== 0 ? { x: 0, y: 1 } : { x: 1, y: 0 }
+  const gateW = edgePoint(outEdge, exitLine)
+  const genW: Vec = outEdge === 'E' ? { x: MAP_W + 120, y: Math.round(MAP_H * 0.55) }
+    : outEdge === 'W' ? { x: -120, y: Math.round(MAP_H * 0.55) }
+    : { x: Math.round(MAP_W * 0.5), y: -150 }
+  const gen = add('bld-generator', genW.x, genW.y, 0.72)
   roadEnds.camp = { x: gen.x, y: gen.y }
   mapLights.push({ x: gen.x, y: gen.y - 58, kind: 'generator', seed: 7 })
   const houses: AssetName[] = ['prop-tent', 'bld-medical', 'prop-tent', 'bld-workshop', 'prop-cabin', 'prop-tent', 'bld-heater', 'prop-shed', 'bld-depot']
+  const placed: { x: number; y: number }[] = [{ x: genW.x, y: genW.y }]
+  const visible = (p: { x: number; y: number }, mx = 30, my = 12) => p.x > mx && p.x < W - mx && p.y > my && p.y < H - my
   // паровая база стоит рядом с генератором: на ней беженцы идут дальше (лор GDD)
-  const placed: { x: number; y: number }[] = [{ x: CAMP_X, y: CAMP_Y }]
   const spots: [number, number][] = []
-  for (let by = MAP_H * 0.1; by < MAP_H; by += 20)
-    for (let bx = MAP_W + 40; bx < MAP_W + 340; bx += 20) spots.push([bx, by])
-  // ближе к зрителю и левее генератора — там её не загораживают дома
+  for (let by = campBox.y0 + 20; by < campBox.y1; by += 20)
+    for (let bx = campBox.x0 + 20; bx < campBox.x1; bx += 20) spots.push([bx, by])
+  // ближе к генератору и ниже к зрителю — там её не загораживают дома
   const want = (q: [number, number]) => {
     const sp = toScreen(q[0], q[1])
-    return Math.abs(sp.x - MAP_W * 0.727) + Math.abs(sp.y - MAP_H * 0.867)
+    return Math.abs(sp.x - gen.x) + Math.abs(sp.y - gen.y) * 0.6 + (H - sp.y) * 0.3
   }
   spots.sort((a, b) => want(a) - want(b))
   for (const [bx, by] of spots) {
     const p = toScreen(bx, by)
-    if (p.x < MAP_W * 0.646 || p.x > MAP_W * 0.917 || p.y > MAP_H * 0.913 || nearExit(by, 70) || Math.hypot(bx - CAMP_X, by - CAMP_Y) < 130) continue
+    if (!visible(p, 40, 20)) continue
+    if (nearGate(bx, by, 70) || Math.hypot(bx - genW.x, by - genW.y) < 130) continue
     const sc = 0.6
     const base = steamBase()
     add('baked', bx, by, sc, { baked: base })
@@ -384,9 +543,9 @@ export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasEle
     break
   }
   // радиомачта лагеря: через неё выходит на связь ИИ
-  for (const [mx, my] of [[MAP_W + 50, MAP_H * 0.25], [MAP_W + 50, MAP_H * 0.867], [MAP_W + 80, MAP_H * 0.13]] as [number, number][]) {
+  for (const [mx, my] of [[campBox.x0 + 50, campBox.y0 + 90], [campBox.x0 + 50, campBox.y1 - 40], [campBox.x0 + 80, campBox.y0 + 40]] as [number, number][]) {
     const p = toScreen(mx, my)
-    if (p.x > MAP_W - 30 || p.y > MAP_H - 10 || p.x < MAP_W * 0.583 || nearExit(my, 50) || placed.some((q) => Math.hypot(q.x - mx, q.y - my) < 50)) continue
+    if (!visible(p, 30, 10) || nearGate(mx, my, 50) || placed.some((q) => Math.hypot(q.x - mx, q.y - my) < 50)) continue
     const mast = radioMast()
     add('baked', mx, my, 0.8, { baked: mast })
     placed.push({ x: mx, y: my })
@@ -394,13 +553,13 @@ export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasEle
     break
   }
   let hi = Math.floor(r() * houses.length)
-  for (let wy = MAP_H * 0.1; wy < MAP_H; wy += 58) {
-    for (let wx = MAP_W + 50; wx < MAP_W + 440; wx += 64) {
-      const x = wx + (r() - 0.5) * 20
-      const y = wy + (r() - 0.5) * 20
+  for (let by = campBox.y0 + 30; by < campBox.y1 - 20; by += 58) {
+    for (let bx = campBox.x0 + 50; bx < campBox.x1 - 20; bx += 64) {
+      const x = bx + (r() - 0.5) * 20
+      const y = by + (r() - 0.5) * 20
       const p = toScreen(x, y)
-      if (p.x > MAP_W - 30 || p.y > MAP_H - 10 || p.x < MAP_W * 0.583) continue
-      if (nearExit(y, 48)) continue
+      if (!visible(p, 30, 10)) continue
+      if (nearGate(x, y, 48)) continue
       if (placed.some((q) => Math.hypot(q.x - x, q.y - y) < 70)) continue
       placed.push({ x, y })
       const name = houses[hi++ % houses.length]
@@ -409,71 +568,92 @@ export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasEle
     }
   }
   // костры лагеря: вокруг них греются беженцы
-  for (let i = 0, made = 0; i < 30 && made < 2; i++) {
-    const x = MAP_W + 50 + r() * 220
-    const y = MAP_H * 0.1 + r() * MAP_H * 0.83
+  for (let i = 0, made = 0; i < 40 && made < 2; i++) {
+    const x = campBox.x0 + 60 + r() * Math.max(40, campBox.x1 - campBox.x0 - 120)
+    const y = campBox.y0 + 60 + r() * Math.max(40, campBox.y1 - campBox.y0 - 120)
     const p = toScreen(x, y)
-    if (p.x > MAP_W - 40 || p.y > MAP_H - 14 || p.x < MAP_W * 0.625 || nearExit(y, 40)) continue
+    if (!visible(p, 40, 16) || nearGate(x, y, 40)) continue
     if (placed.some((q) => Math.hypot(q.x - x, q.y - y) < 50)) continue
     placed.push({ x, y })
     add('fire', x, y, 1)
     mapLights.push({ x: p.x, y: p.y - 6, kind: 'furnace', seed: 40 + i })
     made++
   }
-  // фонари вдоль дорог за краем поля — тропа к Разлому и к лагерю освещена
+  // скарб беженцев между палатками
+  for (let i = 0, made = 0; i < 60 && made < 10; i++) {
+    const x = campBox.x0 + 40 + r() * Math.max(40, campBox.x1 - campBox.x0 - 80)
+    const y = campBox.y0 + 40 + r() * Math.max(40, campBox.y1 - campBox.y0 - 80)
+    const p = toScreen(x, y)
+    if (!visible(p, 25, 8) || nearGate(x, y, 30)) continue
+    if (placed.some((q) => Math.hypot(q.x - x, q.y - y) < 34)) continue
+    placed.push({ x, y })
+    made++
+    const name = pick<AssetName>(['prop-crate', 'prop-barrel', 'prop-crates', 'prop-sled', 'prop-box', 'prop-lamp'])
+    const sp = add(name, x, y, 0.3, { flip: r() > 0.5 })
+    if (name === 'prop-lamp') mapLights.push({ x: sp.x, y: sp.y - 22, kind: 'lantern', seed: i })
+  }
+  // фонари вдоль дорог за краем поля — тропа к Разлому и к воротам освещена
   const roadLamp = (x: number, y: number, i: number) => {
     const p = toScreen(x, y)
-    if (p.x < 6 || p.x > MAP_W - 10 || p.y < 20 || p.y > MAP_H - 6) return
+    if (!visible(p, 8, 20)) return
     if (placed.some((q) => Math.hypot(q.x - x, q.y - y) < 30)) return
     placed.push({ x, y })
     add('prop-lamp2', x, y, 0.32)
     mapLights.push({ x: p.x, y: p.y - 30, kind: 'lantern', seed: 60 + i })
   }
-  for (let i = 0; i < 4; i++) roadLamp(MAP_W + 50 + i * 80, exitY + (i % 2 ? 30 : -30), i)
-  for (let i = 0; i < 3; i++) roadLamp(-140 - i * 90, entryY + (i % 2 ? 32 : -32), 10 + i)
-
-  // скарб беженцев между палатками
-  for (let i = 0; i < 40 && placed.length < 26; i++) {
-    const x = MAP_W + 40 + r() * 260
-    const y = MAP_H * 0.067 + r() * MAP_H * 0.9
-    const p = toScreen(x, y)
-    if (p.x > MAP_W - 25 || p.y > MAP_H - 6 || p.x < MAP_W * 0.594 || nearExit(y, 30)) continue
-    if (placed.some((q) => Math.hypot(q.x - x, q.y - y) < 34)) continue
-    placed.push({ x, y })
-    const name = pick<AssetName>(['prop-crate', 'prop-barrel', 'prop-crates', 'prop-sled', 'prop-box', 'prop-lamp'])
-    const sp = add(name, x, y, 0.3, { flip: r() > 0.5 })
-    if (name === 'prop-lamp') mapLights.push({ x: sp.x, y: sp.y - 22, kind: 'lantern', seed: i })
+  // за воротами — вдоль дороги к лагерю, за порталом — вдоль дороги к Разлому (чередуем стороны)
+  for (let i = 0; i < 4; i++) {
+    const side = i % 2 ? 30 : -30
+    roadLamp(gateW.x + outV.x * (50 + i * 80) + perp.x * side, gateW.y + outV.y * (50 + i * 80) + perp.y * side, i)
   }
-  // стена по правому краю поля, разрыв — ворота для дороги; у ворот фонари-башенки
-  for (let y = 26; y < MAP_H; y += 48) {
-    if (nearExit(y, 46)) continue
-    add('bld-wall', MAP_W + 18, y, 0.5, { flip: true })
+  for (let i = 0; i < 3; i++) {
+    const side = i % 2 ? 32 : -32
+    roadLamp(entryP.x + inV.x * (140 + i * 90) + perpIn.x * side, entryP.y + inV.y * (140 + i * 90) + perpIn.y * side, 10 + i)
   }
-  for (const dy of [-44, 44]) {
-    const p = add('prop-lamptower', MAP_W + 18, exitY + dy, 0.36)
-    mapLights.push({ x: p.x, y: p.y - 36, kind: 'gate', seed: dy })
-  }
-  roadEnds.exit = toScreen(MAP_W, exitY)
-  // второй выход: свои ворота в стене, фонари-башенки и дорога к лагерю
-  if (last2) {
-    for (const dy of [-44, 44]) {
-      const p = add('prop-lamptower', MAP_W + 18, exit2Y + dy, 0.36)
-      mapLights.push({ x: p.x, y: p.y - 36, kind: 'gate', seed: 100 + dy })
+  // частокол вдоль кромки выхода, разрыв — ворота; у ворот фонари-башенки
+  const wallX = outEdge === 'E' ? MAP_W + 18 : outEdge === 'W' ? -18 : null
+  const wallY = outEdge === 'N' ? -18 : outEdge === 'S' ? MAP_H + 18 : null
+  if (wallX !== null) {
+    for (let y = 26; y < MAP_H; y += 48) {
+      if (nearGate(wallX, y, 60)) continue
+      add('bld-wall', wallX, y, 0.5, { flip: true })
     }
-    for (let i = 0; i < 2; i++) roadLamp(MAP_W + 50 + i * 80, exit2Y + (i % 2 ? 30 : -30), 20 + i)
-    roadEnds.exit2 = toScreen(MAP_W, exit2Y)
+  } else {
+    for (let x = 26; x < MAP_W; x += 48) {
+      if (nearGate(x, wallY ?? 0, 60)) continue
+      add('bld-wall', x, wallY ?? 0, 0.5, { flip: true })
+    }
+  }
+  const gateTower = (t: number, line: number) => {
+    const q = wallX !== null
+      ? { x: wallX, y: line * CELL + CELL / 2 + t }
+      : { x: line * CELL + CELL / 2 + t, y: wallY ?? 0 }
+    const p = add('prop-lamptower', q.x, q.y, 0.36)
+    mapLights.push({ x: p.x, y: p.y - 36, kind: 'gate', seed: t })
+  }
+  for (const t of [-44, 44]) gateTower(t, exitLine)
+  roadEnds.exit = toScreen(gateW.x, gateW.y)
+  // второй выход: свои ворота в стене, фонари-башенки и дорога к лагерю
+  if (exit2Line !== null) {
+    for (const t of [-44, 44]) gateTower(t, exit2Line)
+    const gate2W = edgePoint(outEdge, exit2Line)
+    for (let i = 0; i < 2; i++) {
+      const side = i % 2 ? 30 : -30
+      roadLamp(gate2W.x + outV.x * (50 + i * 80) + perp.x * side, gate2W.y + outV.y * (50 + i * 80) + perp.y * side, 20 + i)
+    }
+    roadEnds.exit2 = toScreen(gate2W.x, gate2W.y)
   }
 
-  // лес за задними краями и в низине под утёсом: выборка по экрану, частая сетка с дрожанием
+  // лес за задними краями и в низине под утёсом: выборка по экрану, частая сетка с дрожанием.
+  // Не растёт на поле, в лагере и на дорогах к порталу и воротам; состав — из дикой зоны биома.
   for (let sy = -6; sy < H + 30; sy += 13) {
     for (let sx = -10; sx < W + 10; sx += 15) {
       const x = sx + (r() - 0.5) * 12
       const y = sy + (r() - 0.5) * 8
       const w = toWorld(x, y)
       if (w.x >= -8 && w.y >= -8 && w.x < MAP_W + 8 && w.y < MAP_H + 8) continue // поле
-      if (w.x >= MAP_W - 10 && w.y < MAP_H + 10) continue // город
-      if (w.x < 0 && Math.abs(w.y - entryY) < 46) continue // дорога ко входу
-      if (w.y < 0 && !!first2 && Math.abs(w.x - (first2.cx * CELL + CELL / 2)) < 46) continue // северная дорога ко второму входу
+      if (inCamp(w.x, w.y)) continue // лагерь беженцев
+      if (nearArm(w.x, w.y, 46)) continue // дороги к порталу и к воротам
       if (w.y >= MAP_H) {
         const d = belowFrontEdge(x, y)
         if (d >= 0 && d < CLIFF + 6) continue // на утёсе
@@ -482,7 +662,7 @@ export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasEle
       const dense = hash(Math.floor(x / 90), Math.floor(y / 70), seed + 77)
       const roll = r() / (0.55 + dense * 0.6)
       if (infection(w.x, w.y) > 0.35) {
-        // мёртвый лес у Разлома: редкие друзы среди мёртвых деревьев и елей
+        // мёртвый лес у Разлома: редкие друзы среди мёртвых деревьев (лор — на всех картах)
         if (roll < 0.07) {
           props.push({ name: 'crystal', x, y, s: 0.4 + r() * 0.3 })
           if (r() < 0.3) mapLights.push({ x, y: y - 10, kind: 'crystal', seed: Math.floor(x) })
@@ -491,32 +671,39 @@ export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasEle
         else if (roll < 0.58) props.push({ name: 'prop-rock', x, y, s: 0.24, flip: r() > 0.5 })
         continue
       }
-      if (roll < 0.5) props.push({ name: 'prop-pine', x, y, s: 0.3 + r() * 0.16, flip: r() > 0.5 })
-      else if (roll < 0.6) props.push({ name: 'prop-pines', x, y, s: 0.32 + r() * 0.1, flip: r() > 0.5 })
-      else if (roll < 0.63) props.push({ name: 'prop-deadtree', x, y, s: 0.3, flip: r() > 0.5 })
-      else if (roll < 0.66) props.push({ name: pick<AssetName>(['prop-rock', 'prop-rubble', 'prop-cliff']), x, y, s: 0.26, flip: r() > 0.5 })
+      // дикий лес биома: тайга — ели, болото — сухостой, ущелье — скалы, пустошь — обломки
+      const e = pickProp(B.props.wild, r())
+      if (e && roll < 0.66) {
+        props.push({
+          name: e.names[Math.floor(r() * e.names.length)],
+          x, y,
+          s: e.s ? e.s[0] + r() * (e.s[1] - e.s[0]) : 0.28 + r() * 0.12,
+          flip: e.flip ? r() > 0.5 : false,
+        })
+      }
     }
   }
 
-  // вход: портал Разлома у края леса, рядом лагерь разведчиков
-  roadEnds.entry = toScreen(-70, entryY)
+  // вход: портал Разлома за кромкой входа, рядом лагерь разведчиков
+  roadEnds.entry = toScreen(portalW.x, portalW.y)
   mapLights.push({ x: roadEnds.entry.x, y: roadEnds.entry.y - 16, kind: 'portal', seed: 1 })
-  const camp = toScreen(-40, entryY + 70)
-  if (camp.x > 10 && camp.y > 30) {
+  const scoutW = { x: entryP.x + inV.x * 40 + perpIn.x * 70, y: entryP.y + inV.y * 40 + perpIn.y * 70 }
+  const camp = toScreen(scoutW.x, scoutW.y)
+  if (camp.x > 10 && camp.y > 30 && camp.x < W - 10 && camp.y < H - 6) {
     props.push({ name: 'prop-tent', x: camp.x, y: camp.y, s: 0.36 })
     mapLights.push({ x: camp.x, y: camp.y - 12, kind: 'furnace', seed: 3 })
   }
-  // второй выход: второй портал Разлома над северной кромкой
-  if (first2) {
-    const e2 = map.points2?.[0] ?? { x: first2.cx * CELL + CELL / 2, y: entry2Y }
+  // второй портал Разлома (Пепельная долина) — над северной кромкой
+  if (first2 && map.points2) {
+    const e2 = map.points2[0]
     roadEnds.entry2 = toScreen(e2.x, e2.y - 44)
     mapLights.push({ x: roadEnds.entry2.x, y: roadEnds.entry2.y - 16, kind: 'portal', seed: 2 })
   }
 
-  // мягкая холодная виньетка по краям
+  // мягкая виньетка по краям — у каждого биома свой цвет сумрака
   const g = L.createRadialGradient(W / 2, H / 2, H * 0.45, W / 2, H / 2, W * 0.62)
-  g.addColorStop(0, 'rgba(6,12,30,0)')
-  g.addColorStop(1, 'rgba(6,12,30,0.38)')
+  g.addColorStop(0, B.vignette.replace(/,\s*[\d.]+\)$/, ',0)'))
+  g.addColorStop(1, B.vignette)
   L.fillStyle = g
   L.fillRect(0, 0, W, H)
 
@@ -615,13 +802,15 @@ export function drawPropShadows(ctx: CanvasRenderingContext2D) {
 }
 
 /**
- * Мелочи на снегу, вписанные прямо в землю (пиксели 2×2, как у неё): наметённые сугробы с синей
- * тенью, камни под снегом, сухая трава, цепочки следов, колея от саней, обломки досок, наст.
- * Плоские — места под башни не занимают, поэтому лежат везде, кроме самой тропы и озера.
+ * Мелочи на грунте, вписанные прямо в землю (пиксели 2×2, как у неё): намётенные сугробы,
+ * камни, сухая трава, цепочки следов и колея, обломки досок, наст — и породы биома:
+ * трещины сухой земли, пепельные бугры, уголь и шлак, галька, ледяные блики.
+ * Плоские — места под башни не занимают, поэтому лежат везде, кроме тропы и воды.
  */
 function groundDetails(
-  L: CanvasRenderingContext2D, map: GameMap, seed: number,
+  L: CanvasRenderingContext2D, seed: number,
   road: (cx: number, cy: number) => boolean, inLake: (x: number, y: number, pad?: number) => boolean,
+  B: BiomeDef,
 ) {
   let rs = (seed * 97 + 13) >>> 0
   const r = () => {
@@ -632,108 +821,199 @@ function groundDetails(
     L.fillStyle = c
     L.fillRect(Math.floor(x / 2) * 2, Math.floor(y / 2) * 2, w, h)
   }
-  /** Свободный снег (поле или лес рядом), не дорога и не лёд */
+  /** Затемнить hex-цвет (k<1) или осветлить (k>1) */
+  const shade = (hex: string, k: number) => {
+    const n = parseInt(hex.slice(1), 16)
+    const c = [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+    return `rgb(${Math.min(255, Math.round(c[0] * k))},${Math.min(255, Math.round(c[1] * k))},${Math.min(255, Math.round(c[2] * k))})`
+  }
+  /** Свободный грунт (поле или лес рядом), не дорога и не вода */
   const free = (wx: number, wy: number) => {
     const cx = Math.floor(wx / CELL)
     const cy = Math.floor(wy / CELL)
     if (wx < -60 || wy < -60 || wx > MAP_W + 40 || wy > MAP_H + 10) return false
     return !road(cx, cy) && !inLake(wx, wy, 8)
   }
-  void map
-
+  const D = B.details
   // сугробы, вытянутые по ветру: светлый верх, тень справа-снизу
-  for (let i = 0; i < 120; i++) {
-    const wx = r() * (MAP_W + 80) - 40
-    const wy = r() * (MAP_H + 40) - 20
-    if (!free(wx, wy)) continue
-    const p = toScreen(wx, wy)
-    const len = 8 + Math.floor(r() * 10)
-    for (let k = -len; k <= len; k += 2) {
-      const h = Math.round((1 - (k / len) ** 2) * 3)
-      for (let j = 0; j <= h; j += 2) blk(p.x + k, p.y - j, j >= h - 1 ? '#d6e1ee' : '#b8c6da')
-      blk(p.x + k + 2, p.y + 2, '#6c7d98')
+  if (D.drifts) {
+    const [count, hi, lo] = D.drifts
+    for (let i = 0; i < count; i++) {
+      const wx = r() * (MAP_W + 80) - 40
+      const wy = r() * (MAP_H + 40) - 20
+      if (!free(wx, wy)) continue
+      const p = toScreen(wx, wy)
+      const len = 8 + Math.floor(r() * 10)
+      for (let k = -len; k <= len; k += 2) {
+        const h = Math.round((1 - (k / len) ** 2) * 3)
+        for (let j = 0; j <= h; j += 2) blk(p.x + k, p.y - j, j >= h - 1 ? hi : shade(hi, 0.88))
+        blk(p.x + k + 2, p.y + 2, lo)
+      }
     }
   }
-  // камни под снежными шапками
-  for (let i = 0; i < 90; i++) {
-    const wx = r() * MAP_W
-    const wy = r() * MAP_H
-    if (!free(wx, wy)) continue
-    const p = toScreen(wx, wy)
-    const n = 1 + Math.floor(r() * 3)
-    for (let k = 0; k < n; k++) {
-      const x = p.x + k * 4 - 2
-      const y = p.y + (k % 2) * 2
-      blk(x, y, '#2c3340', 4, 4)
-      blk(x, y + 2, '#3e4758', 2, 2)
-      blk(x, y - 2, '#dfe8f2', 4, 2)
-      blk(x + 4, y + 2, '#5a6a85')
+  // камни: тёмные бока, светлая макушка (снежная шапка — только там, где есть снег)
+  if (D.boulders) {
+    const [count, dark, mid, cap] = D.boulders
+    for (let i = 0; i < count; i++) {
+      const wx = r() * MAP_W
+      const wy = r() * MAP_H
+      if (!free(wx, wy)) continue
+      const p = toScreen(wx, wy)
+      const n = 1 + Math.floor(r() * 3)
+      for (let k = 0; k < n; k++) {
+        const x = p.x + k * 4 - 2
+        const y = p.y + (k % 2) * 2
+        blk(x, y, dark, 4, 4)
+        blk(x, y + 2, mid, 2, 2)
+        if (cap) {
+          blk(x, y - 2, cap, 4, 2)
+          blk(x + 4, y + 2, shade(dark, 1.5))
+        } else blk(x + 4, y + 2, shade(dark, 1.4))
+      }
     }
   }
-  // сухая трава из-под снега
-  for (let i = 0; i < 110; i++) {
-    const wx = r() * MAP_W
-    const wy = r() * MAP_H
-    if (!free(wx, wy)) continue
-    const p = toScreen(wx, wy)
-    for (let k = 0; k < 3; k++) {
-      const x = p.x + k * 2 - 2
-      const h = 2 + Math.floor(r() * 3) * 2
-      L.fillStyle = k === 1 ? '#9a8a62' : '#7a6a48'
-      L.fillRect(Math.floor(x / 2) * 2, Math.floor((p.y - h) / 2) * 2, 2, h)
+  // сухая трава из-под снега / жухлые колоски по земле
+  if (D.grass) {
+    const [count, c1, c2] = D.grass
+    for (let i = 0; i < count; i++) {
+      const wx = r() * MAP_W
+      const wy = r() * MAP_H
+      if (!free(wx, wy)) continue
+      const p = toScreen(wx, wy)
+      for (let k = 0; k < 3; k++) {
+        const x = p.x + k * 2 - 2
+        const h = 2 + Math.floor(r() * 3) * 2
+        L.fillStyle = k === 1 ? c1 : c2
+        L.fillRect(Math.floor(x / 2) * 2, Math.floor((p.y - h) / 2) * 2, 2, h)
+      }
     }
   }
   // цепочки следов: кто-то бродил между постройками (пары точек вдоль извилистого пути)
-  for (let t = 0; t < 8; t++) {
-    let wx = r() * MAP_W
-    let wy = r() * MAP_H
-    let a = r() * Math.PI * 2
-    for (let s = 0; s < 40; s++) {
-      a += (r() - 0.5) * 0.5
-      wx += Math.cos(a) * 9
-      wy += Math.sin(a) * 9
-      if (!free(wx, wy)) continue
-      const p = toScreen(wx, wy)
-      blk(p.x + (s % 2 ? 2 : -2), p.y + (s % 2 ? 0 : 2), '#7889a4')
+  if (D.tracks) {
+    const [count, col] = D.tracks
+    for (let t = 0; t < count; t++) {
+      let wx = r() * MAP_W
+      let wy = r() * MAP_H
+      let a = r() * Math.PI * 2
+      for (let s = 0; s < 40; s++) {
+        a += (r() - 0.5) * 0.5
+        wx += Math.cos(a) * 9
+        wy += Math.sin(a) * 9
+        if (!free(wx, wy)) continue
+        const p = toScreen(wx, wy)
+        blk(p.x + (s % 2 ? 2 : -2), p.y + (s % 2 ? 0 : 2), col)
+      }
     }
   }
   // колея от саней: две параллельные борозды дугой через поле
-  for (let t = 0; t < 2; t++) {
-    let wx = r() * MAP_W
-    let wy = r() * MAP_H
-    let a = r() * Math.PI * 2
-    for (let s = 0; s < 70; s++) {
-      a += Math.sin(s * 0.15 + t) * 0.06
-      wx += Math.cos(a) * 4
-      wy += Math.sin(a) * 4
+  if (D.ruts) {
+    const [count, col] = D.ruts
+    for (let t = 0; t < count; t++) {
+      let wx = r() * MAP_W
+      let wy = r() * MAP_H
+      let a = r() * Math.PI * 2
+      for (let s = 0; s < 70; s++) {
+        a += Math.sin(s * 0.15 + t) * 0.06
+        wx += Math.cos(a) * 4
+        wy += Math.sin(a) * 4
+        if (!free(wx, wy)) continue
+        const nx = -Math.sin(a) * 7
+        const ny = Math.cos(a) * 7
+        const p1 = toScreen(wx + nx, wy + ny)
+        const p2 = toScreen(wx - nx, wy - ny)
+        blk(p1.x, p1.y, col)
+        blk(p2.x, p2.y, col)
+      }
+    }
+  }
+  // обломки досок и брёвна, полузанесённые (налёт — снег или пепел биома)
+  if (D.boards) {
+    const [count, wood, hi, fleck] = D.boards
+    for (let i = 0; i < count; i++) {
+      const wx = r() * MAP_W
+      const wy = r() * MAP_H
       if (!free(wx, wy)) continue
-      const nx = -Math.sin(a) * 7
-      const ny = Math.cos(a) * 7
-      const p1 = toScreen(wx + nx, wy + ny)
-      const p2 = toScreen(wx - nx, wy - ny)
-      blk(p1.x, p1.y, '#8495b0')
-      blk(p2.x, p2.y, '#8495b0')
+      const p = toScreen(wx, wy)
+      const dir = r() > 0.5 ? 1 : -1
+      for (let k = 0; k < 5; k++) {
+        blk(p.x + k * 2 * dir, p.y + k, wood)
+        blk(p.x + k * 2 * dir, p.y + k - 2, k % 2 ? hi : fleck ?? shade(wood, 1.25))
+      }
     }
   }
-  // обломки досок и брёвна, полузанесённые снегом
-  for (let i = 0; i < 26; i++) {
-    const wx = r() * MAP_W
-    const wy = r() * MAP_H
-    if (!free(wx, wy)) continue
-    const p = toScreen(wx, wy)
-    const dir = r() > 0.5 ? 1 : -1
-    for (let k = 0; k < 5; k++) {
-      blk(p.x + k * 2 * dir, p.y + k, '#5a4030')
-      blk(p.x + k * 2 * dir, p.y + k - 2, k % 2 ? '#7a5a40' : '#dfe8f2')
+  // наст: пятна блестящего снега с искрами (зимние биомы)
+  if (D.crust) {
+    const [count, hi, lo] = D.crust
+    for (let i = 0; i < count; i++) {
+      const wx = r() * MAP_W
+      const wy = r() * MAP_H
+      if (!free(wx, wy)) continue
+      const p = toScreen(wx, wy)
+      for (let k = 0; k < 6; k++) blk(p.x + (r() - 0.5) * 20, p.y + (r() - 0.5) * 10, r() > 0.7 ? hi : lo)
     }
   }
-  // наст: пятна блестящего снега с искрами
-  for (let i = 0; i < 60; i++) {
-    const wx = r() * MAP_W
-    const wy = r() * MAP_H
-    if (!free(wx, wy)) continue
-    const p = toScreen(wx, wy)
-    for (let k = 0; k < 6; k++) blk(p.x + (r() - 0.5) * 20, p.y + (r() - 0.5) * 10, r() > 0.7 ? '#f2f7ff' : '#c2cfe0')
+  // трещины сухой земли: ломаные тёмные линии со случайным изломом
+  if (D.cracks) {
+    const [count, col] = D.cracks
+    for (let i = 0; i < count; i++) {
+      const wx = r() * MAP_W
+      const wy = r() * MAP_H
+      if (!free(wx, wy)) continue
+      const p = toScreen(wx, wy)
+      let dir = r() > 0.5 ? 1 : -1
+      for (let k = 0; k < 6 + Math.floor(r() * 10); k++) {
+        blk(p.x + k * 2 * dir, p.y + (r() > 0.6 ? 2 : 0), col, 2, 1)
+        if (r() > 0.85) dir = -dir
+      }
+    }
+  }
+  // пепельные бугры: мягкие холмики со светлым верхом и тенью
+  if (D.ash) {
+    const [count, hi, lo] = D.ash
+    for (let i = 0; i < count; i++) {
+      const wx = r() * MAP_W
+      const wy = r() * MAP_H
+      if (!free(wx, wy)) continue
+      const p = toScreen(wx, wy)
+      for (let k = -4; k <= 4; k += 2) {
+        const h = Math.round((1 - (k / 4) ** 2) * 2)
+        for (let j = 0; j <= h; j += 2) blk(p.x + k, p.y - j, j >= h ? hi : lo)
+      }
+      blk(p.x + 4, p.y + 2, shade(lo, 0.9))
+    }
+  }
+  // уголь и шлак: тёмные россыпи с редкими блёстками
+  if (D.coal) {
+    const [count, hi, lo] = D.coal
+    for (let i = 0; i < count; i++) {
+      const wx = r() * MAP_W
+      const wy = r() * MAP_H
+      if (!free(wx, wy)) continue
+      const p = toScreen(wx, wy)
+      for (let k = 0; k < 4; k++) blk(p.x + (r() - 0.5) * 14, p.y + (r() - 0.5) * 8, r() > 0.8 ? hi : lo)
+    }
+  }
+  // галька и щебень: пары светлых камушков
+  if (D.pebbles) {
+    const [count, c1, c2] = D.pebbles
+    for (let i = 0; i < count; i++) {
+      const wx = r() * MAP_W
+      const wy = r() * MAP_H
+      if (!free(wx, wy)) continue
+      const p = toScreen(wx, wy)
+      for (let k = 0; k < 3; k++) blk(p.x + k * 3 - 3, p.y + (k % 2) * 2, k % 2 ? c1 : c2)
+    }
+  }
+  // ледяные блики на камне: холодные полоски света
+  if (D.sheen) {
+    const [count, hi, lo] = D.sheen
+    for (let i = 0; i < count; i++) {
+      const wx = r() * MAP_W
+      const wy = r() * MAP_H
+      if (!free(wx, wy)) continue
+      const p = toScreen(wx, wy)
+      for (let k = 0; k < 5; k++) blk(p.x + (r() - 0.5) * 16, p.y + (r() - 0.5) * 8, r() > 0.6 ? hi : lo, 2, 1)
+    }
   }
 }
 
@@ -820,26 +1100,26 @@ function drawCrystal(ctx: CanvasRenderingContext2D, x: number, y: number, s: num
 }
 
 /**
- * Позёмка: снежные струйки низко над землёй бегут по ветру; в порыв — гуще и длиннее.
- * Рисуется поверх земли, под постройками и фигурами.
+ * Позёмка: струйки низко над землёй бегут по ветру; в порыв — гуще и длиннее.
+ * Цвет и сила — от биома (снег, пепел, пыль). Рисуется поверх земли, под постройками и фигурами.
  */
-export function drawDrift(ctx: CanvasRenderingContext2D, t: number) {
+export function drawDrift(ctx: CanvasRenderingContext2D, t: number, color = '230,240,255', k = 1) {
   const W = MAP_W
   const wnd = windAt(t)
   const path = windPath(t)
-  const n = Math.round(18 + wnd * 14)
+  const n = Math.round((18 + wnd * 14) * k)
   ctx.save()
   for (let i = 0; i < n; i++) {
     const speed = 60 + (i % 5) * 18
     const len = (24 + (i % 7) * 9) * (0.6 + wnd * 0.5)
     const x = ((((i * 211.7 + path * speed) % (W + 200)) + W + 200) % (W + 200)) - 100
     const y = (i * 97.3) % MAP_H + Math.sin(t * 0.9 + i) * 4
-    const a = Math.min(0.32, 0.08 + wnd * 0.1) * (0.6 + 0.4 * Math.sin(t * 1.5 + i * 2.1))
+    const a = Math.min(0.32, (0.08 + wnd * 0.1) * k) * (0.6 + 0.4 * Math.sin(t * 1.5 + i * 2.1))
     // струйка — три отрезка: бледный хвост, плотная середина, бледная голова (без градиентов — дёшево)
-    ctx.fillStyle = `rgba(230,240,255,${a * 0.4})`
+    ctx.fillStyle = `rgba(${color},${a * 0.4})`
     ctx.fillRect(x - len, y, len * 0.4, 2)
     ctx.fillRect(x - len * 0.15, y, len * 0.15, 2)
-    ctx.fillStyle = `rgba(230,240,255,${a})`
+    ctx.fillStyle = `rgba(${color},${a})`
     ctx.fillRect(x - len * 0.6, y, len * 0.45, 2)
     ctx.fillRect(x - len * 0.5, y + 3, len * 0.3, 1)
   }

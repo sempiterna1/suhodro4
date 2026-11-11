@@ -6,6 +6,7 @@ import { ARMOR_COLORS, MAP_H, MAP_W } from './config'
 import { towerArt } from './assets'
 import { towerThumbUrl } from './towers'
 import { windAt, windPath } from './wind'
+import type { MotesStyle } from './biomes'
 import type { ArmorType, CreepKind, TowerDefinition } from './types'
 
 // ─── Цвета ───────────────────────────────────────────────────────────────
@@ -620,32 +621,54 @@ export function towerThumb(def: TowerDefinition): string {
   return towerThumbUrl(def, towerArt(def))
 }
 
-// ─── Снегопад и угольки: летят по ветру над полем (экранные координаты 960×600) ─
-/** Детерминированные частицы: положение — функция от номера и времени, без состояния */
-export function drawMotes(ctx: CanvasRenderingContext2D, time: number) {
+// ─── Частицы в воздухе: летят по ветру над полем (экранные координаты) ────
+/**
+ * Мелкие частицы по биому: снег тайги, пурга перевала, пепел шахт, песчаная пыль ущелья,
+ * мутная муть болота и угольки Разлома. Детерминированные: положение — функция от номера
+ * и времени, без состояния.
+ */
+export function drawMotes(ctx: CanvasRenderingContext2D, time: number, style: MotesStyle = 'snow') {
   const W = MAP_W
   const H = MAP_H
   const wnd = windAt(time)
   const path = windPath(time)
-  for (let i = 0; i < 260; i++) {
-    if (i % 17 === 0) {
+  /** Параметры стиля: количество, скорость хода по вертикали (минус — летят вверх),
+   *  цвета основного слоя, шаг угольков, их цвет, вытягивание по ветру */
+  const cfg: Record<MotesStyle, { n: number; fall: number; col: string; col2: string; ember: number; emberCol: string; streak: number }> = {
+    // тайга: обычный снегопад, от огней поднимаются тлеющие угольки
+    snow: { n: 260, fall: 1, col: '236,243,255', col2: '236,243,255', ember: 17, emberCol: '255,150,60', streak: 1 },
+    // перевал: пурга — частиц вдвое больше, летят быстро и длинными рывками
+    blizzard: { n: 430, fall: 1.9, col: '244,248,255', col2: '244,248,255', ember: 0, emberCol: '255,150,60', streak: 2.4 },
+    // шахты: медленный серый пепел и редкие тусклые угольки
+    ash: { n: 200, fall: 0.4, col: '172,164,154', col2: '134,126,116', ember: 29, emberCol: '255,110,50', streak: 0.7 },
+    // ущелье: песчаная пыль висит в воздухе и сносится ветром
+    dust: { n: 230, fall: 0.2, col: '216,192,160', col2: '178,154,122', ember: 0, emberCol: '255,150,60', streak: 1.3 },
+    // мельница: мутная влажная муть — крупная, почти не падает
+    mist: { n: 150, fall: 0.12, col: '224,234,224', col2: '190,206,192', ember: 0, emberCol: '255,150,60', streak: 0.4 },
+    // долина: угольки Разлома летят вверх, вперемешку с тёмным пеплом
+    ember: { n: 210, fall: -0.55, col: '122,114,106', col2: '92,86,80', ember: 4, emberCol: '255,140,70', streak: 0.8 },
+  }
+  const c = cfg[style]
+  for (let i = 0; i < c.n; i++) {
+    if (c.ember > 0 && i % c.ember === 0) {
       // тлеющий уголёк — поднимается от огней и уносится ветром
       const x = Math.floor((((i * 197.3 + path * 18) % (W + 40)) + W + 40) % (W + 40)) - 20
       const y = Math.floor((i * 107.7) % H + Math.sin(time * 0.8 + i) * 12 - (time * 8 + i * 23) % 80)
-      ctx.fillStyle = `rgba(255,150,60,${0.45 + 0.25 * Math.sin(time * 2 + i * 1.7)})`
+      ctx.fillStyle = `rgba(${c.emberCol},${0.45 + 0.25 * Math.sin(time * 2 + i * 1.7)})`
       ctx.fillRect(x, ((y % H) + H) % H, 2, 2)
       continue
     }
-    // снежинки: ближний слой крупнее, быстрее и ярче; падают наискосок по ветру и чуть петляют
+    // общий ход: ближний слой крупнее, быстрее и ярче; падает (или взлетает) наискосок по ветру
     const near = i % 4 === 0
-    const fall = near ? 46 + (i % 5) * 4 : 18 + (i % 7) * 3
-    const drift = near ? 34 : 17
-    const y = (i * 107.7 + time * fall) % (H + 20) - 10
+    const fall = (near ? 46 + (i % 5) * 4 : 18 + (i % 7) * 3) * c.fall
+    const drift = (near ? 34 : 17) * (1 + Math.max(0, wnd) * 0.3)
+    const y = (((i * 107.7 + time * fall) % (H + 20)) + H + 20) % (H + 20) - 10
     const x = ((((i * 194.3 + path * drift + Math.sin(time * 1.3 + i) * 6) % (W + 40)) + W + 40) % (W + 40)) - 20
-    ctx.fillStyle = `rgba(236,243,255,${near ? 0.9 : 0.45 + 0.2 * Math.sin(i)})`
+    const base = near ? 0.9 : 0.45 + 0.2 * Math.sin(i)
     const s = near ? (i % 8 === 0 ? 4 : 3) : 2
-    // в порыв снежинка вытягивается по ветру
-    const streak = Math.max(0, wnd - 1) * (near ? 6 : 3)
+    // в порыв частица вытягивается по ветру (сильнее всех — пурга)
+    const streak = Math.max(0, wnd - 1) * (near ? 6 : 3) * c.streak
+    ctx.fillStyle = `rgba(${near ? c.col : c.col2},${base})`
     ctx.fillRect(Math.floor(x - streak), Math.floor(y), s + Math.round(streak), s)
   }
 }

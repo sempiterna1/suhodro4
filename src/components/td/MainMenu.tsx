@@ -26,6 +26,7 @@ import {
 import { generateMap } from '@/game/map'
 import { toScreen } from '@/game/iso'
 import { buildBackground, mapLights, props, roadEnds } from '@/game/world'
+import { BIOMES } from '@/game/biomes'
 import { avatarPortrait } from '@/game/pixel'
 import type { UiState, Vec } from '@/game/types'
 
@@ -205,7 +206,13 @@ function StepMap({
               }`}
               title={m.feature}
             >
-              <MapPreview seed={m.seed} />
+              <div className="relative">
+                <MapPreview seed={m.seed} />
+                {/* бейдж биома: у каждой карты свой облик (biomes.ts) */}
+                <span className="absolute right-1.5 top-1.5 rounded-sm border border-[#3a4660] bg-[rgba(10,15,23,0.85)] px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-[#9db4d0]">
+                  {BIOMES[m.biome].name}
+                </span>
+              </div>
               <div className="px-2.5 py-2">
                 <p className="font-serif text-sm font-black leading-tight text-[#ccd8e6]">
                   {picked && <span className="text-[#ffc46b]">▸ </span>}

@@ -1,14 +1,16 @@
 // Свет и атмосфера «Железного Разлома» поверх изометрического мира (экранные координаты 960×600).
-// Поле погружено в холодный зимний сумрак; в нём светятся генератор, окна домов, фонари, жаровни,
-// портал и кристаллы минерала, башни, выстрелы, взрывы, огненные снаряды, заражённые и Сорока. Карта света
-// считается в низком разрешении и растягивается со сглаживанием — свет ложится мягкими пятнами.
-// Дым и морозная дымка — тоже здесь. Текст и подсказки рисуются позже и остаются яркими.
+// Мир всегда холодный, но у каждой карты свой сумрак и свой цвет дымки (biomes.ts); в сумраке
+// светятся генератор, окна домов, фонари, жаровни, портал и кристаллы минерала, башни, выстрелы,
+// взрывы, огненные снаряды, заражённые и Сорока. Карта света считается в низком разрешении и
+// растягивается со сглаживанием — свет ложится мягкими пятнами. Дым и дымка — тоже здесь.
+// Текст и подсказки рисуются позже и остаются яркими.
 
 import { ALL_DEFS, MAP_H, MAP_W } from './config'
 import type { Game } from './engine'
 import { pointAtLength } from './engine'
 import { toScreen } from './iso'
 import { mapLights } from './world'
+import type { BiomeDef } from './biomes'
 import { windAt, windPath } from './wind'
 
 interface Light {
@@ -20,8 +22,9 @@ interface Light {
   glow?: number // сила цветного отсвета 0..1
 }
 
-const AMBIENT = 0.42 // плотность сумрака: 0 — светло, 1 — тьма
 const Q = 4 // карта света в Q раз меньше экрана
+const DEFAULT_DUSK = '8,14,36' // зимний сумрак по умолчанию (тайга)
+const DEFAULT_AMBIENT = 0.42
 
 let darkCv: HTMLCanvasElement | null = null
 let glowCv: HTMLCanvasElement | null = null
@@ -123,8 +126,8 @@ function collectLights(game: Game, t: number): Light[] {
   return lights
 }
 
-/** Наложить сумрак и свет на экранный контекст */
-export function applyLighting(ctx: CanvasRenderingContext2D, game: Game, t: number) {
+/** Наложить сумрак и свет на экранный контекст; цвет и плотность сумрака — от биома карты */
+export function applyLighting(ctx: CanvasRenderingContext2D, game: Game, t: number, B?: BiomeDef) {
   const W = MAP_W / Q
   const H = MAP_H / Q
   if (!darkCv) {
@@ -137,11 +140,11 @@ export function applyLighting(ctx: CanvasRenderingContext2D, game: Game, t: numb
   }
   const lights = collectLights(game, t)
 
-  // 1. холодный сумрак с вырезанными пятнами света
+  // 1. сумрак биома (холодный зимний, тёплый каменный, пепельный...) с вырезанными пятнами света
   const d = darkCv.getContext('2d')!
   d.globalCompositeOperation = 'source-over'
   d.clearRect(0, 0, W, H)
-  d.fillStyle = `rgba(8,14,36,${AMBIENT})`
+  d.fillStyle = `rgba(${B?.dusk ?? DEFAULT_DUSK},${B?.ambient ?? DEFAULT_AMBIENT})`
   d.fillRect(0, 0, W, H)
   d.globalCompositeOperation = 'destination-out'
   const hole = stamp(0, 0, 0, 0.5)
@@ -226,8 +229,9 @@ export function drawSmoke(ctx: CanvasRenderingContext2D, t: number) {
 
 let fogCv: HTMLCanvasElement | null = null
 
-/** Морозная дымка в два слоя с разной скоростью — даёт ощущение глубины (рисуется до света) */
-export function drawFog(ctx: CanvasRenderingContext2D, t: number) {
+/** Дымка в два слоя с разной скоростью — даёт ощущение глубины (рисуется до света).
+ *  Цвет и сила — от биома: морозная дымка тайги, муть болота, пылевой марев ущелья. */
+export function drawFog(ctx: CanvasRenderingContext2D, t: number, rgb = '200,216,240', k = 1) {
   const W = MAP_W / 8
   const H = MAP_H / 8
   if (!fogCv) {
@@ -238,16 +242,16 @@ export function drawFog(ctx: CanvasRenderingContext2D, t: number) {
   const f = fogCv.getContext('2d')!
   f.clearRect(0, 0, W, H)
   const layers = [
-    { n: 6, speed: 1.6, alpha: 0.09, r: 22 },
-    { n: 4, speed: 3.2, alpha: 0.07, r: 30 },
+    { n: 6, speed: 1.6, alpha: 0.09 * k, r: 22 * (0.8 + k * 0.2) },
+    { n: 4, speed: 3.2, alpha: 0.07 * k, r: 30 * (0.8 + k * 0.2) },
   ]
   for (const ly of layers) {
     for (let i = 0; i < ly.n; i++) {
       const x = ((((i * 47.3 + windPath(t) * ly.speed * 1.4) % (W + ly.r * 2)) + W + ly.r * 2) % (W + ly.r * 2)) - ly.r
       const y = (i * 29.7) % H + Math.sin(t * 0.2 + i) * 3
       const g = f.createRadialGradient(x, y, 0, x, y, ly.r)
-      g.addColorStop(0, `rgba(200,216,240,${ly.alpha})`)
-      g.addColorStop(1, 'rgba(200,216,240,0)')
+      g.addColorStop(0, `rgba(${rgb},${ly.alpha})`)
+      g.addColorStop(1, `rgba(${rgb},0)`)
       f.fillStyle = g
       f.fillRect(x - ly.r, y - ly.r, ly.r * 2, ly.r * 2)
     }

@@ -15,6 +15,7 @@ import { crispDraw, setLowScale } from './pixelart'
 import { ISO_TH, groundPath, screenDir, toScreen } from './iso'
 import { armorBody, drawMotes, drawSprite, shade } from './pixel'
 import { buildBackground, drawDrift, drawPortal, drawProp, drawPropShadows, props, roadEnds } from './world'
+import { biomeOf } from './biomes'
 import { windAt } from './wind'
 import { applyLighting, drawBeams, drawFog, drawSmoke } from './lighting'
 import { drawLolProjectile, drawLolTower } from './render-lol'
@@ -149,6 +150,8 @@ export function render(ctx: CanvasRenderingContext2D, game: Game, view: ViewStat
   const now = performance.now() / 1000
   const cam = view.cam
   const S = viewScale(view)
+  // биом карты: цвет сумрака, дымки, позёмки и частиц в воздухе
+  const B = biomeOf(game.mapDef.biome)
   // подписи не мельче 85% своего размера, даже когда карта на телефоне уменьшена
   labelScale = Math.max(1, 0.85 / S)
   // весь мир — в низком холсте: один пиксель = 2 пикселя экрана, у земли, спрайтов, огня и света
@@ -165,7 +168,7 @@ export function render(ctx: CanvasRenderingContext2D, game: Game, view: ViewStat
   L.imageSmoothingEnabled = true // свет, дымка и тени — мягкие пятна, их пикселит общее растягивание
 
   drawPropShadows(L) // длинные тени деревьев и построек от луны
-  drawDrift(L, now) // позёмка — по земле, под всем остальным
+  drawDrift(L, now, B.drift.color, B.drift.k) // позёмка биома — по земле, под всем остальным
 
   // всё, что лежит на земле: связи слияния, кольца и радиусы башен, путь Охотницы, кольца взрывов
   drawSecondExitGlow(L, game, now)
@@ -178,13 +181,13 @@ export function render(ctx: CanvasRenderingContext2D, game: Game, view: ViewStat
   drawProjectiles(L, game, view.skin)
   drawBolts(L, game)
   drawSmoke(L, now)
-  drawFog(L, now)
+  drawFog(L, now, B.fog.rgb, B.fog.k)
   if (view.lighting) {
-    applyLighting(L, game, now)
+    applyLighting(L, game, now, B)
     drawBeams(L, now)
   }
   drawCreepBars(L, game)
-  drawMotes(L, now)
+  drawMotes(L, now, B.motes)
   drawBuildGhost(L, view)
 
   // растягиваем пиксели без сглаживания; поверх — чёткий текст в полном разрешении
