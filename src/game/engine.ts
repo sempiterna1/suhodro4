@@ -996,7 +996,7 @@ export class Game {
       let size: number
       let gold: number
       let buildingDamage: number
-      const hpDifficultyMult = this.creepHpMultForWave(def.n)
+      const hpDifficultyMult = this.creepHpMultForWave(def.n) * this.mapDef.hpMult // лесенка карт (docs/meta.md)
       if (o.isBoss) {
         hp = hpForWave(def.n) * BOSS_HP_MULT * def.hpMult * HP_PLAYTEST_MULT * this.coopMult() * hpDifficultyMult
         speed = BOSS_SPEED * this.mapDef.creepSpeedMult
@@ -1230,13 +1230,26 @@ export class Game {
 
   private lastDt = 0
 
+  /** Метапрогрессия «Верстак» (docs/meta.md): бонусы деталей башен, колбэк от UI.
+   *  Null — мета выключена (headless-симулятор, кооп fair play, SSR). */
+  metaBonus: ((towerId: string) => { damage: number; cadence: number; range: number }) | null = null
+
+  /** UI подключает/отключает бонусы коллекции: null — мета выключена (кооп fair play, SSR, симулятор) */
+  setMetaBonus(cb: ((towerId: string) => { damage: number; cadence: number; range: number }) | null): void {
+    this.metaBonus = cb
+  }
+
+  private towerMeta(defId: string): { damage: number; cadence: number; range: number } {
+    return this.metaBonus?.(defId) ?? { damage: 1, cadence: 1, range: 1 }
+  }
+
   private updateTowers(dt: number) {
     this.lastDt = dt
     for (const tw of this.towers) {
       const def = ALL_DEFS[tw.defId]
       if (def.income || def.essence) continue // экономические постройки не атакуют (доход — в finishWave)
       tw.cooldown -= dt
-      const range = def.range * levelRangeMult(tw.level) * this.itemRangeMult()
+      const range = def.range * levelRangeMult(tw.level) * this.itemRangeMult() * this.towerMeta(def.id).range
 
       // Периодические способности 5 уровня
       if (tw.level >= 5) {
@@ -1252,7 +1265,7 @@ export class Game {
       const inRange = this.creepsInRange(tw.x, tw.y, range).sort((a, b) => progress(b) - progress(a))
       if (inRange.length === 0) continue
 
-      tw.cooldown = Math.max(MIN_INTERVAL, (def.interval * levelIntervalMult(tw.level)) / (tw.rampMult * this.itemSpeedMult() * (tw.hasteUntil && this.time < tw.hasteUntil ? (tw.hasteMult ?? 1) : 1)))
+      tw.cooldown = Math.max(MIN_INTERVAL, (def.interval * levelIntervalMult(tw.level) * this.towerMeta(def.id).cadence) / (tw.rampMult * this.itemSpeedMult() * (tw.hasteUntil && this.time < tw.hasteUntil ? (tw.hasteMult ?? 1) : 1)))
       tw.shotCount++
       tw.lastShotAt = this.time
       const tp = pointAtLength(inRange[0].dist, inRange[0].pathIdx)
@@ -1289,6 +1302,8 @@ export class Game {
     let dmg = def.damage * levelDamageMult(tw.level) * this.auraMult(tw) * this.avatarPassiveMult(tw, def) * this.itemDamageMult(def)
     // редкость башни: лёгкий множитель ДПС (Латунная ×1 → Разломная ×1.36)
     if (def.rarity) dmg *= RARITY_DPS[def.rarity]
+    // метапрогрессия «Верстак»: детали коллекции усиливают конкретную башню (docs/meta.md)
+    dmg *= this.towerMeta(def.id).damage
     if (def.waveGrowth) dmg *= 1 + def.waveGrowth * (this.wave - 1)
 
     let burn = def.burn ? { ...def.burn } : undefined

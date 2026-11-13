@@ -1,9 +1,11 @@
 // Генерация карты и постройка по сетке.
-// Карта: по зерну детерминирована, тропа непрерывна, слева направо, без самокасаний, в пределах длины.
+// Карта: по зерну детерминирована, тропа непрерывна, без самокасаний, в пределах длины.
+// Карты реестра (авторские узоры PATH_SHAPES) входят/выходят на разных кромках поля,
+// чужие зёрна — классический меандр слева направо.
 // Сетка: башня встаёт в центр клетки, на тропу и в занятую клетку — нельзя; гость получает ту же карту.
 
 import { Game } from '../src/game/engine'
-import { CELL } from '../src/game/config'
+import { CELL, MAP_DEFS } from '../src/game/config'
 import { CLASSIC_MAP, GRID_H, GRID_W, cellCenter, generateMap, isPathCell, pathLength } from '../src/game/map'
 
 /** Тестовая застройка новой механикой: купить в арсенал → взять из руки → поставить */
@@ -24,18 +26,25 @@ function check(name: string, ok: boolean, info = '') {
 {
   const bad: string[] = []
   const lengths: number[] = []
+  // зерна реестра с авторскими узорами: вход/выход — на разных кромках (не обязательно запад→восток)
+  const authored = new Set(MAP_DEFS.filter((d) => d.id !== 'tract').map((d) => d.seed))
   for (let seed = 1; seed <= 500; seed++) {
     const m = generateMap(seed)
     const c = m.cells
     lengths.push(c.length)
     const key = (p: { cx: number; cy: number }) => p.cx + ',' + p.cy
+    const onBorder = (p: { cx: number; cy: number }) => p.cx === 0 || p.cx === GRID_W - 1 || p.cy === 0 || p.cy === GRID_H - 1
     if (m.seed !== seed) bad.push(`${seed}: запасная карта`)
-    if (c[0].cx !== 0 || c[c.length - 1].cx !== GRID_W - 1) bad.push(`${seed}: не от края до края`)
+    if (authored.has(seed)) {
+      if (!onBorder(c[0]) || !onBorder(c[c.length - 1])) bad.push(`${seed}: концы не на кромках поля`)
+    } else {
+      if (c[0].cx !== 0 || c[c.length - 1].cx !== GRID_W - 1) bad.push(`${seed}: не от края до края`)
+      if (c.some((p) => p.cy < 1 || p.cy > GRID_H - 2)) bad.push(`${seed}: тропа у самого края`)
+    }
     if (new Set(c.map(key)).size !== c.length) bad.push(`${seed}: клетка повторяется`)
     for (let i = 1; i < c.length; i++) {
       if (Math.abs(c[i].cx - c[i - 1].cx) + Math.abs(c[i].cy - c[i - 1].cy) !== 1) bad.push(`${seed}: разрыв на ${i}`)
     }
-    if (c.some((p) => p.cy < 1 || p.cy > GRID_H - 2)) bad.push(`${seed}: тропа у самого края`)
     // самокасание: соседние по сетке клетки тропы должны быть соседями и по порядку
     const idx = new Map(c.map((p, i) => [key(p), i]))
     for (let i = 0; i < c.length; i++) {
@@ -45,7 +54,7 @@ function check(name: string, ok: boolean, info = '') {
       }
     }
   }
-  check('500 карт: от края до края, непрерывны, без повторов и самокасаний', bad.length === 0, bad.slice(0, 3).join('; '))
+  check('500 карт: концы на кромках (реестр — разные кромки, прочие — запад→восток), непрерывны, без повторов и самокасаний', bad.length === 0, bad.slice(0, 3).join('; '))
   check('длина тропы 56–100 клеток', Math.min(...lengths) >= 56 && Math.max(...lengths) <= 100,
     `от ${Math.min(...lengths)} до ${Math.max(...lengths)}`)
   check('карты разные', new Set(Array.from({ length: 50 }, (_, i) => JSON.stringify(generateMap(i + 1).cells))).size > 40)

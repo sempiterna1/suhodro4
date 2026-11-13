@@ -32,8 +32,16 @@ import { TowerInfoCard } from './TowerInfo'
 import { MainMenu } from './MainMenu'
 import { MoveIcon, TrashIcon } from './icons'
 import { useToast } from '@/hooks/use-toast'
+import { applyDrop, chestForDaily, chestForWin, dailyReady, emptyMeta, loadMeta, saveMeta, towerMetaBonus, unlockNextMap, type MetaSave } from '@/game/meta'
+import { CHESTS, PART_BY_ID } from '@/game/data/meta'
 import { Button } from '@/components/ui/button'
 import { AnimatePresence, motion } from 'framer-motion'
+
+/** Награда победы: сундук из метапрогрессии и его детали (docs/meta.md) */
+interface MetaRewardDrop {
+  chest: string
+  parts: Array<{ partId: string; units: number }>
+}
 
 /**
  * Навести камеру на поле. Десктоп — вся карта режимом «cover» (накрывает экран, излишек обрезан,
@@ -179,6 +187,60 @@ export default function GameShell() {
   const [inviteUrl, setInviteUrl] = useState('')
   const roleRef = useRef<MpRole>('single')
   const codeRef = useRef<string | null>(null)
+
+  // ─── Метапрогрессия «Верстак» (docs/meta.md): сейв, бонусы башен, награда за победу ───
+  // Начальное значение — пустой сейв (совпадает с серверным), сейв читается после монтирования.
+  const [meta, setMeta] = useState<MetaSave>(() => emptyMeta())
+  const metaRef = useRef(meta)
+  // награда победы: сундуки с деталями (показывается на экране результата)
+  const [metaReward, setMetaReward] = useState<MetaRewardDrop[] | null>(null)
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- сейв читается после монтирования (localStorage только в браузере)
+    setMeta(loadMeta())
+  }, [])
+  useEffect(() => {
+    metaRef.current = meta
+  }, [meta])
+  // бонусы коллекции применяются к движку только в одиночке: кооп — fair play (docs/meta.md)
+  useEffect(() => {
+    game.setMetaBonus(mpRole === 'single' ? (towerId) => towerMetaBonus(metaRef.current, towerId) : null)
+  }, [game, mpRole])
+  // победа: лесенка карт, сундуки (первое прохождение/повтор/дневной), сейв
+  const prevPhaseRef = useRef(ui.phase)
+  useEffect(() => {
+    const prev = prevPhaseRef.current
+    prevPhaseRef.current = ui.phase
+    if (ui.phase !== 'won' || prev === 'won' || mpRole === 'guest') return
+    const m: MetaSave = {
+      ...metaRef.current,
+      parts: { ...metaRef.current.parts },
+      unlocked: [...metaRef.current.unlocked],
+      winsByMap: { ...metaRef.current.winsByMap },
+    }
+    const mapId = game.mapDef.id
+    m.wins += 1
+    m.winsByMap[mapId] = (m.winsByMap[mapId] ?? 0) + 1
+    const drops: MetaRewardDrop[] = []
+    const winDrop = chestForWin(m, mapId)
+    if (winDrop) {
+      applyDrop(m, winDrop)
+      drops.push(winDrop)
+    }
+    if (dailyReady(m)) {
+      const daily = chestForDaily(m)
+      applyDrop(m, daily)
+      m.dailyAt = Date.now()
+      drops.push(daily)
+    }
+    const unlockedId = unlockNextMap(m, mapId)
+    saveMeta(m)
+    setMeta(m)
+    setMetaReward(drops.length > 0 ? drops : null)
+    if (unlockedId) {
+      const next = MAP_DEFS.find((d) => d.id === unlockedId)
+      if (next) toast({ title: 'Открыта новая карта', description: `${next.name}: ${next.feature}` })
+    }
+  }, [ui.phase, mpRole, game, toast])
   const mpHostLeftRef = useRef(false)
   const movedHintShown = useRef(false)
 
@@ -1399,6 +1461,7 @@ export default function GameShell() {
               fullscreen={fullscreen}
               musicVolume={musicVolume}
               onMusicVolume={setMusicVolume}
+              meta={meta}
               onPickMap={(seed) => {
                 game.selectMap(seed)
                 setUi(game.getUiState())
@@ -1459,6 +1522,25 @@ export default function GameShell() {
                     : `Заражённые прорвались к главному зданию на ${Math.min(ui.wave, ui.totalWaves)}-й волне. Минерал забирает тракт...`}
                 </p>
                 <Stats ui={ui} />
+                {/* награда метапрогрессии: сундуки с деталями за победу (docs/meta.md) */}
+                {ui.phase === 'won' && metaReward && metaReward.length > 0 && (
+                  <div className="td-ornate mt-3 rounded-xl border border-[#e0a83266] bg-[rgba(20,26,38,0.75)] px-4 py-3 text-left">
+                    {metaReward.map((drop, i) => (
+                      <div key={i} className={i > 0 ? 'mt-2 border-t border-[#2e3c52] pt-2' : ''}>
+                        <p className="mb-1 font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-[#e0a832]">
+                          🧰 {CHESTS[drop.chest as keyof typeof CHESTS]?.name ?? drop.chest}
+                        </p>
+                        <p className="text-[12px] leading-snug text-[#c3cbe0]">
+                          {drop.parts.map(({ partId, units }) => {
+                            const p = PART_BY_ID[partId]
+                            return p ? `${p.name} ×${units}` : null
+                          }).filter(Boolean).join(' · ')}
+                        </p>
+                      </div>
+                    ))}
+                    <p className="mt-1.5 font-mono text-[9px] text-[#5b6f8c]">детали ждут в верстаке (главное меню)</p>
+                  </div>
+                )}
                 {mpRole !== 'guest' && (
                   <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
                     <Button

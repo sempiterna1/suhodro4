@@ -35,7 +35,7 @@ const specs: Spec[] = [
 // зонд: генератор видит secondExitWave только у карт из реестра
 const probe: MapDef = {
   id: '__probe', name: 'probe', feature: '', seed: -1, biome: 'taiga',
-  creepSpeedMult: 1, universalExtra: 0, secondExitWave: 16,
+  creepSpeedMult: 1, universalExtra: 0, secondExitWave: 16, hpMult: 1,
 }
 MAP_DEFS.push(probe)
 const secondOf = (seed: number): number => {

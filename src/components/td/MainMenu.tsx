@@ -12,6 +12,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { Music } from 'lucide-react'
 import { Slider } from '@/components/ui/slider'
 import {
+  ALL_DEFS,
   AVATARS,
   AVATAR_IDS,
   BUILDING_BASE_HP,
@@ -23,6 +24,8 @@ import {
   type AvatarId,
   type DifficultyId,
 } from '@/game/config'
+import { collectionRows, isMapUnlocked, type MetaSave } from '@/game/meta'
+import { PART_BY_ID, PART_STAT_BY_ID } from '@/game/data/meta'
 import { generateMap } from '@/game/map'
 import { toScreen } from '@/game/iso'
 import { buildBackground, mapLights, props, roadEnds } from '@/game/world'
@@ -47,12 +50,15 @@ interface MainMenuProps {
   onStartCoop: () => void
   onHelp: () => void
   onToggleFullscreen: () => void
+  /** сейв метапрогрессии «Верстак»: замки карт и коллекция деталей (docs/meta.md) */
+  meta: MetaSave
 }
 
 export function MainMenu(props: MainMenuProps) {
   const { ui, uiScale, fullscreen } = props
   const [step, setStep] = useState<Step>(0)
   const [dir, setDir] = useState(1)
+  const [workbench, setWorkbench] = useState(false)
   const go = (s: Step) => {
     setDir(s >= step ? 1 : -1)
     setStep(s)
@@ -102,10 +108,11 @@ export function MainMenu(props: MainMenuProps) {
             transition={{ duration: 0.22, ease: 'easeOut' }}
             className="flex w-full flex-1 flex-col justify-center"
           >
-            {step === 0 && <StepMain {...props} onPlay={() => go(1)} />}
+            {step === 0 && <StepMain {...props} onPlay={() => go(1)} onWorkbench={() => setWorkbench(true)} />}
             {step === 1 && (
               <StepMap
                 ui={ui}
+                meta={props.meta}
                 onPickMap={props.onPickMap}
                 onBack={() => go(0)}
                 onNext={() => go(2)}
@@ -131,13 +138,15 @@ export function MainMenu(props: MainMenuProps) {
           </motion.div>
         </AnimatePresence>
       </div>
+      {/* Верстак: коллекция деталей башен (метапрогрессия, docs/meta.md) */}
+      {workbench && <Workbench meta={props.meta} onClose={() => setWorkbench(false)} />}
     </div>
   )
 }
 
 // ─── Этап 1: главная ─────────────────────────────────────────────────────
 
-function StepMain({ onPlay, onHelp, onToggleFullscreen, fullscreen }: MainMenuProps & { onPlay: () => void }) {
+function StepMain({ onPlay, onHelp, onWorkbench, onToggleFullscreen, fullscreen }: MainMenuProps & { onPlay: () => void; onWorkbench: () => void }) {
   return (
     <div className="flex flex-col items-center">
       <p className="mb-3 font-mono text-[10px] uppercase tracking-[0.3em] text-[#5b6f8c]">
@@ -167,6 +176,7 @@ function StepMain({ onPlay, onHelp, onToggleFullscreen, fullscreen }: MainMenuPr
         ⚙ ИГРАТЬ
       </motion.button>
       <div className="mt-5 flex flex-wrap justify-center gap-2">
+        <MenuBtn onClick={onWorkbench}>🔧 Верстак</MenuBtn>
         <MenuBtn onClick={onHelp}>Как играть</MenuBtn>
         <MenuBtn onClick={onToggleFullscreen}>{fullscreen ? 'Окно' : 'На весь экран'}</MenuBtn>
       </div>
@@ -178,11 +188,13 @@ function StepMain({ onPlay, onHelp, onToggleFullscreen, fullscreen }: MainMenuPr
 
 function StepMap({
   ui,
+  meta,
   onPickMap,
   onBack,
   onNext,
 }: {
   ui: UiState
+  meta: MetaSave
   onPickMap: (seed: number) => void
   onBack: () => void
   onNext: () => void
@@ -190,27 +202,41 @@ function StepMap({
   return (
     <div className="mx-auto w-full max-w-4xl">
       <p className="mb-1 text-center font-serif text-2xl font-black tracking-wide text-[#ffc46b]">ВЫБОР КАРТЫ</p>
-      <p className="mb-5 text-center text-[11px] text-[#7088a8]">тропа фиксирована и видна заранее · 30 волн · боссы на 10-й, 20-й и 30-й</p>
+      <p className="mb-5 text-center text-[11px] text-[#7088a8]">лесенка кампании: следующая карта откроется после победы · 30 волн · боссы на 10-й, 20-й и 30-й</p>
       <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {MAP_DEFS.map((m) => {
           const picked = ui.mapName === m.name
+          const locked = !isMapUnlocked(meta, m.id)
           return (
             <motion.button
               key={m.id}
               type="button"
-              whileHover={{ y: -3 }}
-              whileTap={{ scale: 0.97 }}
-              onClick={() => onPickMap(m.seed)}
-              className={`hover-glow overflow-hidden rounded-md border-2 bg-gradient-to-b from-[#172030] to-[#0a0f17] text-left transition-colors ${
-                picked ? 'border-[#ffc46b] shadow-[0_0_16px_#ffd70055]' : 'border-[#2e3c52] hover:border-[#4a5f80]'
+              whileHover={locked ? undefined : { y: -3 }}
+              whileTap={locked ? undefined : { scale: 0.97 }}
+              onClick={() => {
+                if (!locked) onPickMap(m.seed)
+              }}
+              className={`hover-glow relative overflow-hidden rounded-md border-2 bg-gradient-to-b from-[#172030] to-[#0a0f17] text-left transition-colors ${
+                locked ? 'cursor-not-allowed border-[#25304a] opacity-60' : picked ? 'border-[#ffc46b] shadow-[0_0_16px_#ffd70055]' : 'border-[#2e3c52] hover:border-[#4a5f80]'
               }`}
-              title={m.feature}
+              title={locked ? 'Победите на предыдущей карте кампании' : m.feature}
             >
               <div className="relative">
-                <MapPreview seed={m.seed} />
+                <div className={locked ? 'pointer-events-none opacity-40 grayscale' : ''}>
+                  <MapPreview seed={m.seed} />
+                </div>
                 {/* бейдж биома: у каждой карты свой облик (biomes.ts) */}
                 <span className="absolute right-1.5 top-1.5 rounded-sm border border-[#3a4660] bg-[rgba(10,15,23,0.85)] px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-[#9db4d0]">
                   {BIOMES[m.biome].name}
+                </span>
+                {locked && (
+                  <span className="absolute left-1.5 top-1.5 rounded-sm border border-[#5b6f8c88] bg-[rgba(10,15,23,0.9)] px-1.5 py-0.5 text-[10px] font-bold text-[#9db4d0]" title="Откроется после победы на предыдущей карте">
+                    🔒 заперта
+                  </span>
+                )}
+                {/* лесенка сложности кампании: множитель HP заражённых (docs/meta.md) */}
+                <span className="absolute bottom-1.5 left-1.5 rounded-sm border border-[#3a4660] bg-[rgba(10,15,23,0.85)] px-1.5 py-0.5 font-mono text-[8px] font-bold text-[#e0a832]">
+                  ×{m.hpMult.toFixed(2)} HP
                 </span>
               </div>
               <div className="px-2.5 py-2">
@@ -563,6 +589,66 @@ function MenuFooter({ onBack, onNext, nextLabel }: { onBack: () => void; onNext:
       >
         {nextLabel}
       </motion.button>
+    </div>
+  )
+}
+
+// ─── Верстак: коллекция деталей башен (метапрогрессия, docs/meta.md) ─────
+
+function Workbench({ meta, onClose }: { meta: MetaSave; onClose: () => void }) {
+  const rows = collectionRows(meta)
+  return (
+    <div className="absolute inset-0 z-30 overflow-y-auto bg-[rgba(5,8,13,0.88)] p-4 backdrop-blur-[3px]" style={{ zoom: 1 }}>
+      <div className="mx-auto w-full max-w-3xl">
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <p className="font-serif text-2xl font-black tracking-wide text-[#ffc46b]">🔧 ВЕРСТАК</p>
+            <p className="mt-1 text-[11px] text-[#7088a8]">
+              детали из сундуков усиливают башни в следующих миссиях · сундуки: за победу на карте, повторные победы (шанс) и ежедневная катка
+            </p>
+          </div>
+          <MenuBtn onClick={onClose}>✕ Закрыть</MenuBtn>
+        </div>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {rows.map((row) => {
+            const def = ALL_DEFS[row.towerId]
+            const done = row.stats.every((s) => s.units >= s.max)
+            return (
+              <div
+                key={row.towerId}
+                className={`rounded-md border bg-[#141b27] px-3 py-2.5 ${done ? 'border-[#e0a83288]' : 'border-[#2e3c52]'}`}
+              >
+                <p className="mb-1.5 flex items-center gap-1.5 font-serif text-[13px] font-black text-[#ccd8e6]">
+                  <span>{def?.glyph}</span>
+                  <span>{def?.name}</span>
+                  {done && <span className="ml-auto font-mono text-[9px] font-bold text-[#e0a832]">СОБРАНО</span>}
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {row.stats.map((s) => {
+                    const pct = Math.round(s.units * s.step * 100)
+                    const sign = s.stat === 'cadence' ? '−' : '+'
+                    const label = PART_STAT_BY_ID[s.stat].label
+                    return (
+                      <span
+                        key={s.stat}
+                        title={PART_BY_ID[`${row.towerId}-${s.stat}`]?.name}
+                        className={`rounded border px-1.5 py-0.5 font-mono text-[9px] font-bold ${
+                          s.units > 0 ? 'border-[#7fd0a055] bg-[rgba(127,208,160,0.08)] text-[#a6f095]' : 'border-[#2e3c52] text-[#5b6f8c]'
+                        }`}
+                      >
+                        {label}: {sign}{pct}% ({s.units}/{s.max})
+                      </span>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        <p className="mt-4 text-center font-mono text-[10px] text-[#5b6f8c]">
+          коллекция усилит и новые карты: лесенка кампании делает следующую карту сильнее (×HP)
+        </p>
+      </div>
     </div>
   )
 }
