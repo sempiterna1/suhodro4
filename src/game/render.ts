@@ -17,9 +17,9 @@ import { armorBody, drawMotes, drawSprite, shade } from './pixel'
 import { buildBackground, drawDrift, drawPortal, drawProp, drawPropShadows, props, roadEnds } from './world'
 import { biomeOf } from './biomes'
 import { windAt } from './wind'
-import { applyLighting, drawBeams, drawFog, drawSmoke } from './lighting'
+import { applyLighting, collectLights, drawBeams, drawFog, drawSmoke } from './lighting'
 import { drawLolProjectile, drawLolTower } from './render-lol'
-import type { Creep, CreepKind, Effect, Tower, Vec } from './types'
+import type { Creep, CreepKind, Effect, Projectile, Tower, Vec } from './types'
 
 export type Skin = 'steam' | 'lol'
 
@@ -100,9 +100,11 @@ function creepHeight(c: Creep) {
 // ─── Кэш фона (перестраивается при смене карты и открытии второго выхода) ──
 let bgCache: HTMLCanvasElement | null = null
 let bgSeed = ''
-/** Пикселей экрана на единицу карты при текущем приближении */
+/** Пикселей экрана на единицу карты при текущем приближении.
+ *  Cover: карта накрывает холст целиком при любом соотношении сторон — без чёрных полей;
+ *  излишек по одной из осей обрезается (доступен панорамой). */
 export function viewScale(view: ViewState) {
-  return Math.min(view.vw / MAP_W, view.vh / MAP_H) * view.cam.z
+  return Math.max(view.vw / MAP_W, view.vh / MAP_H) * view.cam.z
 }
 
 /** Удержать камеру у карты: если карта уже экрана — по центру, иначе не дальше её краёв */
@@ -124,6 +126,55 @@ let bgLow: HTMLCanvasElement | null = null
 
 /** Куда смотрит враг на экране: помним последнее направление, чтобы на поворотах не дёргался */
 const facingLeft = new Map<number, boolean>()
+
+// ─── Пост-обработка: bloom по источникам света ───────────────────────────
+// Маска свечения собирается не из кадра, а из списка огней игры (collectLights):
+// штампы радиальных градиентов в маленький холст стоят копейки (как пятна сумрака),
+// а один композит 'lighter' в низкий кадр даёт мягкий ореол на общей пиксельной сетке.
+// Читать кадр и возводить его в степень через blend-режимы — на порядок дороже.
+let bloomCv: HTMLCanvasElement | null = null
+let bloomW = 0
+let bloomH = 0
+const BLOOM_ALPHA = 0.75 // сила свечения
+
+function drawBloom(L: CanvasRenderingContext2D, game: Game, now: number, k: number, cam: Vec, lw: number, lh: number) {
+  const w = Math.max(1, Math.ceil(lw / 2))
+  const h = Math.max(1, Math.ceil(lh / 2))
+  if (!bloomCv || bloomW !== w || bloomH !== h) {
+    bloomCv = document.createElement('canvas')
+    bloomCv.width = w
+    bloomCv.height = h
+    bloomW = w
+    bloomH = h
+  }
+  const b = bloomCv.getContext('2d')!
+  b.globalCompositeOperation = 'source-over'
+  b.clearRect(0, 0, w, h)
+  b.imageSmoothingEnabled = true
+  for (const l of collectLights(game, now)) {
+    if (!l.glow || !l.color) continue
+    const x = (l.x - cam.x) * k
+    const y = (l.y - cam.y) * k
+    const r = l.r * k * 1.9 // ореол шире самого пятна света
+    if (x < -r || y < -r || x > w + r || y > h + r) continue
+    const g = l.glow
+    const grad = b.createRadialGradient(x, y, 0, x, y, r)
+    grad.addColorStop(0, `rgba(${l.color[0]},${l.color[1]},${l.color[2]},${Math.min(1, g * 0.9)})`)
+    grad.addColorStop(0.45, `rgba(${l.color[0]},${l.color[1]},${l.color[2]},${Math.min(1, g * 0.32)})`)
+    grad.addColorStop(1, 'rgba(0,0,0,0)')
+    b.fillStyle = grad
+    b.fillRect(x - r, y - r, r * 2, r * 2)
+  }
+  // ореол вписываем в сам низкий кадр (в 'lighter' чёрное не видно) — дальше
+  // его растягивает общий апскейл, и свечения живут на той же пиксельной сетке
+  L.save()
+  L.setTransform(1, 0, 0, 1, 0, 0)
+  L.globalCompositeOperation = 'lighter'
+  L.globalAlpha = BLOOM_ALPHA
+  L.imageSmoothingEnabled = true
+  L.drawImage(bloomCv, 0, 0, lw, lh)
+  L.restore()
+}
 
 // ─── Основной рендер ─────────────────────────────────────────────────────
 export function render(ctx: CanvasRenderingContext2D, game: Game, view: ViewState) {
@@ -180,6 +231,7 @@ export function render(ctx: CanvasRenderingContext2D, game: Game, view: ViewStat
   drawEntities(L, game, view, now) // деревья, дома, башни, враги, Сорока — по глубине
   drawProjectiles(L, game, view.skin)
   drawBolts(L, game)
+  drawBlastAir(L, game) // искры и дым взрывов — поверх врагов, до дымки
   drawSmoke(L, now)
   drawFog(L, now, B.fog.rgb, B.fog.k)
   if (view.lighting) {
@@ -189,8 +241,11 @@ export function render(ctx: CanvasRenderingContext2D, game: Game, view: ViewStat
   drawCreepBars(L, game)
   drawMotes(L, now, B.motes)
   drawBuildGhost(L, view)
+  // свечение ярких огней вписываем в сам низкий кадр — общий апскейл разнесёт его на экран
+  if (view.lighting) drawBloom(L, game, now, PIXEL * S, cam, lw, lh)
 
   // растягиваем пиксели без сглаживания; поверх — чёткий текст в полном разрешении
+  // (виньетка — CSS-слоем поверх холста, см. GameShell)
   ctx.clearRect(0, 0, view.vw, view.vh)
   ctx.imageSmoothingEnabled = false
   ctx.drawImage(low, 0, 0, lw / PIXEL, lh / PIXEL)
@@ -555,8 +610,43 @@ function drawCreepBars(ctx: CanvasRenderingContext2D, game: Game) {
 const SHOT_FROM = 40
 const SHOT_TO = 14
 
+/** Хвост снаряда: прошлая экранная точка по uid (объекты движка пересоздаются при синке коопа) */
+const prTrail = new Map<number, { x: number; y: number }>()
+
+/** След позади снаряда: сужающиеся штрихи цвета снаряда; у ядра — тлеющие искры */
+function drawTrail(ctx: CanvasRenderingContext2D, pr: Projectile, x: number, y: number, prev: { x: number; y: number }) {
+  const dx = x - prev.x
+  const dy = y - prev.y
+  if (Math.hypot(dx, dy) < 0.5) return
+  const ux = dx / Math.hypot(dx, dy)
+  const uy = dy / Math.hypot(dx, dy)
+  const L = pr.kind === 'rock' ? 30 : pr.kind === 'orb' ? 26 : 20
+  for (let i = 1; i <= 3; i++) {
+    ctx.strokeStyle = pr.color
+    ctx.globalAlpha = (1 - i / 4) * (pr.kind === 'orb' ? 0.4 : 0.32)
+    ctx.lineWidth = (pr.kind === 'rock' ? 3.4 : 2.2) * (1 - i / 4) + 0.5
+    ctx.beginPath()
+    ctx.moveTo(x - ux * L * ((i - 1) / 3), y - uy * L * ((i - 1) / 3))
+    ctx.lineTo(x - ux * L * (i / 3), y - uy * L * (i / 3))
+    ctx.stroke()
+  }
+  if (pr.kind === 'rock') {
+    // за ядром летят тлеющие угольки
+    for (let i = 1; i <= 3; i++) {
+      ctx.globalAlpha = 0.55 / i
+      ctx.fillStyle = i % 2 ? '#ffb060' : '#ff8040'
+      ctx.beginPath()
+      ctx.arc(x - ux * L * i * 0.38 + (i % 2 ? -2 : 2), y - uy * L * i * 0.38 + (i === 2 ? -2 : 1), 1.7 - i * 0.3, 0, Math.PI * 2)
+      ctx.fill()
+    }
+  }
+  ctx.globalAlpha = 1
+}
+
 function drawProjectiles(ctx: CanvasRenderingContext2D, game: Game, skin: Skin) {
+  const alive = new Set<number>()
   for (const pr of game.projectiles) {
+    alive.add(pr.uid)
     const tp = pr.targetPos
     if (!tp) continue
     const dx = tp.x - pr.x
@@ -587,6 +677,10 @@ function drawProjectiles(ctx: CanvasRenderingContext2D, game: Game, skin: Skin) 
       ctx.restore()
       continue
     }
+    // след позади снаряда — движение читается даже в сумраке
+    const prev = prTrail.get(pr.uid)
+    prTrail.set(pr.uid, { x, y })
+    if (prev) drawTrail(ctx, pr, x, y, prev)
     if (pr.kind === 'arrow' || pr.kind === 'bolt') {
       const len = pr.kind === 'bolt' ? 14 : 10
       ctx.strokeStyle = pr.color
@@ -627,6 +721,44 @@ function drawProjectiles(ctx: CanvasRenderingContext2D, game: Game, skin: Skin) 
       ctx.arc(x, y, 3.5, 0, Math.PI * 2)
       ctx.fill()
     }
+  }
+  for (const k of prTrail.keys()) if (!alive.has(k)) prTrail.delete(k)
+}
+
+/** Взрыв: искры разлетаются и дым поднимается над полем — рисуется поверх врагов */
+function drawBlastAir(ctx: CanvasRenderingContext2D, game: Game) {
+  for (const e of game.effects) {
+    if (e.kind !== 'blast') continue
+    const t = (game.time - e.born) / e.dur
+    if (t < 0 || t > 1) continue
+    const s = toScreen(e.x, e.y)
+    // искры: 8 осколков по своим углам, замедляются и гаснут
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + (e.born % 1) * 4 + (i % 2) * 0.7
+      const d = (34 + ((e.born * 97 + i * 31) % 10) * 4) * t * e.dur
+      const x = s.x + Math.cos(a) * d * 0.85
+      const y = s.y + Math.sin(a) * d * 0.42 - (1 - t) * (1 - t) * 26 - 8
+      ctx.globalAlpha = (1 - t) * (0.35 + 0.4 * ((i % 3) / 3))
+      ctx.strokeStyle = i % 3 ? '#ffcf7a' : '#ff9a3c'
+      ctx.lineWidth = 1.6
+      ctx.beginPath()
+      ctx.moveTo(x, y)
+      ctx.lineTo(x - Math.cos(a) * 5, y - Math.sin(a) * 2.4)
+      ctx.stroke()
+    }
+    // дым: 5 клубов, поднимаются, растут и тают
+    for (let i = 0; i < 5; i++) {
+      const p = Math.max(0, Math.min(1, t * 1.35 - i * 0.12))
+      if (p <= 0 || p >= 1) continue
+      const x = s.x + (i - 2) * 6 + Math.sin(e.born * 7 + i * 2.4) * 4 * p
+      const y = s.y - 6 - p * 34 - i * 3
+      ctx.globalAlpha = (1 - p) * 0.38
+      ctx.fillStyle = i % 2 ? '#2a2f3c' : '#20242e'
+      ctx.beginPath()
+      ctx.arc(x, y, 5 + p * 20, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    ctx.globalAlpha = 1
   }
 }
 

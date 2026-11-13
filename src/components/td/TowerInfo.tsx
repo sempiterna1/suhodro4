@@ -91,7 +91,7 @@ export function EffectiveVs({ def }: { def: TowerDefinition }) {
   const m = armorMult(def)
   return (
     <div className="flex flex-wrap items-center gap-1">
-      <span className="w-full text-[9px] font-semibold uppercase tracking-wide text-[#5b6f8c]">Эффективен против (урон по броне)</span>
+      <span className="w-full text-[9px] font-semibold uppercase tracking-wide text-[#7088a8]">Эффективен против (урон по броне)</span>
       {(['light', 'medium', 'heavy', 'universal'] as ArmorType[]).map((a) => {
         const v = m[a]
         const strong = v > 1.05, weak = v < 0.95
@@ -119,7 +119,7 @@ export function EffectiveVs({ def }: { def: TowerDefinition }) {
 function Stat({ label, value, color = '#dde6f0' }: { label: string; value: string; color?: string }) {
   return (
     <div className="rounded border border-[#2e3c52] bg-[#0a0f17]/70 px-1.5 py-1 text-center">
-      <div className="text-[8px] font-semibold uppercase tracking-wide text-[#5b6f8c]">{label}</div>
+      <div className="text-[8px] font-semibold uppercase tracking-wide text-[#7088a8]">{label}</div>
       <div className="font-mono text-xs font-bold" style={{ color }}>{value}</div>
     </div>
   )
@@ -152,19 +152,19 @@ export function TowerInfoCard({
       exit={{ opacity: 0, y: 4 }}
       transition={{ duration: 0.14 }}
       style={{ width: TOWER_CARD_W }}
-      className={`pointer-events-none relative overflow-hidden rounded-md border-2 border-[#7088a8] bg-gradient-to-b from-[#1b2433] to-[#0c111a] shadow-[inset_0_0_0_2px_#2a3548,0_10px_28px_rgba(0,0,0,0.75)] ${className}`}
+      className={`pointer-events-none relative overflow-hidden rounded-xl border border-[#3a4660]/90 bg-[rgba(10,15,24,0.9)] shadow-[0_12px_32px_rgba(0,0,0,0.65)] backdrop-blur-md ${className}`}
     >
       {/* цветная кромка башни — по ней карточка сразу связывается с вымпелом на поле */}
       <div className="h-1" style={{ background: `linear-gradient(90deg, ${def.color}, ${def.color}33)` }} />
       <div className="flex flex-col gap-1.5 p-2.5">
         <div className="flex items-start gap-2">
-          <div className="flex h-12 w-12 shrink-0 items-end justify-center rounded border-2 border-[#2e3c52] bg-[radial-gradient(circle_at_50%_70%,#1f2a3b,#0a0f17)]">
+          <div className="flex h-12 w-12 shrink-0 items-end justify-center rounded-lg border border-[#2e3c52]/80 bg-[radial-gradient(circle_at_50%_70%,#1f2a3b,#0a0f17)]">
             {thumb ? <img src={thumb} alt="" className="h-11 w-auto max-w-[44px] object-contain" style={{ imageRendering: 'pixelated' }} /> : <span className="self-center text-2xl">{def.glyph}</span>}
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-1">
-              <p className="font-serif text-[15px] font-black leading-tight text-[#ffc46b]">{def.name}</p>
-              <span className={`inline-flex shrink-0 items-center gap-0.5 font-mono text-xs font-bold ${affordable ? 'text-[#f0b060]' : 'text-[#e05252]'}`}>
+              <p className="text-[14px] font-black leading-tight text-[#e8ecf4]">{def.name}</p>
+              <span className={`inline-flex shrink-0 items-center gap-0.5 font-mono text-xs font-bold ${affordable ? 'text-[#f2c94c]' : 'text-[#e05252]'}`}>
                 <Coins className="h-3 w-3" />
                 {def.price}
               </span>
@@ -227,14 +227,14 @@ export function TowerInfoCard({
           <ul className="flex flex-col gap-0.5 rounded border border-[#2e3c52] bg-[#0a0f17]/60 px-2 py-1">
             {effects.map((e) => (
               <li key={e} className="flex gap-1 text-[10.5px] leading-snug text-[#c9d6e8]">
-                <span className="text-[#f0b060]">◆</span>
+                <span className="text-[#f2c94c]">◆</span>
                 {e}
               </li>
             ))}
           </ul>
         )}
 
-        <p className="text-[10.5px] leading-snug text-[#ffd700]">
+        <p className="text-[10.5px] leading-snug text-[#f2c94c]">
           <span className="font-bold">★ 5 ур.:</span> <span className="text-[#e8d9a0]">{def.l5}</span>
         </p>
       </div>

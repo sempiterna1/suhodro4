@@ -78,14 +78,14 @@ export function TowerPanel({
   const copies = game.hand.filter((id) => id === tw.defId).length
 
   return (
-    <div className="rounded-lg border-2 border-[#5b6f8c] bg-[#141b27] p-3">
+    <div className="td-ornate rounded-xl border border-[#3a4660]/90 bg-[rgba(10,15,24,0.9)] p-3 shadow-[0_12px_32px_rgba(0,0,0,0.6)] backdrop-blur-md">
       <div className="mb-1 flex items-center justify-between">
-        <span className="flex items-center gap-2 font-serif text-sm font-bold text-[#f0b060]">
+        <span className="flex items-center gap-2 text-[13px] font-black text-[#e8ecf4]">
           <span className="text-xl leading-none">{def.glyph}</span>
           {def.name}
-          <span className="font-mono text-xs text-[#7088a8]">ур. {tw.level}/5</span>
+          <span className="font-mono text-[11px] font-bold text-[#7088a8]">ур. {tw.level}/5</span>
         </span>
-        <button onClick={onClose} className="text-[#5b6f8c] hover:text-[#f0b060]" aria-label="Закрыть">
+        <button onClick={onClose} className="text-[#7088a8] transition-colors hover:text-[#f2c94c]" aria-label="Закрыть">
           <X className="h-4 w-4" />
         </button>
       </div>
@@ -108,35 +108,35 @@ export function TowerPanel({
       <div className="mb-2">
         <EffectiveVs def={def} />
       </div>
-      <div className="mb-2 grid grid-cols-3 gap-1 rounded-md border border-[#5b6f8c55] bg-[#0f151f] p-2 text-center font-mono text-xs">
+      <div className="mb-2 grid grid-cols-3 gap-1 rounded-lg border border-[#2e3c52]/80 bg-[#0a0f17]/70 p-2 text-center font-mono text-xs">
         {econ ? (
           def.income ? (
             <>
               <div>
-                <div className="text-[9px] uppercase text-[#5b6f8c]">доход</div>
-                <div className="text-[#f0b060]">+{econIncomeAt(def, tw.level)}/волну</div>
+                <div className="text-[9px] uppercase text-[#7088a8]">доход</div>
+                <div className="text-[#f2c94c]">+{econIncomeAt(def, tw.level)}/волну</div>
               </div>
               <div>
-                <div className="text-[9px] uppercase text-[#5b6f8c]">за уровень</div>
+                <div className="text-[9px] uppercase text-[#7088a8]">за уровень</div>
                 <div className="text-[#e8d9a0]">+{econIncomeBase(def)}</div>
               </div>
               <div>
-                <div className="text-[9px] uppercase text-[#5b6f8c]">атака</div>
+                <div className="text-[9px] uppercase text-[#7088a8]">атака</div>
                 <div className="text-[#8a96a8]">нет</div>
               </div>
             </>
           ) : (
             <>
               <div>
-                <div className="text-[9px] uppercase text-[#5b6f8c]">доход</div>
+                <div className="text-[9px] uppercase text-[#7088a8]">доход</div>
                 <div className="text-[#a6f095]">+{econIncomeAt(def, tw.level)}💠/волну</div>
               </div>
               <div>
-                <div className="text-[9px] uppercase text-[#5b6f8c]">за уровень</div>
+                <div className="text-[9px] uppercase text-[#7088a8]">за уровень</div>
                 <div className="text-[#c9e8bd]">+{econIncomeBase(def)}</div>
               </div>
               <div>
-                <div className="text-[9px] uppercase text-[#5b6f8c]">атака</div>
+                <div className="text-[9px] uppercase text-[#7088a8]">атака</div>
                 <div className="text-[#8a96a8]">нет</div>
               </div>
             </>
@@ -144,15 +144,15 @@ export function TowerPanel({
         ) : (
           <>
             <div>
-              <div className="text-[9px] uppercase text-[#5b6f8c]">урон</div>
-              <div className="text-[#f0b060]">{dmg}</div>
+              <div className="text-[9px] uppercase text-[#7088a8]">урон</div>
+              <div className="text-[#f2c94c]">{dmg}</div>
             </div>
             <div>
-              <div className="text-[9px] uppercase text-[#5b6f8c]">DPS vs след.</div>
+              <div className="text-[9px] uppercase text-[#7088a8]">DPS vs след.</div>
               <div className="text-[#7fd0a0]">{dps}</div>
             </div>
             <div>
-              <div className="text-[9px] uppercase text-[#5b6f8c]">радиус</div>
+              <div className="text-[9px] uppercase text-[#7088a8]">радиус</div>
               <div className="text-[#ccd8e6]">{range}</div>
             </div>
           </>
@@ -169,18 +169,18 @@ export function TowerPanel({
         </ul>
       )}
       {tw.level >= 5 ? (
-        <p className="mb-2 rounded border border-[#ffd70055] bg-[#19212e] px-2 py-1 text-[11px] text-[#ffd700]">
+        <p className="mb-2 rounded-lg border border-[#f2c94c]/40 bg-[rgba(242,201,76,0.08)] px-2 py-1 text-[11px] text-[#f2c94c]">
           ★ {def.l5}
         </p>
       ) : (
-        <p className="mb-2 text-[10px] text-[#5b6f8c]">5 ур.: {def.l5}</p>
+        <p className="mb-2 text-[10px] text-[#7088a8]">5 ур.: {def.l5}</p>
       )}
       <div className="grid grid-cols-2 gap-1.5">
         <Button
           onClick={onMergeStart}
           disabled={!canMerge}
           size="sm"
-          className="h-8 border border-[#7fd0a088] bg-[#243326] px-1 text-[11px] text-[#7fd0a0] hover:bg-[#2e4230] disabled:opacity-40"
+          className="h-8 rounded-lg border border-[#59c27a]/60 bg-[rgba(89,194,122,0.12)] px-1 text-[11px] font-bold text-[#a6f095] hover:bg-[rgba(89,194,122,0.22)] disabled:opacity-40"
         >
           <Repeat2 className="mr-0.5 h-3 w-3" />
           Слить
@@ -188,20 +188,20 @@ export function TowerPanel({
         <Button
           onClick={onSell}
           size="sm"
-          className="h-8 gap-0.5 border border-[#e0525288] bg-[#33241c] px-1 text-[11px] text-[#e08870] hover:bg-[#42291f]"
+          className="h-8 gap-0.5 rounded-lg border border-[#e05252]/50 bg-[rgba(224,82,82,0.1)] px-1 text-[11px] font-bold text-[#ff9a8a] hover:bg-[rgba(224,82,82,0.2)]"
           title={`Продать: вернётся ${refund} золота`}
         >
           <Trash2 className="mr-0.5 h-3 w-3" />+{refund}
         </Button>
       </div>
       {tw.level < 5 && (
-        <p className="mt-1.5 text-[10px] leading-snug text-[#5b6f8c]">
+        <p className="mt-1.5 text-[10px] leading-snug text-[#7088a8]">
           Прокачка: купите копию в арсенале — она ляжет в «руку», затем наведите копию из руки на эту башню (+1 уровень).
           {copies > 0 && <> В руке копий: <span className="font-bold text-[#c9d6e8]">{copies}</span>.</>}
         </p>
       )}
       {!def.merged && (
-        <p className="mt-1.5 text-[10px] leading-snug text-[#5b6f8c]">
+        <p className="mt-1.5 text-[10px] leading-snug text-[#7088a8]">
           {canMerge ? 'Слияние: выберите башню 3+ ур. в пределах 140 px. ' : 'Слияние — с 3 уровня, вторая башня в пределах 140 px. '}
           Сливается с: {mergePartnersText(def.id)}.
         </p>
@@ -225,13 +225,13 @@ export function MergePanel({
   const def = ALL_DEFS[tw.defId]
   const targets = game.mergeTargetsFor(from)
   return (
-    <div className="rounded-lg border-2 border-[#7fd0a0] bg-[#1d2a20] p-3">
+    <div className="td-ornate rounded-xl border border-[#59c27a]/50 bg-[rgba(10,18,13,0.9)] p-3 shadow-[0_12px_32px_rgba(0,0,0,0.6)] backdrop-blur-md">
       <div className="mb-1 flex items-center justify-between">
-        <span className="font-serif text-sm font-bold text-[#7fd0a0]">
-          <Repeat2 className="mr-1 inline h-4 w-4" />
-          Слияние: {def.glyph} {def.name} (ур. {tw.level})
+        <span className="flex items-center gap-1.5 text-[13px] font-black text-[#a6f095]">
+          <Repeat2 className="h-4 w-4" />
+          Слияние: {def.glyph} {def.name} <span className="font-mono text-[11px] text-[#7088a8]">ур. {tw.level}</span>
         </span>
-        <button onClick={onCancel} className="text-[#7fd0a0aa] hover:text-[#7fd0a0]" aria-label="Отмена">
+        <button onClick={onCancel} className="text-[#a6f095]/60 transition-colors hover:text-[#a6f095]" aria-label="Отмена">
           <X className="h-4 w-4" />
         </button>
       </div>
@@ -253,14 +253,14 @@ export function MergePanel({
                   (m.parents[1] === tw.defId && m.parents[0] === other.defId)
               )
               return (
-                <li key={t} className="flex items-center gap-2 rounded border border-[#7fd0a044] bg-[#141b27] px-2 py-1 text-xs">
+                <li key={t} className="flex items-center gap-2 rounded-lg border border-[#59c27a]/30 bg-[rgba(10,15,24,0.7)] px-2 py-1 text-xs">
                   <span>{odef.glyph} {odef.name} (ур. {other.level})</span>
-                  <span className="ml-auto text-[#7fd0a0]">→ {recipe?.glyph} {recipe?.name}</span>
+                  <span className="ml-auto text-[#a6f095]">→ {recipe?.glyph} {recipe?.name}</span>
                 </li>
               )
             })}
           </ul>
-          <p className="mt-2 text-[10px] text-[#7fd0a099]">
+          <p className="mt-2 text-[10px] text-[#a6f095]/70">
             Уровень новой башни = меньший из двух. Вторая башня исчезнет, её вложенное золото перейдёт в новую.
           </p>
         </>
@@ -280,9 +280,9 @@ export function HelpDialog({ open, onOpenChange }: { open: boolean; onOpenChange
   const attacks: AttackType[] = ['pierce', 'crush', 'magic', 'universal']
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto border-2 border-[#5b6f8c] bg-[#141b27] text-[#ccd8e6]">
+      <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto rounded-2xl border border-[#3a4660]/90 bg-[rgba(9,13,21,0.96)] text-[#c3cbe0] backdrop-blur-xl">
         <DialogHeader>
-          <DialogTitle className="font-serif text-[#f0b060]">Как играть</DialogTitle>
+          <DialogTitle className="text-base font-black uppercase tracking-[0.1em] text-[#e8ecf4]">Как играть</DialogTitle>
           <DialogDescription className="text-xs text-[#94a3b8]">
             Заражённые минералом звери и автоматоны идут по тракту к лагерю беженцев. Продержитесь 30 волн — боссы на 10-й, 20-й и 30-й!
           </DialogDescription>
@@ -290,54 +290,54 @@ export function HelpDialog({ open, onOpenChange }: { open: boolean; onOpenChange
 
         <section className="space-y-1 text-xs leading-relaxed">
           <p>
-            <b className="text-[#f0b060]">Главное здание:</b> 200 HP (на Новобранце 280, на Кошмаре 150).
+            <b className="text-[#f2c94c]">Главное здание:</b> 200 HP (на Новобранце 280, на Кошмаре 150).
             Каждый заражённый, дошедший до лагеря, отнимает 10 HP, босс — 100. При 0 HP миссия проиграна.
           </p>
           <p>
-            <b className="text-[#f0b060]">Управление:</b> поле разбито на клетки, одна башня — одна клетка.
+            <b className="text-[#f2c94c]">Управление:</b> поле разбито на клетки, одна башня — одна клетка.
             Перетащите башню из арсенала на свободную клетку (не на тракт) — пока тянете, видно радиус атаки.
             Можно и иначе: нажать башню в арсенале, потом клетку; Esc — отмена. Клик по башне — улучшить, слить,
             продать; клик по пустой земле — Сорока идёт туда.
           </p>
           <p>
-            <b className="text-[#f0b060]">Арсенал:</b> строить можно только башни из текущего пула — 5 случайных
+            <b className="text-[#f2c94c]">Арсенал:</b> строить можно только башни из текущего пула — 5 случайных
             из {TOWERS.length}. Ролл за 10 золота меняет весь пул.
           </p>
           <p>
-            <b className="text-[#f0b060]">Уровни:</b> покупка копии башни повышает уровень (до 5): урон ×1.9,
+            <b className="text-[#f2c94c]">Уровни:</b> покупка копии башни повышает уровень (до 5): урон ×1.9,
             ×3.2, ×5.0, ×7.5. На 5 уровне — способность.
           </p>
           <p>
-            <b className="text-[#f0b060]">Пауза:</b> кнопка вверху или клавиша P. На паузе можно строить,
+            <b className="text-[#f2c94c]">Пауза:</b> кнопка вверху или клавиша P. На паузе можно строить,
             улучшать, сливать и роллить.
           </p>
           <p>
-            <b className="text-[#f0b060]">Слияние:</b> две РАЗНЫЕ башни 3+ ур. на расстоянии до 140 px →
+            <b className="text-[#f2c94c]">Слияние:</b> две РАЗНЫЕ башни 3+ ур. на расстоянии до 140 px →
             уникальная башня с гибридной атакой (лучший множитель из двух типов против каждой цели).
           </p>
           <p>
-            <b className="text-[#f0b060]">Карта:</b> 6 карт на выбор — у каждой своя тропа и особенность
+            <b className="text-[#f2c94c]">Карта:</b> 6 карт на выбор — у каждой своя тропа и особенность
             (например, на Ледяном перевале заражённые быстрее на 10%).
           </p>
           <p>
-            <b className="text-[#f0b060]">Волны:</b> всего 30, тип брони виден заранее — стройте контр-башни.
+            <b className="text-[#f2c94c]">Волны:</b> всего 30, тип брони виден заранее — стройте контр-башни.
             Волны 9, 19 и 29 — денежные (золото ×3), 10, 20 и 30 — боссы. С 21-й волны броня смешана,
             а с каждой волной заражённые чуть быстрее.
           </p>
           <p>
-            <b className="text-[#f0b060]">Сложности:</b> Новобранец — HP врагов ×0.75, 200 золота, здание 280 HP
+            <b className="text-[#f2c94c]">Сложности:</b> Новобранец — HP врагов ×0.75, 200 золота, здание 280 HP
             и прогноз брони на две волны. Ветеран — базовые числа. Кошмар — HP ×1.4, 120 золота, здание 150 HP,
             смешанная броня с 11-й волны и вторая способность у боссов.
           </p>
         </section>
 
         <section>
-          <p className="mb-1.5 font-serif text-sm font-bold text-[#f0b060]">Матрица урона</p>
-          <div className="overflow-x-auto rounded border border-[#5b6f8c55]">
+          <p className="mb-1.5 text-xs font-black uppercase tracking-[0.14em] text-[#f2c94c]">Матрица урона</p>
+          <div className="overflow-x-auto rounded-lg border border-[#3a4660]/60">
             <table className="w-full border-collapse text-center font-mono text-[10px]">
               <thead>
-                <tr className="bg-[#19212e]">
-                  <th className="p-1 text-left text-[#5b6f8c]">атака \ броня</th>
+                <tr className="bg-[rgba(31,38,56,0.7)]">
+                  <th className="p-1 text-left text-[#7088a8]">атака \ броня</th>
                   {armors.map((a) => (
                     <th key={a} className="p-1" style={{ color: ARMOR_COLORS[a] }}>
                       {ARMOR_ICONS[a]} {ARMOR_NAMES[a]}
@@ -347,7 +347,7 @@ export function HelpDialog({ open, onOpenChange }: { open: boolean; onOpenChange
               </thead>
               <tbody>
                 {attacks.map((at) => (
-                  <tr key={at} className="border-t border-[#5b6f8c33]">
+                  <tr key={at} className="border-t border-[#3a4660]/30">
                     <td className="p-1 text-left" style={{ color: ATTACK_COLORS[at] }}>
                       {ATTACK_NAMES[at]}
                     </td>
@@ -371,32 +371,32 @@ export function HelpDialog({ open, onOpenChange }: { open: boolean; onOpenChange
               </tbody>
             </table>
           </div>
-          <p className="mt-1 text-[10px] text-[#5b6f8c]">
+          <p className="mt-1 text-[10px] text-[#7088a8]">
             Специализированная атака бьёт «свою» броню на 150%. Универсальная — 80% по любой, кроме
             универсальной брони (120%).
           </p>
         </section>
 
         <section>
-          <p className="mb-1.5 font-serif text-sm font-bold text-[#f0b060]">Книга слияний</p>
+          <p className="mb-1.5 text-xs font-black uppercase tracking-[0.14em] text-[#f2c94c]">Книга слияний</p>
           <ul className="space-y-1">
             {MERGED_TOWERS.map((m) => {
               const pa = ALL_DEFS[m.parents[0]] as TowerDef
               const pb = ALL_DEFS[m.parents[1]] as TowerDef
               return (
-                <li key={m.id} className="rounded border border-[#5b6f8c44] bg-[#19212e] p-2 text-xs">
-                  <span className="font-semibold text-[#f0b060]">
+                <li key={m.id} className="rounded-lg border border-[#3a4660]/60 bg-[rgba(31,38,56,0.5)] p-2 text-xs">
+                  <span className="font-bold text-[#f2c94c]">
                     {m.glyph} {m.name}
                   </span>
                   <span className="ml-1 text-[#94a3b8]">
                     = {pa.glyph} {pa.name} + {pb.glyph} {pb.name}
                   </span>
-                  <p className="text-[10px] text-[#5b6f8c]">{m.desc}</p>
+                  <p className="text-[10px] text-[#7088a8]">{m.desc}</p>
                 </li>
               )
             })}
           </ul>
-          <p className="mt-1 text-[10px] text-[#5b6f8c]">
+          <p className="mt-1 text-[10px] text-[#7088a8]">
             Все {MERGED_TOWERS.length} рецептов открыты сразу. Обе башни — 3+ уровня и рядом.
           </p>
         </section>
@@ -439,28 +439,28 @@ export function MpLobbyPanel({
     setTimeout(() => setCopied(false), 2000)
   }
   return (
-    <div className="absolute inset-0 z-10 flex items-center justify-center overflow-y-auto bg-[#0a0e15]/90 p-4 backdrop-blur-[2px]">
-      <div className="w-full max-w-md rounded-lg border-2 border-[#7fd0a0] bg-[#1d2a20] p-4 text-center shadow-[0_0_30px_rgba(0,0,0,0.7)]">
-        <p className="mb-1 font-mono text-[10px] uppercase tracking-[0.3em] text-[#7fd0a0]">
+    <div className="absolute inset-0 z-10 flex items-center justify-center overflow-y-auto bg-[rgba(6,9,14,0.85)] p-4 backdrop-blur-md">
+      <div className="td-ornate w-full max-w-md rounded-2xl border border-[#59c27a]/40 bg-[rgba(9,15,12,0.9)] p-5 text-center shadow-[0_24px_80px_rgba(0,0,0,0.7)] backdrop-blur-xl">
+        <p className="mb-1 font-mono text-[10px] uppercase tracking-[0.3em] text-[#59c27a]">
           кооп · два игрока · один тракт
         </p>
-        <h2 className="mb-3 font-serif text-2xl font-black text-[#7fd0a0]">КООП-ЛОББИ</h2>
+        <h2 className="mb-3 text-2xl font-black tracking-[0.06em] text-[#e8ecf4]">КООП-ЛОББИ</h2>
 
-        <div className="mb-3 rounded border border-[#7fd0a044] bg-[#141b27] p-3">
-          <p className="mb-1 text-xs text-[#c8d8c0]">Пригласительная ссылка — отправьте её другу:</p>
-          <div className="mb-2 break-all rounded bg-[#0a0e15] px-2 py-1.5 font-mono text-[11px] text-[#7fd0a0]">
+        <div className="mb-3 rounded-xl border border-[#3a4660]/80 bg-[rgba(10,15,24,0.7)] p-3">
+          <p className="mb-1 text-xs text-[#c3cbe0]">Пригласительная ссылка — отправьте её другу:</p>
+          <div className="mb-2 break-all rounded-lg border border-[#3a4660]/60 bg-[rgba(8,11,17,0.9)] px-2 py-1.5 font-mono text-[11px] text-[#a6f095]">
             {inviteUrl}
           </div>
           <div className="flex items-center justify-center gap-2">
             <Button
               onClick={copy}
               size="sm"
-              className="h-9 border-2 border-[#7fd0a0] bg-[#243a2c] px-4 font-bold text-[#a8e8c0] hover:bg-[#2d4a38]"
+              className="h-9 rounded-lg border border-[#59c27a]/60 bg-[rgba(89,194,122,0.12)] px-4 text-[12px] font-bold text-[#a6f095] hover:bg-[rgba(89,194,122,0.22)]"
             >
               {copied ? <Check className="mr-1 h-4 w-4" /> : <Copy className="mr-1 h-4 w-4" />}
               {copied ? 'Скопировано!' : 'Копировать ссылку'}
             </Button>
-            <span className="rounded border border-[#7088a888] bg-[#141b27] px-3 py-1.5 font-mono text-lg font-bold tracking-widest text-[#f0b060]">
+            <span className="rounded-lg border border-[#f2c94c]/40 bg-[rgba(242,201,76,0.07)] px-3 py-1.5 font-mono text-lg font-bold tracking-widest text-[#f2c94c]">
               {code}
             </span>
           </div>
@@ -468,14 +468,14 @@ export function MpLobbyPanel({
 
         <p className="mb-1 flex items-center justify-center gap-1.5 text-xs">
           {status === 'linked' ? (
-            <span className="font-bold text-[#7fd0a0]">● Друг в лобби! Можно начинать</span>
+            <span className="font-bold text-[#a6f095]">● Друг в лобби! Можно начинать</span>
           ) : (
             <span className="flex items-center gap-1 text-[#7088a8]">
               <Clock className="h-3.5 w-3.5 animate-pulse" /> Ожидание друга...
             </span>
           )}
         </p>
-        <p className="mb-3 text-[10px] leading-snug text-[#5b6f8c]">
+        <p className="mb-3 text-[10px] leading-snug text-[#7088a8]">
           Друг открывает ссылку с телефона или ПК и сразу попадает сюда. Общий строй: строить могут оба,
           Сорока — у хоста, HP волн ×1.85 (GDD кооп).
         </p>
@@ -484,7 +484,11 @@ export function MpLobbyPanel({
           {!inGame && (
             <Button
               onClick={onStart}
-              className="h-11 border-2 border-[#7088a8] bg-[#1f2a3b] px-6 font-serif text-base font-bold text-[#ffd700] hover:bg-[#26344a]"
+              className="h-11 rounded-xl px-6 text-[13px] font-black uppercase tracking-wide text-[#1a1408] hover:brightness-105"
+              style={{
+                background: 'linear-gradient(180deg, #ffd76b 0%, #eebd45 55%, #e0a832 100%)',
+                boxShadow: '0 4px 18px rgba(242,201,76,0.3), inset 0 1px 0 rgba(255,255,255,0.45)',
+              }}
             >
               ⚙ Начать игру
             </Button>
@@ -493,7 +497,7 @@ export function MpLobbyPanel({
             <Button
               onClick={onHelp}
               variant="outline"
-              className="h-11 border-[#5b6f8c] bg-transparent px-4 text-sm text-[#ccd8e6] hover:bg-[#1f2a3b]"
+              className="h-11 rounded-xl border-[#3a4660] bg-[rgba(31,38,56,0.6)] px-4 text-[12px] font-bold text-[#e8ecf4] hover:bg-[rgba(43,53,80,0.8)] hover:text-[#e8ecf4]"
             >
               Как играть
             </Button>
@@ -501,7 +505,7 @@ export function MpLobbyPanel({
           <Button
             onClick={onClose}
             variant="outline"
-            className="h-11 border-[#5b6f8c55] bg-transparent px-4 text-sm text-[#5b6f8c] hover:bg-[#1f2a3b] hover:text-[#e05252]"
+            className="h-11 rounded-xl border-[#3a4660]/60 bg-transparent px-4 text-[12px] font-bold text-[#8fa0ba] hover:bg-[rgba(31,38,56,0.6)] hover:text-[#ff8a8a]"
           >
             {inGame ? 'Закрыть' : 'Один игрок'}
           </Button>
@@ -522,34 +526,38 @@ export function MpGuestWait({
   hostLeft: boolean
 }) {
   return (
-    <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#0a0e15]/90 p-4 backdrop-blur-[2px]">
-      <div className="max-w-sm text-center">
+    <div className="absolute inset-0 z-10 flex items-center justify-center bg-[rgba(6,9,14,0.85)] p-4 backdrop-blur-md">
+      <div className="td-ornate max-w-sm rounded-2xl border border-[#3a4660]/90 bg-[rgba(10,15,24,0.88)] p-6 text-center shadow-[0_24px_80px_rgba(0,0,0,0.7)] backdrop-blur-xl">
         {hostLeft ? (
           <>
-            <h2 className="mb-2 font-serif text-2xl font-black text-[#e05252]">ХОСТ ОТКЛЮЧИЛСЯ</h2>
-            <p className="mb-4 text-sm text-[#b8c6d8]">
+            <h2 className="mb-2 text-2xl font-black tracking-[0.06em] text-[#ff7a7a]">ХОСТ ОТКЛЮЧИЛСЯ</h2>
+            <p className="mb-4 text-sm text-[#c3cbe0]">
               Лобби {code} закрыто. Попросите хоста создать новое и прислать ссылку.
             </p>
             <Button
               onClick={() => window.location.replace('/')}
-              className="h-10 border-2 border-[#7088a8] bg-[#1f2a3b] px-6 font-serif font-bold text-[#ffd700] hover:bg-[#26344a]"
+              className="h-10 rounded-xl px-6 text-[13px] font-black uppercase tracking-wide text-[#1a1408] hover:brightness-105"
+              style={{
+                background: 'linear-gradient(180deg, #ffd76b 0%, #eebd45 55%, #e0a832 100%)',
+                boxShadow: '0 4px 18px rgba(242,201,76,0.3), inset 0 1px 0 rgba(255,255,255,0.45)',
+              }}
             >
               На главный экран
             </Button>
           </>
         ) : (
           <>
-            <p className="mb-1 font-mono text-[10px] uppercase tracking-[0.3em] text-[#7fd0a0]">
+            <p className="mb-1 font-mono text-[10px] uppercase tracking-[0.3em] text-[#59c27a]">
               кооп-лобби
             </p>
-            <h2 className="mb-3 font-serif text-3xl font-black tracking-widest text-[#f0b060]">{code}</h2>
-            <p className="mb-4 flex items-center justify-center gap-2 text-sm text-[#b8c6d8]">
-              <Clock className="h-4 w-4 animate-pulse text-[#7fd0a0]" />
+            <h2 className="mb-3 font-mono text-3xl font-black tracking-[0.3em] text-[#f2c94c]">{code}</h2>
+            <p className="mb-4 flex items-center justify-center gap-2 text-sm text-[#c3cbe0]">
+              <Clock className="h-4 w-4 animate-pulse text-[#59c27a]" />
               {status === 'linked' || status === 'waiting'
                 ? 'Подключено! Ждём, пока хост начнёт игру...'
                 : 'Подключение...'}
             </p>
-            <p className="text-[10px] leading-snug text-[#5b6f8c]">
+            <p className="text-[10px] leading-snug text-[#7088a8]">
               Вы гость: строите башни вместе с хостом, запускаете волны, сливаете башни.
               Сорока и перезапуск — у хоста.
             </p>

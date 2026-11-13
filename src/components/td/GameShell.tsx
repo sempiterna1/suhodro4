@@ -36,22 +36,22 @@ import { Button } from '@/components/ui/button'
 import { AnimatePresence, motion } from 'framer-motion'
 
 /**
- * Навести камеру на поле. Альбомный экран — карта целиком. Портрет (телефон) — поле крупно по высоте,
- * по центру; остальное видно, если сдвинуть пальцем или отдалить щипком.
+ * Навести камеру на поле. Десктоп — вся карта режимом «cover» (накрывает экран, излишек обрезан,
+ * края доступны панорамой). Телефон — ромб поля (~940×510 с утёсом, центр 480·330) крупно и
+ * накрытый экраном целиком; остальное видно сдвигом пальцем или щипком.
  */
-function frameField(v: ViewState, portrait: boolean) {
-  const base = Math.min(v.vw / MAP_W, v.vh / MAP_H)
+function frameField(v: ViewState) {
+  // масштаб «cover» при z=1: карта уже накрывает холст
+  const fit = Math.max(v.vw / MAP_W, v.vh / MAP_H)
   if (window.matchMedia('(min-width: 1024px)').matches) {
-    // компьютер: карта целиком, как всегда
+    // компьютер: вся карта, обрезанная под окно
     v.cam.z = 1
     clampCamera(v)
     return
   }
-  // в альбомной — вписать само поле (ромб ~940×510 вместе с утёсом), а не всю карту с лесом по краям
-  v.cam.z = portrait
-    ? Math.max(1, Math.min(3, (v.vh * 0.62) / (520 * base)))
-    : Math.max(1, Math.min(3, Math.min(v.vw / (900 * base), v.vh / (500 * base))))
-  const sc = base * v.cam.z
+  // ромб поля должен накрыть экран: зум, при котором 940×510 не уже окна
+  v.cam.z = Math.max(1, Math.min(3, Math.max(v.vw / (940 * fit), v.vh / (510 * fit))))
+  const sc = fit * v.cam.z
   v.cam.x = 480 - v.vw / sc / 2
   v.cam.y = 330 - v.vh / sc / 2
   clampCamera(v)
@@ -276,8 +276,8 @@ export default function GameShell() {
   }, [lighting])
 
   // ─── Настройка canvas ( retina ) ───────────────────────────────────────
-  // Холст всегда заполняет своё место на странице: на компьютере это рамка с пропорциями карты,
-  // на телефоне — весь экран между полосами HUD. Камера подстраивается под форму экрана.
+  // Холст всегда заполняет весь экран: камера держит карту режимом «cover», так что
+  // чёрных полей нет ни при каком соотношении сторон. Излишек карты доступен панорамой.
   const portraitRef = useRef<boolean | null>(null)
   useEffect(() => {
     const canvas = canvasRef.current
@@ -298,7 +298,7 @@ export default function GameShell() {
       const firstFit = portraitRef.current === null
       if (portraitRef.current !== portrait || firstFit) {
         portraitRef.current = portrait
-        frameField(v, portrait)
+        frameField(v)
       }
       clampCamera(v)
     }
@@ -1028,8 +1028,8 @@ export default function GameShell() {
       setPortrait(window.innerHeight > window.innerWidth)
       setUiScale(isDesktop ? Math.max(1, Math.min(2.6, Math.min(window.innerWidth / 1440, window.innerHeight / 860))) : 1)
       const r = fieldRef.current?.getBoundingClientRect()
-      const w = isDesktop && r ? Math.min(r.width, r.height * (MAP_W / MAP_H)) : (r?.width ?? window.innerWidth)
-      setStage({ w: Math.floor(w), h: Math.floor((w * MAP_H) / MAP_W) })
+      // холст занимает весь экран: карта масштабируется «cover» — чёрных полей нет ни при каком соотношении
+      setStage({ w: Math.floor(r?.width ?? window.innerWidth), h: Math.floor(r?.height ?? window.innerHeight) })
     }
     fit()
     const ro = new ResizeObserver(fit)
@@ -1360,8 +1360,8 @@ export default function GameShell() {
   const startButton = !armed ? <StartButton ui={ui} onStart={doStartWave} /> : null
 
   return (
-    // Десктоп: экран целиком без прокрутки — поле (с верхней полосой HUD поверх свободного ряда) над нижней
-    // стальной панелью. Телефон: столбиком — полоса, поле, панель, панель башни (страница прокручивается).
+    // Десктоп: экран целиком без прокрутки — карта накрывает окно (cover), HUD плавает поверх.
+    // Телефон: то же, HUD-полосы поверх поля.
     <div
       className={
         desktop
@@ -1370,10 +1370,7 @@ export default function GameShell() {
       }
     >
       <div ref={fieldRef} className="absolute inset-0">
-        <div
-          className="absolute inset-0 m-auto overflow-hidden"
-          style={{ width: stage.w, height: stage.h }}
-        >
+        <div className="absolute inset-0 overflow-hidden">
           <canvas
             ref={canvasRef}
             className="absolute inset-0 block h-full w-full select-none"
@@ -1386,6 +1383,12 @@ export default function GameShell() {
             onPointerCancel={handleUp}
             onContextMenu={(e) => e.preventDefault()}
             aria-label={`Карта игры ${ui.mapName}`}
+          />
+          {/* виньетка «через объектив» — CSS-слоем: композитится видюхой, холст не тратит кадр */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0"
+            style={{ background: 'radial-gradient(ellipse 75% 70% at 50% 50%, rgba(5,8,14,0) 52%, rgba(5,8,14,0.36) 100%)' }}
           />
 
           {/* Интро (одиночка / хост без лобби) — пошаговое меню: главная → карта → герой */}
@@ -1437,20 +1440,20 @@ export default function GameShell() {
 
           {/* Поражение / победа */}
           {(ui.phase === 'over' || ui.phase === 'won') && (
-            <div className="absolute inset-0 flex items-center justify-center bg-[#070a10]/88 p-4">
+            <div className="absolute inset-0 flex items-center justify-center bg-[rgba(5,8,13,0.82)] p-4 backdrop-blur-[3px]">
               <motion.div
                 initial={{ scale: 0.85, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
-                className="max-w-sm rounded-md border-2 border-[#7088a8] bg-gradient-to-b from-[#1b2433] to-[#0c111a] px-8 py-6 text-center"
+                className="td-ornate max-w-sm rounded-2xl border border-[#3a4660]/90 bg-[rgba(10,15,24,0.9)] px-8 py-7 text-center shadow-[0_24px_80px_rgba(0,0,0,0.7)] backdrop-blur-xl"
                 style={{ zoom: uiScale }}
               >
-                <h2 className={`mb-2 font-serif text-4xl font-black ${ui.phase === 'won' ? 'text-[#ffd700]' : 'text-[#e05252]'}`}>
+                <h2 className={`mb-2 text-[32px] font-black leading-tight tracking-[0.02em] ${ui.phase === 'won' ? 'text-[#f2c94c]' : 'text-[#ff7a7a]'}`}>
                   {ui.phase === 'won' ? 'ГОРИЗОНТ УДЕРЖАН!' : 'ЗДАНИЕ РАЗРУШЕНО'}
                 </h2>
                 <p className="mb-1 font-mono text-[10px] uppercase tracking-[0.18em] text-[#7088a8]">
                   {ui.mapName} · {ui.difficultyName}
                 </p>
-                <p className="mb-4 text-sm text-[#b8c6d8]">
+                <p className="mb-4 text-sm text-[#c3cbe0]">
                   {ui.phase === 'won'
                     ? `Сердце Разлома пало на ${Math.min(ui.wave, ui.totalWaves)}-й волне — лагерь может идти дальше, к убежищу, о котором говорит ИИ.`
                     : `Заражённые прорвались к главному зданию на ${Math.min(ui.wave, ui.totalWaves)}-й волне. Минерал забирает тракт...`}
@@ -1460,21 +1463,25 @@ export default function GameShell() {
                   <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
                     <Button
                       onClick={doRetry}
-                      className="h-10 border-2 border-[#93a9c6] bg-gradient-to-b from-[#2e3c52] to-[#1f2a3b] px-5 font-serif font-bold text-[#ffd700]"
+                      className="h-10 rounded-xl px-5 text-[13px] font-black uppercase tracking-wide text-[#1a1408] hover:brightness-105"
+                      style={{
+                        background: 'linear-gradient(180deg, #ffd76b 0%, #eebd45 55%, #e0a832 100%)',
+                        boxShadow: '0 4px 18px rgba(242,201,76,0.3), inset 0 1px 0 rgba(255,255,255,0.45)',
+                      }}
                     >
                       ↻ Повторить миссию
                     </Button>
                     {ui.phase === 'won' ? (
                       <Button
                         onClick={doNextMission}
-                        className="h-10 border-2 border-[#7fd0a0] bg-[#1f2d24] px-5 font-serif font-bold text-[#7fd0a0]"
+                        className="h-10 rounded-xl border border-[#59c27a]/60 bg-[rgba(89,194,122,0.12)] px-5 text-[13px] font-bold text-[#a6f095] hover:bg-[rgba(89,194,122,0.22)]"
                       >
                         Следующая миссия →
                       </Button>
                     ) : (
                       <Button
                         onClick={doRestart}
-                        className="h-10 border border-[#5b6f8c] bg-transparent px-4 font-serif text-xs font-bold text-[#ccd8e6]"
+                        className="h-10 rounded-xl border border-[#3a4660]/70 bg-transparent px-4 text-[12px] font-bold text-[#aebad0] hover:bg-[rgba(31,38,56,0.6)]"
                       >
                         Сменить сложность
                       </Button>
@@ -1552,7 +1559,7 @@ export default function GameShell() {
                       onClick={() => setRotateHint(false)}
                       className="pointer-events-auto rounded-full border border-[#3a4660] bg-[rgba(14,19,31,0.9)] px-3 py-1 text-[11px] font-bold text-[#c3cbe0]"
                     >
-                      Поверните телефон: карта будет видна целиком · ✕
+                      Поверните телефон: поле будет крупнее · ✕
                     </button>
                   )}
                 </div>
@@ -1613,8 +1620,8 @@ export default function GameShell() {
 
         {/* Десктоп: верхняя полоса HUD над полем, уведомления и выезжающая панель башни */}
         {desktop && (
-          // оверлей — ровно по игровой зоне (как холст), а не по окну: на широких экранах панели не липнут к краям монитора
-          <div className="pointer-events-none absolute inset-0 z-10 m-auto" style={{ width: stage.w, height: stage.h }}>
+          // оверлей поверх поля на весь экран: карта теперь накрывает окно целиком
+          <div className="pointer-events-none absolute inset-0 z-10">
             <AnimatePresence>
               {hudOn && (
                 <motion.div key="top" className="px-2 pt-1" style={{ zoom: topScale }}>
@@ -1658,22 +1665,25 @@ export default function GameShell() {
         )}
       </div>
 
-      {/* нижняя стальная панель — оверлей поверх поля (игра занимает весь экран) */}
+      {/* нижняя панель: мягкий скрим над полем + герой · рука · магазины и «Начать» */}
       <AnimatePresence>
         {hudOn && desktop && (
           <motion.div
             key="bottom"
-            className="pointer-events-auto absolute inset-x-0 bottom-0 z-10 flex items-center justify-between gap-5 px-3 pb-2 pt-3"
-            style={{ zoom: uiScale }}
+            className="pointer-events-auto absolute inset-x-0 bottom-0 z-10 flex items-center justify-between gap-5 px-4 pb-2.5 pt-6"
+            style={{
+              zoom: uiScale,
+              background: 'linear-gradient(to top, rgba(4,7,12,0.95) 0%, rgba(4,7,12,0.62) 55%, rgba(4,7,12,0) 100%)',
+            }}
           >
             {heroButtons}
             <HandTray ui={ui} armedHand={armedHand} onArm={armHand} size="lg" />
             <div className="flex items-center gap-3">
-              <div className="flex gap-2">
+              <div className="flex gap-2.5">
                 <ShopButton onClick={() => setShopOpen(true)} disabled={!canBuild} />
                 <LavkaButton onClick={() => setLavkaOpen(true)} />
               </div>
-              <div className="flex w-[150px] justify-start">{startButton}</div>
+              <div className="flex w-[170px] justify-start">{startButton}</div>
             </div>
           </motion.div>
         )}
@@ -1702,17 +1712,18 @@ export default function GameShell() {
 function Stats({ ui }: { ui: UiState }) {
   const mins = Math.floor(ui.time / 60)
   const secs = Math.floor(ui.time % 60)
+  const cell = 'rounded-lg border border-[#3a4660]/70 bg-[rgba(31,38,56,0.55)] px-2.5 py-1.5 text-[#c3cbe0]'
   return (
-    <div className="mx-auto grid max-w-[300px] grid-cols-2 gap-1.5 font-mono text-xs text-[#ccd8e6]">
-      <div className="rounded border border-[#5b6f8c55] bg-[#141b27] px-2 py-1">Волн: {Math.min(ui.wave, ui.totalWaves)}/{ui.totalWaves}</div>
-      <div className="rounded border border-[#5b6f8c55] bg-[#141b27] px-2 py-1">Здание: {ui.buildingHp}/{ui.buildingMaxHp}</div>
-      <div className="rounded border border-[#5b6f8c55] bg-[#141b27] px-2 py-1">Убито: {ui.stats.kills}</div>
-      <div className="rounded border border-[#5b6f8c55] bg-[#141b27] px-2 py-1">Боссов: {ui.stats.bossKills}</div>
-      <div className="rounded border border-[#5b6f8c55] bg-[#141b27] px-2 py-1">Золота: {ui.stats.goldEarned}</div>
-      <div className="rounded border border-[#5b6f8c55] bg-[#141b27] px-2 py-1">Слияний: {ui.stats.merges}</div>
-      <div className="rounded border border-[#5b6f8c55] bg-[#141b27] px-2 py-1">Урон: {Math.round(ui.stats.damageDealt)}</div>
-      <div className="rounded border border-[#5b6f8c55] bg-[#141b27] px-2 py-1">Время: {mins}:{String(secs).padStart(2, '0')}</div>
-      <div className="col-span-2 rounded border border-[#5b6f8c55] bg-[#141b27] px-2 py-1">
+    <div className="mx-auto grid max-w-[300px] grid-cols-2 gap-1.5 font-mono text-xs">
+      <div className={cell}>Волн: {Math.min(ui.wave, ui.totalWaves)}/{ui.totalWaves}</div>
+      <div className={cell}>Здание: {ui.buildingHp}/{ui.buildingMaxHp}</div>
+      <div className={cell}>Убито: {ui.stats.kills}</div>
+      <div className={cell}>Боссов: {ui.stats.bossKills}</div>
+      <div className={cell}>Золота: {ui.stats.goldEarned}</div>
+      <div className={cell}>Слияний: {ui.stats.merges}</div>
+      <div className={cell}>Урон: {Math.round(ui.stats.damageDealt)}</div>
+      <div className={cell}>Время: {mins}:{String(secs).padStart(2, '0')}</div>
+      <div className={`${cell} col-span-2`}>
         Прорвалось заражённых: {ui.stats.leaked}
       </div>
     </div>

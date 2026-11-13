@@ -135,3 +135,52 @@
     0 0 24px color-mix(in srgb, var(--glow) 30%, transparent),
     0 0 48px color-mix(in srgb, var(--glow) 16%, transparent);
 }
+
+/* ─── Ряд карточек руки: прокрутка без видимой полосы ─── */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* ─── Орнаментальная рама: железная лента с фактурой камня и заклёпками ── */
+/* Надевается на крупные панели и модалки игры; лента лежит внутри border,
+   заклёпки — по углам и в серединах верх/низ. Кнопки и чипы остаются чистыми. */
+.td-ornate {
+  position: relative;
+}
+.td-ornate::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 3px;
+  /* лента: шлифованные штрихи + каменная крапа + тёплый отсвет сверху по тёмной стали */
+  background:
+    repeating-linear-gradient(105deg, rgba(255, 255, 255, 0.05) 0 1px, rgba(255, 255, 255, 0) 1px 4px),
+    repeating-linear-gradient(75deg, rgba(0, 0, 0, 0.3) 0 2px, rgba(0, 0, 0, 0) 2px 6px),
+    repeating-radial-gradient(circle at 23% 67%, rgba(255, 255, 255, 0.035) 0 1px, rgba(0, 0, 0, 0) 1px 3px),
+    linear-gradient(180deg, rgba(242, 201, 76, 0.16), rgba(242, 201, 76, 0) 38%, rgba(0, 0, 0, 0.34) 84%, rgba(242, 201, 76, 0.08)),
+    linear-gradient(#2a3550, #131a29 55%, #1c2436);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+.td-ornate::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  /* заклёпки: четыре угла и середины верхней/нижней кромки */
+  background:
+    radial-gradient(2.6px 2.6px at 7px 7px, #8fa2c4 0%, #45536f 60%, transparent 70%),
+    radial-gradient(2.6px 2.6px at calc(100% - 7px) 7px, #8fa2c4 0%, #45536f 60%, transparent 70%),
+    radial-gradient(2.6px 2.6px at 7px calc(100% - 7px), #8fa2c4 0%, #45536f 60%, transparent 70%),
+    radial-gradient(2.6px 2.6px at calc(100% - 7px) calc(100% - 7px), #8fa2c4 0%, #45536f 60%, transparent 70%),
+    radial-gradient(2.2px 2.2px at 50% 6px, #8fa2c4 0%, #45536f 60%, transparent 70%),
+    radial-gradient(2.2px 2.2px at 50% calc(100% - 6px), #8fa2c4 0%, #45536f 60%, transparent 70%);
+  pointer-events: none;
+}

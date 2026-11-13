@@ -260,6 +260,50 @@ export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasEle
   const inLake = (wx: number, wy: number, pad = 0) =>
     !!lake && ((wx - lake.x) / (lake.rx + pad)) ** 2 + ((wy - lake.y) / (lake.ry + pad)) ** 2 < 1
 
+  // ─── Рваная кромка арены и вода за ней ──────────────────────────────────
+  // Поле — остров: кромка дрожит гладким шумом (мысы и заливы), за ней мокрый
+  // берег, вода биома с рябью и бликами, дальше — тёмная низина. У причалов
+  // тропы (портал, ворота и лагерь) воды нет — там каменная суши.
+  const WALL_W = 50 // толщина южной стены утёса в мировых единицах (30 экранных px)
+  const SHORE_W = 14 // ширина мокрого берега за кромкой
+  const vnoise = (x: number, s: number) => {
+    const i = Math.floor(x)
+    const f = x - i
+    const u = f * f * (3 - 2 * f)
+    return hash(i, 0, s) * (1 - u) + hash(i + 1, 0, s) * u
+  }
+  /** Смещение рваной кромки: наружу до +40 (мыс), внутрь до −8 — поле не поддаётся воде */
+  const edgeJit = (e: Edge, along: number) => {
+    const s = seed + 301 + e.charCodeAt(0) * 17
+    const n = vnoise(along / 300, s) * 0.72 + vnoise(along / 90, s + 11) * 0.28 - 0.5
+    return n > 0 ? n * 80 : n * 16
+  }
+  /** Глубина воды за кромкой: заливы и мысы по шуму */
+  const waterLen = (e: Edge, along: number) => 60 + vnoise(along / 210, seed + 500 + e.charCodeAt(0) * 23) * 120
+  /** Рваное расстояние до кромки арены: >0 — на поле, ≤0 — за кромкой (edge — какая ближе) */
+  const beyondEdge = (wx: number, wy: number) => {
+    const dw = wx + edgeJit('W', wy)
+    const de = MAP_W - wx + edgeJit('E', wy)
+    const dn = wy + edgeJit('N', wx)
+    const ds = MAP_H - wy + edgeJit('S', wx)
+    const d = Math.min(dw, de, dn, ds)
+    return { d, edge: (dw === d ? 'W' : de === d ? 'E' : dn === d ? 'N' : 'S') as Edge }
+  }
+  /** Точка в воде за кромкой (shore — и на мокром берегу): лес и мелочи грунта туда не ставим */
+  const inOuterWater = (wx: number, wy: number, shore = false) => {
+    const b = beyondEdge(wx, wy)
+    if (b.d > 0 || inCamp(wx, wy) || nearArm(wx, wy, 120)) return false
+    const base = (b.edge === 'S' ? WALL_W : 0) + (shore ? 0 : SHORE_W)
+    const along = b.edge === 'W' || b.edge === 'E' ? wy : wx
+    return b.d <= -base && b.d > -(base + waterLen(b.edge, along))
+  }
+  /** Палитра воды за кромкой по водоёму биома; none — смоляная вода с зеленцой минерала */
+  const WSTYLE = B.lake === 'frozen'
+    ? { foam: [214, 228, 244] as RGB, shallow: [120, 156, 190] as RGB, deep: [40, 62, 90] as RGB, glint: [224, 238, 252] as RGB }
+    : B.lake === 'bog'
+      ? { foam: [126, 138, 108] as RGB, shallow: [58, 74, 56] as RGB, deep: [30, 40, 34] as RGB, glint: [146, 160, 122] as RGB }
+      : { foam: [104, 148, 126] as RGB, shallow: [46, 66, 70] as RGB, deep: [22, 32, 40] as RGB, glint: [112, 172, 142] as RGB }
+
   // попиксельно по блокам 2×2: так земля остаётся «пиксельной», как на референсе
   const img = L.createImageData(W, H)
   const put = (bx: number, by: number, c: [number, number, number], k = 1) => {
@@ -281,9 +325,6 @@ export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasEle
       const cx = Math.floor(w.x / CELL)
       const cy = Math.floor(w.y / CELL)
       const dith = hash(bx, by, seed + 9)
-      const inside = w.x >= 0 && w.y >= 0 && w.x < MAP_W && w.y < MAP_H
-
-      const depth = w.y >= MAP_H ? belowFrontEdge(sx, sy) : -1
       // настил тропы: и на поле, и за краем (у южного входа/выхода — рез-овраг сквозь утёс)
       if (road(cx, cy)) {
         const u = w.x - cx * CELL
@@ -357,35 +398,66 @@ export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasEle
         continue
       }
 
-      // утёс под передним левым краем поля (дорога рисуется раньше — прорезает его)
-      if (depth >= 0 && depth < CLIFF) {
-        const capTop = 3 + Math.floor(hash(bx >> 1, 7, seed) * 5)
-        if (depth < capTop) put(bx, by, depth < 2 ? B.cliff.cap : B.cliff.capDeep)
-        else {
-          const streak = hash(bx, Math.floor(depth / 6), seed + 3)
-          const tone = streak > 0.75 ? B.cliff.face[0] : streak > 0.4 ? B.cliff.face[1] : B.cliff.face[2]
-          const fade = depth > CLIFF - 6 ? 0.85 : 1
-          put(bx, by, dith > 0.94 ? B.cliff.streak : tone, fade)
+      // ─── За рваной кромкой: стена утёса (юг), мокрый берег, вода, низина ──
+      const be = beyondEdge(w.x, w.y)
+      if (be.d <= 0) {
+        const eDist = -be.d // насколько за рваным силуэтом (мировые единицы)
+        const south = be.edge === 'S'
+        const wallBase = south ? WALL_W : 0
+        const along = be.edge === 'W' || be.edge === 'E' ? w.y : w.x
+        const dry = inCamp(w.x, w.y) || nearArm(w.x, w.y, 120) // у причалов и лагеря воды нет
+        let c: RGB
+        if (south && eDist < WALL_W) {
+          // стена утёса следует рваному силуэту: снежная шапка, порода с прожилками, к низу темнее
+          const capTop = 3 + Math.floor(hash(bx >> 1, 7, seed) * 5)
+          if (eDist * 0.6 < capTop) c = eDist * 0.6 < 2 ? B.cliff.cap : B.cliff.capDeep
+          else {
+            const streak = hash(bx, Math.floor((eDist / WALL_W) * 5), seed + 3)
+            const tone = streak > 0.75 ? B.cliff.face[0] : streak > 0.4 ? B.cliff.face[1] : B.cliff.face[2]
+            c = dith > 0.94 ? B.cliff.streak : tone
+            if (eDist > WALL_W * 0.8) c = [c[0] * 0.85, c[1] * 0.85, c[2] * 0.9]
+          }
+        } else if (eDist < wallBase + SHORE_W) {
+          // мокрый берег: тёмная земля; у самой воды — светлая кромка пены
+          const n = hash(Math.floor(w.x / 9), Math.floor(w.y / 9), seed)
+          const big = hash(Math.floor(w.x / 50), Math.floor(w.y / 50), seed + 3)
+          const pal = B.ground.lowland
+          c = pal[Math.floor((n * 0.5 + big * 0.5) * pal.length) % pal.length]
+          c = [c[0] * 0.5, c[1] * 0.54, c[2] * 0.62]
+          if (eDist > wallBase + SHORE_W - 4.5 && dith > 0.4) c = WSTYLE.foam
+        } else if (!dry && eDist < wallBase + SHORE_W + waterLen(be.edge, along)) {
+          // вода: рябь из двух волн; у берега светлее (отражает небо), в глубину темнеет
+          const rip = Math.sin(w.x * 0.11 + Math.sin(w.y * 0.05) * 2.6) * Math.sin(w.y * 0.07 - w.x * 0.023 + 1.1)
+          const shoreK = 1 - Math.min(1, Math.max(0, (eDist - wallBase - SHORE_W) / Math.max(24, waterLen(be.edge, along))))
+          const mix = Math.min(1, Math.max(0, rip * 0.5 + 0.28)) * shoreK
+          c = [
+            WSTYLE.deep[0] + (WSTYLE.shallow[0] - WSTYLE.deep[0]) * mix,
+            WSTYLE.deep[1] + (WSTYLE.shallow[1] - WSTYLE.deep[1]) * mix,
+            WSTYLE.deep[2] + (WSTYLE.shallow[2] - WSTYLE.deep[2]) * mix,
+          ]
+          if (dith > 0.968 || (rip > 0.8 && dith > 0.4)) c = WSTYLE.glint
+        } else {
+          // тёмная низина за водой и каменная суша у причалов
+          const n = hash(Math.floor(w.x / 9), Math.floor(w.y / 9), seed)
+          const big = hash(Math.floor(w.x / 50), Math.floor(w.y / 50), seed + 3)
+          c = B.ground.lowland[Math.floor((n * 0.5 + big * 0.5) * B.ground.lowland.length) % B.ground.lowland.length]
+          if (dith > 0.985) c = B.ground.dithHi
+          else if (dith < 0.012) c = B.ground.dithLo
+          // утоптанный грунт вокруг лагеря беженцев
+          if (inCamp(w.x, w.y) && hash(Math.floor(w.x / 14), Math.floor(w.y / 14), seed + 5) > 1 - B.camp.trample) c = B.camp.dirt
         }
+        put(bx, by, infect(c, w.x, w.y, infection(w.x, w.y)))
         continue
       }
 
-      // земля: на поле светлее, за краем (лес, низина) — темнее; пятна идут ромбами по сетке мира
-      const pal = inside ? B.ground.plateau : B.ground.lowland
+      // ─── Поле-остров: светлая земля; пятна идут ромбами по сетке мира ─────
       const n = hash(Math.floor(w.x / 9), Math.floor(w.y / 9), seed)
       const big = hash(Math.floor(w.x / 50), Math.floor(w.y / 50), seed + 3)
-      let c = pal[Math.floor((n * 0.5 + big * 0.5) * pal.length) % pal.length]
+      let c = B.ground.plateau[Math.floor((n * 0.5 + big * 0.5) * B.ground.plateau.length) % B.ground.plateau.length]
       if (dith > 0.985) c = B.ground.dithHi
       else if (dith < 0.012) c = B.ground.dithLo
-      // еле заметная сетка клеток на поле — видно, куда ставить башню
-      let k = 1
-      if (inside) {
-        const u = w.x - cx * CELL
-        const v = w.y - cy * CELL
-        if (u < 1.6 || v < 1.6) k = 0.93
-      }
-      // утоптанный грунт вокруг лагеря беженцев
-      if (!inside && inCamp(w.x, w.y) && hash(Math.floor(w.x / 14), Math.floor(w.y / 14), seed + 5) > 1 - B.camp.trample) c = B.camp.dirt
+      // сырой тёмный ободок у самой кромки — береговой панцирь
+      if (be.d < 7) c = [c[0] * 0.82, c[1] * 0.85, c[2] * 0.92]
       // вода: замёрзшее озеро с трещинами или мутное болото; по краю — кромка
       if (lake && inLake(w.x, w.y, 6)) {
         const e = ((w.x - lake.x) / lake.rx) ** 2 + ((w.y - lake.y) / lake.ry) ** 2
@@ -400,11 +472,11 @@ export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasEle
           if (dith > 0.97) c = [214, 232, 248]
         }
       }
-      put(bx, by, infect(c, w.x, w.y, infection(w.x, w.y)), k)
+      put(bx, by, infect(c, w.x, w.y, infection(w.x, w.y)))
     }
   }
   L.putImageData(img, 0, 0)
-  groundDetails(L, seed, (cx, cy) => road(cx, cy), inLake, B)
+  groundDetails(L, seed, (cx, cy) => road(cx, cy), inLake, B, (x, y) => inOuterWater(x, y, true))
 
   // ─── Пропсы ───────────────────────────────────────────────────────────
   let rs = (seed * 2654435761) >>> 0
@@ -653,6 +725,7 @@ export function buildBackground(map: GameMap, withSecond = false): HTMLCanvasEle
       const w = toWorld(x, y)
       if (w.x >= -8 && w.y >= -8 && w.x < MAP_W + 8 && w.y < MAP_H + 8) continue // поле
       if (inCamp(w.x, w.y)) continue // лагерь беженцев
+      if (inOuterWater(w.x, w.y, true)) continue // лес не растёт в воде и на мокром берегу
       if (nearArm(w.x, w.y, 46)) continue // дороги к порталу и к воротам
       if (w.y >= MAP_H) {
         const d = belowFrontEdge(x, y)
@@ -810,7 +883,7 @@ export function drawPropShadows(ctx: CanvasRenderingContext2D) {
 function groundDetails(
   L: CanvasRenderingContext2D, seed: number,
   road: (cx: number, cy: number) => boolean, inLake: (x: number, y: number, pad?: number) => boolean,
-  B: BiomeDef,
+  B: BiomeDef, inWater: (x: number, y: number) => boolean,
 ) {
   let rs = (seed * 97 + 13) >>> 0
   const r = () => {
@@ -832,7 +905,7 @@ function groundDetails(
     const cx = Math.floor(wx / CELL)
     const cy = Math.floor(wy / CELL)
     if (wx < -60 || wy < -60 || wx > MAP_W + 40 || wy > MAP_H + 10) return false
-    return !road(cx, cy) && !inLake(wx, wy, 8)
+    return !road(cx, cy) && !inLake(wx, wy, 8) && !inWater(wx, wy)
   }
   const D = B.details
   // сугробы, вытянутые по ветру: светлый верх, тень справа-снизу

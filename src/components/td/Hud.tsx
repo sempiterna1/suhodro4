@@ -3,7 +3,7 @@
 // HUD «Последнего горизонта»: один набор компонентов для телефона (ландшафт) и компьютера.
 // Верх: ресурсы · волна (или что строим) · скорость, пауза, меню. Низ: герой и способность · арсенал
 // (прокручиваемый ряд карточек + закреплённый ролл) · «Начать». Раскладку задаёт GameShell.
-// Стиль: Rubik, панели rgba(14,19,31,.9) с рамкой #3a4660, золото #f2c94c, линейные иконки.
+// Стиль: Rubik, тёмное стекло (blur + полупрозрачность) с рамкой #3a4660, золото #f2c94c, линейные иконки.
 
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { AnimatePresence, motion, useAnimationControls } from 'framer-motion'
@@ -11,7 +11,7 @@ import { AI_SIGNALS, ALL_DEFS, ALL_ITEMS, ARMOR_COLORS, ARMOR_NAMES, AVATARS, IT
 import { avatarPortrait, towerThumb } from '@/game/pixel'
 import type { AttackType, TowerDefinition, UiState } from '@/game/types'
 import type { MpRole, MpStatus } from './Panels'
-import { DAMAGE_TYPE, DamageBadge, EffectiveVs, effectLines, isEcon } from './TowerInfo'
+import { DAMAGE_TYPE, DamageBadge, effectLines, isEcon } from './TowerInfo'
 import { Store, Music, Volume2, Wind, Gem, RefreshCw, ChevronUp } from 'lucide-react'
 import { Slider } from '@/components/ui/slider'
 import {
@@ -40,7 +40,7 @@ export const DMG_COLORS: Record<AttackType, string> = {
   universal: '#a0aec0',
 }
 
-const PILL = 'pointer-events-auto border border-[#3a4660] bg-[rgba(14,19,31,0.9)]'
+const PILL = 'pointer-events-auto border border-[#3a4660]/90 bg-[rgba(10,15,24,0.78)] backdrop-blur-md'
 const slideDown = { initial: { y: -16, opacity: 0 }, animate: { y: 0, opacity: 1 }, exit: { y: -16, opacity: 0 } }
 const num = (v: number) => String(Math.round(v * 10) / 10)
 
@@ -57,7 +57,7 @@ export function Tag({ color, children, title }: { color: string; children: React
   )
 }
 
-/** Круглая кнопка 44 px: скорость, пауза, меню, отмена */
+/** Круглая кнопка 48 px: скорость, пауза, меню, отмена */
 export function RoundButton({
   onClick, label, active = false, disabled = false, children, className = '',
 }: { onClick: () => void; label: string; active?: boolean; disabled?: boolean; children: React.ReactNode; className?: string }) {
@@ -68,12 +68,24 @@ export function RoundButton({
       disabled={disabled}
       aria-label={label}
       title={label}
-      className={`${PILL} flex h-11 w-11 shrink-0 items-center justify-center rounded-full p-0 text-[15px] font-bold leading-none text-[#e8ecf4] transition-transform active:scale-95 disabled:opacity-40 ${
+      className={`${PILL} flex h-12 w-12 shrink-0 items-center justify-center rounded-full p-0 text-[15px] font-bold leading-none text-[#e8ecf4] transition-transform hover:-translate-y-px active:scale-95 disabled:opacity-40 ${
         active ? '!border-[#f2c94c] !text-[#f2c94c]' : ''
       } ${className}`}
     >
       {children}
     </button>
+  )
+}
+
+/** Круглая иконка-чип: тонированный фон под цвет ресурса (золото, эссенция, жизни…) */
+function Chip({ tone, children }: { tone: string; children: React.ReactNode }) {
+  return (
+    <span
+      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
+      style={{ background: `${tone}1f`, border: `1px solid ${tone}44`, color: tone }}
+    >
+      {children}
+    </span>
   )
 }
 
@@ -95,30 +107,35 @@ export function ResourceBar({ ui }: { ui: UiState }) {
   const hpColor = hpPct <= 0.3 ? '#ff3b3b' : hpPct <= 0.6 ? '#f0a44a' : '#e05252'
 
   return (
-    <motion.div {...slideDown} className={`${PILL} flex h-11 items-center gap-3 rounded-full px-4 text-[15px] font-bold leading-none`}>
+    <motion.div {...slideDown} className={`${PILL} flex h-12 items-center gap-2 rounded-full pl-2.5 pr-4 text-[15px] font-bold leading-none`}>
       <motion.span
         animate={building}
-        className="flex items-center gap-1.5 text-[#ff9a7a]"
+        className="flex items-center gap-2 text-[#ff9a7a]"
         title={`Главное здание: ${ui.buildingHp} / ${ui.buildingMaxHp} HP`}
       >
-        <BuildingIcon size={18} />
+        <Chip tone="#e05252"><BuildingIcon size={15} /></Chip>
         <span className="h-2 w-12 overflow-hidden rounded-full bg-[#4a1f24]">
           <span className="block h-full rounded-full transition-[width] duration-200" style={{ width: `${hpPct * 100}%`, background: hpColor }} />
         </span>
-        <span className="font-mono text-[12px] tabular-nums text-[#ffb0a0]">
+        <span className="font-mono text-[13px] tabular-nums text-[#ffb0a0]">
           {ui.buildingHp}
           <span className="text-[10px] opacity-60">/{ui.buildingMaxHp}</span>
         </span>
       </motion.span>
-      <motion.span animate={gold} className="flex items-center gap-1.5 text-[#f2c94c]" title="Золото">
-        <CoinIcon size={18} /> {ui.infiniteGold ? '∞' : ui.gold}
+      <span className="h-5 w-px bg-[#3a4660]/70" />
+      <motion.span animate={gold} className="flex items-center gap-2 text-[#f2c94c]" title="Золото">
+        <Chip tone="#f2c94c"><CoinIcon size={15} /></Chip>
+        <span className="font-mono tabular-nums">{ui.infiniteGold ? '∞' : ui.gold}</span>
       </motion.span>
-      <span className="flex items-center gap-1 text-[#a6f095]" title="Эссенция: добывается шахтами, тратится в лавке предметов">
-        <span className="text-[15px] leading-none">💠</span>
-        <span className="font-mono text-[13px] tabular-nums">{ui.essence}</span>
+      <span className="h-5 w-px bg-[#3a4660]/70" />
+      <span className="flex items-center gap-2 text-[#a6f095]" title="Эссенция: добывается шахтами, тратится в лавке предметов">
+        <Chip tone="#a6f095"><Gem size={15} strokeWidth={2.4} /></Chip>
+        <span className="font-mono text-[14px] tabular-nums">{ui.essence}</span>
       </span>
-      <span className="flex items-center gap-1.5 text-[#c3cbe0]" title="Волна">
-        <SwordsIcon size={18} /> {Math.min(ui.wave, ui.totalWaves)}/{ui.totalWaves}
+      <span className="h-5 w-px bg-[#3a4660]/70" />
+      <span className="flex items-center gap-2 text-[#c3cbe0]" title="Волна">
+        <Chip tone="#8fa2bd"><SwordsIcon size={15} /></Chip>
+        <span className="font-mono tabular-nums">{Math.min(ui.wave, ui.totalWaves)}/{ui.totalWaves}</span>
       </span>
       {ui.coop && <Tag color="#ff9a7a" title="Кооп: HP волн ×1.85">кооп ×1.85</Tag>}
     </motion.div>
@@ -149,7 +166,7 @@ export function WaveChip({ ui, build }: { ui: UiState; build: { name: string; co
     else tag = <Tag color={ARMOR_COLORS[ui.nextWaveArmor]} title="Броня следующей волны">{ARMOR_NAMES[ui.nextWaveArmor]}</Tag>
   }
   return (
-    <motion.div {...slideDown} className={`${PILL} flex h-11 items-center gap-2.5 whitespace-nowrap rounded-full pl-4 pr-3 text-[15px] font-bold leading-none text-[#f4ead2]`}>
+    <motion.div {...slideDown} className={`${PILL} flex h-12 items-center gap-2.5 whitespace-nowrap rounded-full pl-4 pr-3 text-[15px] font-bold leading-none text-[#f4ead2]`}>
       <span>{title}</span>
       {tag}
     </motion.div>
@@ -214,8 +231,10 @@ export function MenuPanel({ ui, m, onClose }: { ui: UiState; m: MenuActions; onC
         on?.()
         if (closes) onClose() // переключатели оставляют меню открытым; окна и рестарт закрывают
       }}
-      className={`flex h-11 w-full min-w-0 items-center gap-2.5 rounded-xl border px-3 text-left text-[13px] font-bold active:scale-[0.98] disabled:cursor-default ${
-        active ? 'border-[#f2c94c] bg-[#2b3550] text-[#f2c94c]' : 'border-[#3a4660] bg-[#1f2638] text-[#e8ecf4]'
+      className={`flex h-11 w-full min-w-0 items-center gap-2.5 rounded-xl border px-3 text-left text-[13px] font-bold transition-colors active:scale-[0.98] disabled:cursor-default ${
+        active
+          ? 'border-[#f2c94c] bg-[#2b3550] text-[#f2c94c]'
+          : 'border-[#3a4660] bg-[#1f2638]/90 text-[#e8ecf4] hover:border-[#4a5876] hover:bg-[#26304a] disabled:hover:border-[#3a4660] disabled:hover:bg-[#1f2638]/90'
       }`}
     >
       <span className="flex w-5 shrink-0 justify-center">{icon}</span>
@@ -340,7 +359,7 @@ export function TopBar({
         </RoundButton>
         <AnimatePresence>
           {menuOpen && (
-            <div className="pointer-events-auto absolute right-0 top-[52px] z-30">
+            <div className="pointer-events-auto absolute right-0 top-[56px] z-30">
               <MenuPanel ui={ui} m={menu} onClose={() => onMenu(false)} />
             </div>
           )}
@@ -391,23 +410,32 @@ export function HeroButtons({ ui, role, onAbility }: { ui: UiState; role: MpRole
   const ready = cd <= 0 && role !== 'guest' && canBuild
   const AVATAR = AVATARS[ui.avatar.id]
   const cdFrac = Math.min(1, cd / AVATAR.abilityCd)
-  const caption = 'text-[10px] font-bold uppercase leading-[14px] tracking-[0.04em] text-[#c3cbe0] [text-shadow:0_1px_2px_#000]'
+  const caption = 'text-[10px] font-bold uppercase leading-[14px] tracking-[0.08em] text-[#aebad0] [text-shadow:0_1px_2px_#000]'
   return (
-    <div className="pointer-events-auto flex items-center gap-2">
-      <div className="flex w-[72px] flex-col items-center gap-1" title={`${AVATAR.name}: ${AVATAR.role}. Пассивно: ${AVATAR.passive}`}>
+    <div className="pointer-events-auto flex items-start gap-3">
+      {/* герой: портрет в латунной рамке с бейджем уровня */}
+      <div className="flex flex-col items-center gap-1" title={`${AVATAR.name}: ${AVATAR.role}. Пассивно: ${AVATAR.passive}`}>
         <div
-          className="relative h-16 w-16 overflow-hidden rounded-full border-2 border-[#59c27a] bg-[rgba(14,19,31,0.9)]"
+          className="relative h-[88px] w-[88px] rounded-full"
           role="img"
           aria-label={AVATAR.name}
+          style={{
+            padding: 3,
+            background: 'linear-gradient(160deg, #9fe6b4 0%, #3f8a5c 38%, #182b3a 78%, #0e1520 100%)',
+            boxShadow: '0 6px 20px rgba(0,0,0,0.55)',
+          }}
         >
-          <img src={avatarPortrait(AVATAR.id, 3)} alt="" className="h-full w-full object-cover object-top" draggable={false} />
-          <span className="absolute bottom-0 right-0 rounded-tl-md bg-[#0b0e14cc] px-1 text-[9px] font-bold leading-[13px] text-[#f2c94c]">
-            {ui.avatar.level} ур.
+          <div className="relative h-full w-full overflow-hidden rounded-full border-2 border-[#0b0e14] bg-[#101828]">
+            <img src={avatarPortrait(AVATAR.id, 3)} alt="" className="h-full w-full object-cover object-top" draggable={false} />
+          </div>
+          <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 rounded-full border border-white/15 bg-[#0b0e14]/95 px-2 py-px text-[9px] font-black leading-[13px] tracking-wide text-[#e8ecf4]">
+            {ui.avatar.level} УР.
           </span>
         </div>
         <span className={caption}>{AVATAR.name}</span>
       </div>
-      <div className="flex w-16 flex-col items-center gap-1">
+      {/* способность: откат заливкой по кругу + счётчик по центру */}
+      <div className="flex flex-col items-center gap-1 pt-2">
         <motion.button
           type="button"
           onClick={onAbility}
@@ -415,12 +443,22 @@ export function HeroButtons({ ui, role, onAbility }: { ui: UiState; role: MpRole
           aria-label={`Способность: ${AVATAR.abilityName}`}
           title={role === 'guest' ? 'Способностью управляет хост' : `${AVATAR.abilityName}: ${AVATAR.abilityDesc}`}
           whileTap={ready ? { scale: 0.92 } : undefined}
-          animate={ready ? { boxShadow: ['0 0 0 rgba(242,201,76,0)', '0 0 14px rgba(242,201,76,0.8)', '0 0 0 rgba(242,201,76,0)'] } : { boxShadow: '0 0 0 rgba(242,201,76,0)' }}
+          animate={ready ? { boxShadow: ['0 0 0 rgba(89,194,122,0)', '0 0 16px rgba(89,194,122,0.55)', '0 0 0 rgba(89,194,122,0)'] } : { boxShadow: '0 4px 16px rgba(0,0,0,0.5)' }}
           transition={ready ? { duration: 1.6, repeat: Infinity } : undefined}
-          className="relative flex h-14 w-14 items-center justify-center rounded-full border-2 border-[#f2c94c] p-0 text-[#f2c94c] disabled:opacity-60"
-          style={{ background: cd > 0 ? `conic-gradient(rgba(5,8,14,0.85) ${cdFrac * 360}deg, rgba(14,19,31,0.9) 0deg)` : UI.panel }}
+          className="relative flex h-[68px] w-[68px] items-center justify-center rounded-full border border-[#3a4660] p-0 text-[#e8ecf4] disabled:opacity-90"
+          style={{
+            background:
+              cd > 0
+                ? `conic-gradient(rgba(5,8,14,0.88) ${cdFrac * 360}deg, rgba(16,23,36,0.95) 0deg)`
+                : 'radial-gradient(circle at 50% 30%, rgba(143,224,168,0.12), rgba(10,15,24,0.92) 72%)',
+          }}
         >
-          <BoltIcon size={24} />
+          <span className={cd > 0 ? 'opacity-25' : ''}><BoltIcon size={30} /></span>
+          {cd > 0 && (
+            <span className="absolute inset-0 flex items-center justify-center font-mono text-[19px] font-black text-[#f4ead2] [text-shadow:0_1px_3px_#000]">
+              {Math.ceil(cd)}
+            </span>
+          )}
         </motion.button>
         <span className={caption}>{cd > 0 ? `${Math.ceil(cd)} с` : AVATAR.abilityName.split(' ')[0]}</span>
       </div>
@@ -441,12 +479,18 @@ export function StartButton({ ui, onStart }: { ui: UiState; onStart: () => void 
       animate={{ opacity: 1, y: 0, ...(boss ? { boxShadow: ['0 0 0 rgba(224,82,82,0)', '0 0 14px rgba(224,82,82,0.7)', '0 0 0 rgba(224,82,82,0)'] } : {}) }}
       transition={{ duration: boss ? 1.4 : 0.3, repeat: boss ? Infinity : 0 }}
       aria-label={`Начать волну${boss ? ` с боссом${ui.nextWaveBossName ? ` ${ui.nextWaveBossName}` : ''}` : ``}, авто через ${left} секунд`}
-      className="pointer-events-auto flex h-11 items-center gap-2 whitespace-nowrap rounded-full border-0 bg-[#f2c94c] pl-3.5 pr-[18px] text-[15px] font-bold leading-none text-[#1a1408] active:scale-95"
+      className="pointer-events-auto flex h-12 items-center gap-2 whitespace-nowrap rounded-full pl-4 pr-5 text-[15px] font-black uppercase tracking-wide text-[#1a1408] active:scale-95"
+      style={{
+        background: 'linear-gradient(180deg, #ffd76b 0%, #eebd45 55%, #e0a832 100%)',
+        boxShadow: boss
+          ? '0 4px 18px rgba(242,201,76,0.3), inset 0 1px 0 rgba(255,255,255,0.45)'
+          : '0 4px 18px rgba(242,201,76,0.35), inset 0 1px 0 rgba(255,255,255,0.45)',
+      }}
     >
       <PlayIcon stroke="#1a1408" />
       <span>Начать · {left}с</span>
       {boss && (
-        <span className="rounded-full bg-[#2b0d0d] px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-[#ff9a7a]">
+        <span className="max-w-[110px] truncate rounded-full bg-[#2b0d0d] px-2 py-0.5 text-[10px] normal-case tracking-[0.1em] text-[#ff9a7a]">
           {ui.nextWaveBossName ?? 'босс'}
         </span>
       )}
@@ -464,9 +508,11 @@ export function ShopButton({ onClick, disabled = false }: { onClick: () => void;
       disabled={disabled}
       aria-label="Открыть магазин башен"
       title="Магазин: выбрать башню из арсенала"
-      className={`${PILL} flex shrink-0 items-center gap-2 rounded-2xl px-4 py-2.5 text-[13px] font-bold uppercase tracking-wide text-[#e8ecf4] transition-colors hover:bg-[rgba(30,38,56,0.95)] active:scale-95 disabled:opacity-40`}
+      className={`${PILL} flex shrink-0 items-center gap-2.5 rounded-2xl py-2 pl-2 pr-4 text-[13px] font-bold uppercase tracking-wide text-[#e8ecf4] transition-all hover:-translate-y-px hover:border-[#f2c94c]/50 hover:bg-[rgba(24,30,44,0.85)] active:scale-95 disabled:opacity-40`}
     >
-      <Store className="h-5 w-5 shrink-0 text-[#f2c94c]" strokeWidth={2.2} />
+      <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#f2c94c]/30 bg-[#f2c94c]/12 text-[#f2c94c]">
+        <Store className="h-5 w-5" strokeWidth={2.2} />
+      </span>
       Магазин
     </button>
   )
@@ -499,7 +545,7 @@ export function ShopModal({ ui, onPick, onRoll, onClose }: {
       role="dialog"
       aria-modal="true"
       aria-label="Магазин башен"
-      className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center bg-[rgba(5,7,11,0.72)] p-3"
+      className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center bg-[rgba(4,7,12,0.7)] p-3 backdrop-blur-[3px]"
     >
       <motion.div
         initial={{ scale: 0.92, y: 14 }}
@@ -507,7 +553,7 @@ export function ShopModal({ ui, onPick, onRoll, onClose }: {
         exit={{ scale: 0.95, y: 8 }}
         transition={{ type: 'spring', stiffness: 380, damping: 32 }}
         onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[92dvh] w-fit max-w-[96vw] flex-col overflow-hidden rounded-2xl border-2 border-[#5b6f8c] bg-[rgba(14,19,31,0.97)] shadow-[0_18px_60px_rgba(0,0,0,0.8)]"
+        className="td-ornate flex max-h-[92dvh] w-[min(94vw,920px)] flex-col overflow-hidden rounded-2xl border border-[#3a4660]/90 bg-[rgba(9,13,21,0.88)] shadow-[0_24px_80px_rgba(0,0,0,0.75)] backdrop-blur-xl"
       >
         <div className="flex items-center justify-between gap-3 border-b border-[#3a4660] px-3 py-2">
           <div className="flex items-center gap-2">
@@ -532,14 +578,16 @@ export function ShopModal({ ui, onPick, onRoll, onClose }: {
           </div>
         </div>
 
-        <div className="flex flex-wrap justify-center gap-2 overflow-y-auto p-3">
+        <div className="grid grid-cols-5 gap-2 overflow-y-auto p-3">
           {pool.map((t) => {
             const affordable = ui.gold >= t.price
             const locked = !affordable || !canBuild
             const attacks: AttackType[] = t.merged ? t.attacks : [t.attack]
             const desc = t.merged ? t.desc : t.role
-            const effects = effectLines(t)
             const rarity = t.rarity ? RARITY_BY_ID[t.rarity] : null
+            const econ = isEcon(t)
+            // свечение карточки: цвет редкости; слитые без редкости — золото, экономические — тёплый
+            const glow = rarity ? rarity.color : t.merged ? '#ffd700' : '#f0b060'
             return (
               <button
                 key={t.id}
@@ -547,105 +595,98 @@ export function ShopModal({ ui, onPick, onRoll, onClose }: {
                 disabled={locked}
                 onClick={() => onPick(t.id)}
                 aria-label={`Купить: ${t.name}, ${rarity ? rarity.name + ' редкость, ' : ''}${DAMAGE_TYPE[attacks[0]].name.toLowerCase()}, цена ${t.price}${affordable ? '' : ', не хватает золота'}`}
-                className={`hover-glow flex w-[220px] flex-col overflow-hidden rounded-xl border text-left transition-transform hover:-translate-y-0.5 active:scale-[0.98] disabled:cursor-not-allowed ${
-                  t.merged ? 'bg-[#242a3e]' : 'bg-[#1f2638]'
-                } ${locked ? 'opacity-45' : ''}`}
+                title={`${desc.charAt(0).toUpperCase() + desc.slice(1)}${t.l5 ? ` · ★ 5 ур.: ${t.l5}` : ''}`}
+                className={`hover-glow relative flex aspect-[4/5] flex-col overflow-hidden rounded-xl border text-left transition-transform hover:-translate-y-0.5 active:scale-[0.98] disabled:cursor-not-allowed ${locked ? 'opacity-45' : ''}`}
                 style={{
                   borderColor: rarity ? rarity.color + '66' : t.merged ? '#ffd70088' : '#3a4660',
-                  // свечение при наведении — в цвет редкости; слитые без редкости — золото, экономические — тёплый
-                  '--glow': rarity ? rarity.color : t.merged ? '#ffd700' : '#f0b060',
+                  '--glow': glow,
                 } as CSSProperties}
               >
-                <div className="h-1 w-full" style={{ background: `linear-gradient(90deg, ${t.color}, ${t.color}33)` }} />
-                <div className="flex flex-1 flex-col gap-1.5 p-2">
-                  <div className="flex items-start gap-2">
-                    <div className="flex h-11 w-11 shrink-0 items-end justify-center rounded border border-[#2e3c52] bg-[radial-gradient(circle_at_50%_70%,#1f2a3b,#0a0f17)]">
-                      {thumb(t) ? (
-                        <img src={thumb(t)} alt="" className="h-10 w-auto max-w-[40px] object-contain" style={{ imageRendering: 'pixelated' }} />
+                {/* фон: глубина + свечение редкости за артом */}
+                <span aria-hidden className="absolute inset-0 bg-[linear-gradient(180deg,#1c2536_0%,#121a28_46%,#0b1019_100%)]" />
+                <span aria-hidden className="absolute inset-x-0 bottom-0 h-[72%]" style={{ background: `radial-gradient(70% 60% at 50% 74%, ${glow}30, transparent 72%)` }} />
+                {/* арт башни: крупный план + размытое свечение огней, «выходящее» за края */}
+                {thumb(t) ? (
+                  <>
+                    <img
+                      src={thumb(t)}
+                      alt=""
+                      aria-hidden
+                      className="absolute inset-x-0 bottom-[54px] top-0 origin-bottom scale-[1.8] object-contain object-bottom opacity-40 blur-xl [mask-image:radial-gradient(105%_92%_at_50%_72%,black_46%,transparent_86%)]"
+                      style={{ imageRendering: 'pixelated' }}
+                    />
+                    <img
+                      src={thumb(t)}
+                      alt=""
+                      aria-hidden
+                      className="absolute inset-x-0 bottom-[54px] top-0 origin-bottom scale-[1.45] object-contain object-bottom"
+                      style={{ imageRendering: 'pixelated' }}
+                    />
+                  </>
+                ) : (
+                  <span aria-hidden className="absolute inset-x-0 bottom-[54px] top-2 flex items-center justify-center text-4xl">{t.glyph}</span>
+                )}
+
+                {/* левая колонка: цена + характеристики поверх арта */}
+                <span className="absolute left-1.5 top-1.5 z-10 flex w-[min(88px,72%)] flex-col items-start gap-[3px]">
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-[3px] font-mono text-[11px] font-bold leading-none backdrop-blur-[2px] ${
+                      affordable ? 'border-[#f2c94c88] bg-[rgba(14,18,26,0.82)] text-[#f2c94c]' : 'border-[#e0525288] bg-[rgba(14,18,26,0.82)] text-[#ff8a8a]'
+                    }`}
+                  >
+                    <CoinIcon size={11} strokeWidth={2.6} />
+                    {t.price}
+                  </span>
+                  {econ ? (
+                    <>
+                      {t.income ? (
+                        <>
+                          <ShopStat icon="💰" value={`+${econIncomeAt(t, 1)}/в`} color="#f0b060" title="Золото за волну (ур. 1)" />
+                          <ShopStat icon="↗" value={`+${econIncomeBase(t)}/ур`} color="#e8d9a0" title="Прирост за уровень" />
+                          <ShopStat icon="★" value={`+${econIncomeAt5(t)}`} color="#ffd700" title="Золото за волну на 5 ур." />
+                        </>
                       ) : (
-                        <span className="self-center text-xl">{t.glyph}</span>
+                        <>
+                          <ShopStat icon="💠" value={`+${econIncomeAt(t, 1)}/в`} color="#a6f095" title="Эссенция за волну (ур. 1)" />
+                          <ShopStat icon="↗" value={`+${econIncomeBase(t)}/ур`} color="#c9e8bd" title="Прирост за уровень" />
+                          <ShopStat icon="★" value={`+${econIncomeAt5(t)}`} color="#7ad0c8" title="Эссенция за волну на 5 ур." />
+                        </>
                       )}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-start justify-between gap-1">
-                        <p className="font-serif text-[13px] font-black leading-tight text-[#ffc46b]">{t.name}</p>
-                        <span className={`inline-flex shrink-0 items-center gap-0.5 font-mono text-xs font-bold ${affordable ? 'text-[#f0b060]' : 'text-[#e05252]'}`}>
-                          <CoinIcon size={12} strokeWidth={2.6} />
-                          {t.price}
-                        </span>
-                      </div>
-                      <div className="mt-0.5 flex flex-wrap items-center gap-1">
-                        {rarity && (
-                          <span
-                            className="rounded-sm border px-1 py-px text-[9px] font-bold uppercase leading-none tracking-wide"
-                            style={{ color: rarity.color, borderColor: rarity.color + '88', background: rarity.color + '1f' }}
-                          >
-                            {rarity.name}
-                          </span>
-                        )}
-                        {isEcon(t) ? (
-                          <span className="rounded-sm border border-[#e8c17088] bg-[#e8c1701f] px-1 py-px text-[9px] font-bold uppercase leading-none tracking-wide text-[#e8c170]">
-                            🪙 экономика
-                          </span>
-                        ) : (
-                          attacks.map((a, i) => (
-                            <DamageBadge key={a + i} type={a} />
-                          ))
-                        )}
-                        {!!t.merged && (
-                          <span className="rounded-sm border border-[#ffd70066] bg-[#ffd7001a] px-1 py-px text-[9px] font-bold uppercase leading-none tracking-wide text-[#ffd700]">
-                            слитая
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <p className="text-[10.5px] leading-snug text-[#b9c6d8]">{desc.charAt(0).toUpperCase() + desc.slice(1)}</p>
-                  <EffectiveVs def={t} />
-
-                  <div className="grid grid-cols-4 gap-1">
-                    {isEcon(t) ? (
-                      t.income ? (
-                        <>
-                          <ShopStat label="Доход" value={`+${econIncomeAt(t, 1)}/волну`} color="#f0b060" />
-                          <ShopStat label="За уровень" value={`+${econIncomeBase(t)}`} color="#e8d9a0" />
-                          <ShopStat label="На 5 ур." value={`+${econIncomeAt5(t)}`} color="#ffd700" />
-                          <ShopStat label="Атака" value="нет" color="#8a96a8" />
-                        </>
-                      ) : (
-                        <>
-                          <ShopStat label="Доход" value={`+${econIncomeAt(t, 1)}💠/волну`} color="#a6f095" />
-                          <ShopStat label="За уровень" value={`+${econIncomeBase(t)}`} color="#c9e8bd" />
-                          <ShopStat label="На 5 ур." value={`+${econIncomeAt5(t)}`} color="#7ad0c8" />
-                          {defFootprint(t) > 1 ? <ShopStat label="Слот" value={`${defFootprint(t)}×${defFootprint(t)}`} color="#7fd0a0" /> : <ShopStat label="Атака" value="нет" color="#8a96a8" />}
-                        </>
-                      )
-                    ) : (
-                      <>
-                        <ShopStat label="Урон" value={num(t.damage)} color="#f0b060" />
-                        <ShopStat label="Скорость" value={`${num(1 / t.interval)}/с`} color="#9fd2ff" />
-                        <ShopStat label="Дальн." value={String(t.range)} color="#ccd8e6" />
-                        <ShopStat label="Урон/с" value={num(t.damage / t.interval)} color="#7fd0a0" />
-                      </>
-                    )}
-                  </div>
-
-                  {effects.length > 0 && (
-                    <ul className="flex flex-col gap-0.5">
-                      {effects.slice(0, 2).map((e) => (
-                        <li key={e} className="flex gap-1 text-[10px] leading-snug text-[#c9d6e8]">
-                          <span className="text-[#f0b060]">◆</span>
-                          {e}
-                        </li>
+                      {defFootprint(t) > 1 && <ShopStat icon="▦" value={`${defFootprint(t)}×${defFootprint(t)}`} color="#7fd0a0" title="Блок клеток" />}
+                      <ShopStat icon="⚔" value="—" color="#8a96a8" title="Не атакует" />
+                    </>
+                  ) : (
+                    <>
+                      <ShopStat icon="⚔" value={num(t.damage)} color="#f0b060" title="Урон за выстрел" />
+                      <ShopStat icon="⏱" value={`${num(1 / t.interval)}/с`} color="#9fd2ff" title="Скорость атаки" />
+                      <ShopStat icon="◎" value={String(t.range)} color="#ccd8e6" title="Радиус атаки" />
+                      <ShopStat icon="◆" value={`${num(t.damage / t.interval)}/с`} color="#7fd0a0" title="Урон в секунду" />
+                      {shortFx(t).slice(0, 2).map((f) => (
+                        <ShopStat key={f.icon + f.text} icon={f.icon} value={f.text} color="#e8c170" title={f.title} />
                       ))}
-                    </ul>
+                    </>
                   )}
+                </span>
 
-                  <p className="mt-auto pt-0.5 text-[10px] leading-snug text-[#e8d9a0]">
-                    <span className="font-bold text-[#ffd700]">★ 5 ур.:</span> {t.l5}
-                  </p>
-                </div>
+                {/* низ: имя по центру, под ним редкость и тип урона */}
+                <span className="absolute inset-x-0 bottom-0 z-10 bg-[linear-gradient(180deg,rgba(5,8,14,0)_0%,rgba(5,8,14,0.8)_40%,rgba(5,8,14,0.96)_100%)] px-1.5 pb-1.5 pt-5">
+                  <span className="block text-center text-[11.5px] font-black uppercase leading-none tracking-[0.05em] text-[#e8ecf4] [text-shadow:0_1px_4px_rgba(0,0,0,0.95)]">{t.name}</span>
+                  <span className="mt-1 flex flex-wrap items-center justify-center gap-1">
+                    {rarity && (
+                      <span className="rounded-sm border px-1 py-px text-[9px] font-bold uppercase leading-none tracking-wide" style={{ color: rarity.color, borderColor: rarity.color + '88', background: rarity.color + '1f' }}>
+                        {rarity.name}
+                      </span>
+                    )}
+                    {econ ? (
+                      <span className="rounded-sm border border-[#e8c17088] bg-[#e8c1701f] px-1 py-px text-[9px] font-bold uppercase leading-none tracking-wide text-[#e8c170]">🪙 экономика</span>
+                    ) : (
+                      attacks.map((a, i) => <DamageBadge key={a + i} type={a} label={false} />)
+                    )}
+                    {!!t.merged && (
+                      <span className="rounded-sm border border-[#ffd70066] bg-[#ffd7001a] px-1 py-px text-[9px] font-bold uppercase leading-none tracking-wide text-[#ffd700]">слитая</span>
+                    )}
+                  </span>
+                </span>
               </button>
             )
           })}
@@ -669,7 +710,7 @@ export function ShopModal({ ui, onPick, onRoll, onClose }: {
             }}
             aria-label={`Ролл: обновить арсенал за ${ui.rollCost}`}
             title={`Ролл арсенала: ${pool.length} новых башен из ${TOWERS.length}`}
-            className="flex shrink-0 items-center gap-1.5 rounded-xl border border-[#3a4660] bg-[#1f2638] px-3 py-1.5 text-[12px] font-bold text-[#c3cbe0] active:scale-95 disabled:opacity-40"
+            className="flex shrink-0 items-center gap-1.5 rounded-xl border border-[#3a4660] bg-[rgba(31,38,56,0.9)] px-3.5 py-2 text-[12px] font-bold text-[#e8ecf4] transition-colors hover:border-[#f2c94c]/50 hover:bg-[rgba(43,53,80,0.95)] active:scale-95 disabled:opacity-40 disabled:hover:border-[#3a4660] disabled:hover:bg-[rgba(31,38,56,0.9)]"
           >
             <motion.span animate={{ rotate: spin * 360 }} transition={{ duration: 0.45 }} className="flex text-[#f2c94c]">
               <DiceIcon size={18} />
@@ -684,6 +725,7 @@ export function ShopModal({ ui, onPick, onRoll, onClose }: {
 }
 
 // ─── Лавка предметов: кнопка + окно (покупка за эссенцию, этап 3) ──────────
+/** Кнопка открытия лавки предметов */
 export function LavkaButton({ onClick, disabled = false }: { onClick: () => void; disabled?: boolean }) {
   return (
     <button
@@ -692,9 +734,11 @@ export function LavkaButton({ onClick, disabled = false }: { onClick: () => void
       disabled={disabled}
       aria-label="Открыть лавку предметов"
       title="Лавка: предметы за эссенцию (действуют на аватара и все башни)"
-      className={`${PILL} flex shrink-0 items-center gap-2 rounded-2xl px-4 py-2.5 text-[13px] font-bold uppercase tracking-wide text-[#e8ecf4] transition-colors hover:bg-[rgba(30,38,56,0.95)] active:scale-95 disabled:opacity-40`}
+      className={`${PILL} flex shrink-0 items-center gap-2.5 rounded-2xl py-2 pl-2 pr-4 text-[13px] font-bold uppercase tracking-wide text-[#e8ecf4] transition-all hover:-translate-y-px hover:border-[#a6f095]/50 hover:bg-[rgba(20,30,26,0.85)] active:scale-95 disabled:opacity-40`}
     >
-      <Gem className="h-5 w-5 shrink-0 text-[#a6f095]" strokeWidth={2.2} />
+      <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#a6f095]/30 bg-[#a6f095]/12 text-[#a6f095]">
+        <Gem className="h-5 w-5" strokeWidth={2.2} />
+      </span>
       Лавка
     </button>
   )
@@ -725,7 +769,7 @@ export function LavkaModal({ ui, onBuy, onSell, onRoll, onClose }: {
       role="dialog"
       aria-modal="true"
       aria-label="Лавка предметов"
-      className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center bg-[rgba(5,7,11,0.72)] p-3"
+      className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center bg-[rgba(4,7,12,0.7)] p-3 backdrop-blur-[3px]"
     >
       <motion.div
         initial={{ scale: 0.92, y: 14 }}
@@ -733,7 +777,7 @@ export function LavkaModal({ ui, onBuy, onSell, onRoll, onClose }: {
         exit={{ scale: 0.95, y: 8 }}
         transition={{ type: 'spring', stiffness: 380, damping: 32 }}
         onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[92dvh] w-fit max-w-[96vw] flex-col overflow-hidden rounded-2xl border-2 border-[#4e7a5c] bg-[rgba(12,19,15,0.97)] shadow-[0_18px_60px_rgba(0,0,0,0.8)]"
+        className="td-ornate flex max-h-[92dvh] w-fit max-w-[96vw] flex-col overflow-hidden rounded-2xl border border-[#3f5c4a]/90 bg-[rgba(8,12,10,0.88)] shadow-[0_24px_80px_rgba(0,0,0,0.75)] backdrop-blur-xl"
       >
         <div className="flex items-center justify-between gap-3 border-b border-[#3a5c46] px-3 py-2">
           <div className="flex items-center gap-2">
@@ -773,14 +817,15 @@ export function LavkaModal({ ui, onBuy, onSell, onRoll, onClose }: {
                 disabled={locked}
                 onClick={() => onBuy(idx)}
                 aria-label={`Купить: ${def.name}, ${slot.name}, ${def.price} эссенции${o.rare ? ', редкий' : ''}`}
-                className={`flex w-[210px] flex-col overflow-hidden rounded-xl text-left transition-transform hover:-translate-y-0.5 active:scale-[0.98] ${
-                  o.rare ? 'border border-[#7ad0c8aa] bg-[#1d2e2a]' : 'border border-[#3a5c46] bg-[#18241c]'
+                className={`hover-glow flex w-[210px] flex-col overflow-hidden rounded-xl text-left transition-transform hover:-translate-y-0.5 active:scale-[0.98] ${
+                  o.rare ? 'border border-[#7ad0c8aa] bg-gradient-to-b from-[#1d3234] to-[#101c1a]' : 'border border-[#3f5c4a]/90 bg-gradient-to-b from-[#1d2c22] to-[#101a13]'
                 } ${locked ? 'opacity-45' : ''}`}
+                style={{ '--glow': o.rare ? '#7ad0c8' : '#8fe0a8' } as CSSProperties}
               >
                 <div className="h-1 w-full" style={{ background: o.rare ? 'linear-gradient(90deg,#7ad0c8,#7ad0c833)' : 'linear-gradient(90deg,#a6f095,#a6f09533)' }} />
                 <div className="flex flex-1 flex-col gap-1.5 p-2">
                   <div className="flex items-start justify-between gap-1">
-                    <p className="font-serif text-[13px] font-black leading-tight text-[#c9e8bd]">{def.name}</p>
+                    <p className="text-[12.5px] font-black leading-tight text-[#e8ecf4]">{def.name}</p>
                     <span className={`inline-flex shrink-0 items-center gap-0.5 font-mono text-xs font-bold ${affordable ? 'text-[#a6f095]' : 'text-[#e05252]'}`}>
                       💠{def.price}
                     </span>
@@ -842,7 +887,7 @@ export function LavkaModal({ ui, onBuy, onSell, onRoll, onClose }: {
               disabled={!canRoll}
               onClick={onRoll}
               aria-label={`Обновить витрину за ${ITEM_REROLL_COST} эссенции`}
-              className="flex shrink-0 items-center gap-1.5 rounded-xl border border-[#3a5c46] bg-[#18241c] px-3 py-1.5 text-[12px] font-bold text-[#c3e0c8] active:scale-95 disabled:opacity-40"
+              className="flex shrink-0 items-center gap-1.5 rounded-xl border border-[#3f5c4a] bg-[rgba(29,44,34,0.9)] px-3.5 py-2 text-[12px] font-bold text-[#e8ecf4] transition-colors hover:border-[#a6f095]/50 hover:bg-[rgba(38,58,45,0.95)] active:scale-95 disabled:opacity-40"
             >
               <RefreshCw className="h-4 w-4 text-[#a6f095]" strokeWidth={2.4} />
               Обновить
@@ -855,15 +900,48 @@ export function LavkaModal({ ui, onBuy, onSell, onRoll, onClose }: {
   )
 }
 
-function ShopStat({ label, value, color = '#dde6f0' }: { label: string; value: string; color?: string }) {
+/** Чип характеристики на карточке магазина: маленькая плашка с иконкой и значением поверх арта */
+function ShopStat({ icon, value, color, title }: { icon: string; value: string; color: string; title: string }) {
   return (
-    <div className="rounded border border-[#2e3c52] bg-[#0a0f17]/70 px-1 py-0.5 text-center">
-      <div className="text-[7.5px] font-semibold uppercase tracking-wide text-[#5b6f8c]">{label}</div>
-      <div className="font-mono text-[11px] font-bold leading-tight" style={{ color }}>
+    <span
+      title={title}
+      className="inline-flex max-w-full items-center gap-1 rounded-md border border-[#2e3c52]/80 bg-[rgba(8,12,20,0.78)] px-1.5 py-[2.5px] leading-none backdrop-blur-[2px]"
+    >
+      <span className="shrink-0 text-[9.5px]" style={{ color }}>
+        {icon}
+      </span>
+      <span className="truncate font-mono text-[10px] font-bold" style={{ color }}>
         {value}
-      </div>
-    </div>
+      </span>
+    </span>
   )
+}
+
+/** Особые эффекты башни короткими подписями для чипов (полный текст — в title и effectLines) */
+function shortFx(def: TowerDefinition): { icon: string; text: string; title: string }[] {
+  const fulls = effectLines(def)
+  const p = (v: number) => `${Math.round(v * 100)}%`
+  const rows: { icon: string; text: string; title: string }[] = []
+  // порядок повторяет effectLines — title берётся из той же позиции
+  const add = (icon: string, text: string) => rows.push({ icon, text, title: fulls[rows.length] ?? text })
+  if (def.splash) add('💥', `R${def.splash}`)
+  if (def.slam) add('⭙', 'круг')
+  if (def.line) add('→', 'линия')
+  if (def.targets) add('✳', `×${def.targets}`)
+  if (def.chain) add('⛓', `+${def.chain}`)
+  if (def.burn) add('🔥', `${def.burn.dps}/с`)
+  if (def.slow) add('❄', p(def.slow.pct))
+  if (def.freeze) add('❄', `${def.freeze}с`)
+  if (def.stunChance) add('⚡', p(def.stunChance))
+  if (def.stunSlow) add('😵', p(def.stunSlow.pct))
+  if (def.vuln) add('✖', `+${p(def.vuln.bonus)}`)
+  if (def.heavyBonus) add('🛡', `×${def.heavyBonus}`)
+  if (def.critEvery) add('✷', `1/${def.critEvery}`)
+  if (def.aura) add('⟡', `+${p(def.aura)}`)
+  if (def.ramp) add('⏫', `+${p(def.ramp)}`)
+  if (def.focus) add('◎', `+${p(def.focus.perHit)}`)
+  if (def.waveGrowth) add('↟', `+${p(def.waveGrowth)}`)
+  return rows
 }
 
 // ─── Рука: купленные башни, ждущие установки или прокачки ──────────────────
@@ -885,13 +963,30 @@ export function HandTray({
   size?: 'sm' | 'lg'
 }) {
   const defOf = (idx: number) => ALL_DEFS[ui.hand[idx]]
+  // поп новой карточки и автоскролл к ней — только при покупке (рост руки);
+  // поп задаём ключевыми кадрами после монтирования, чтобы не читать ref во время рендера
+  const trayRef = useRef<HTMLDivElement>(null)
+  const prevLen = useRef(ui.hand.length)
+  const [popKey, setPopKey] = useState<string | null>(null)
+  useEffect(() => {
+    if (ui.hand.length > prevLen.current) {
+      const i = ui.hand.length - 1
+      setPopKey(`${i}-${ui.hand[i]}`)
+      trayRef.current?.scrollTo({ left: trayRef.current.scrollWidth, behavior: 'smooth' })
+      const t = setTimeout(() => setPopKey(null), 520)
+      prevLen.current = ui.hand.length
+      return () => clearTimeout(t)
+    }
+    prevLen.current = ui.hand.length
+  })
   if (!ui.hand.length) return null
-  const cardW = size === 'lg' ? 78 : 66
-  const cardH = size === 'lg' ? 94 : 82
-  const imgH = size === 'lg' ? 46 : 40
+  const cardW = size === 'lg' ? 88 : 74
+  const cardH = size === 'lg' ? 112 : 96
+  const imgH = size === 'lg' ? 54 : 44
   return (
     <div
-      className={`${PILL} flex items-center gap-1.5 rounded-[18px] p-1.5`}
+      ref={trayRef}
+      className={`${PILL} no-scrollbar flex min-w-0 max-w-full items-center gap-1.5 overflow-x-auto rounded-2xl py-2 pl-1.5 pr-1.5`}
       role="group"
       aria-label={`Рука: купленных башен ${ui.hand.length}, клик — взять в стол`}
     >
@@ -906,29 +1001,49 @@ export function HandTray({
           ? `${fmtNum(econIncomeAt(def, 1))}${def.essence ? '💠' : ''}/волна`
           : `${fmtNum(def.damage / def.interval)} ДПС`
         const label = econ ? (def.essence ? 'добыча' : 'доход') : 'урон'
+        // рамка карточки — цвет редкости (слитые — золото, экономические — латунь)
+        const frame = rarity ? rarity.color : def.merged ? '#ffd700' : '#c9a25e'
+        const pop = popKey === `${i}-${id}`
         return (
-          <button
+          <motion.button
             key={`${i}-${id}`}
             type="button"
             aria-pressed={on}
             aria-label={`Взять в стол: ${def.name}, ${rarity ? rarity.name + ' редкость, ' : ''}${label} ${stat} (копия ${i + 1} из ${ui.hand.length})`}
             title={on ? 'Снята со стола' : `${def.name} — копия из руки: тап по клетке или по такой же башне`}
             onClick={() => onArm(i)}
-            className={`hover-glow relative flex shrink-0 grow-0 flex-col items-center overflow-hidden rounded-xl pb-0.5 ${on ? 'border-2 border-[#7fd0a0] bg-[#1f2d28]' : 'border bg-[#1f2638]'}`}
+            animate={pop
+              ? { scale: [0.5, 1.1, 1], y: [12, 0], opacity: [0.3, 1] }
+              : on
+                ? { y: -4, scale: 1, opacity: 1 }
+                : { y: 0, scale: 1, opacity: 1 }}
+            transition={{
+              type: 'spring', stiffness: 420, damping: 26,
+              // три опорных кадра «попа» не живут на пружине — только твин
+              scale: { type: 'tween', duration: 0.38, ease: 'easeOut', times: [0, 0.65, 1] },
+              opacity: { type: 'tween', duration: 0.22 },
+            }}
+            className="hover-glow relative flex shrink-0 grow-0 flex-col items-center overflow-hidden rounded-xl"
             style={{
               width: cardW,
               height: cardH,
               boxSizing: 'border-box',
-              borderColor: rarity ? rarity.color + (on ? 'ff' : '66') : on ? undefined : '#3a4660',
-              // свечение при наведении — в цвет редкости; слитые без редкости — золото, экономические — тёплый
-              '--glow': rarity ? rarity.color : def.merged ? '#ffd700' : '#f0b060',
+              border: `2px solid ${on ? '#8fe0a8' : frame + '8c'}`,
+              background: on
+                ? 'linear-gradient(180deg,#2a3a33 0%,#16211d 100%)'
+                : 'linear-gradient(180deg,#28324c 0%,#1b2334 62%,#141b2a 100%)',
+              boxShadow: on ? '0 6px 18px rgba(0,0,0,0.55)' : undefined,
+              // свечение при наведении — в цвет редкости; слитые без редкости — золото
+              '--glow': frame,
             } as CSSProperties}
           >
-            {/* полная картинка башни — тот же спрайт, что на поле (часть корпуса может ещё грузиться) */}
+            {/* цветное свечение под спрайтом — в цвет башни */}
             <span
-              className="flex w-full items-end justify-center overflow-hidden"
-              style={{ height: imgH }}
-            >
+              className="pointer-events-none absolute inset-x-0 top-0"
+              style={{ height: imgH + 10, background: `radial-gradient(ellipse 70% 85% at 50% 100%, ${def.color}2e, transparent 72%)` }}
+            />
+            {/* полная картинка башни — тот же спрайт, что на поле (часть корпуса может ещё грузиться) */}
+            <span className="flex w-full items-end justify-center overflow-hidden" style={{ height: imgH }}>
               {typeof document === 'undefined' ? (
                 <span className="text-lg leading-none">{def.glyph}</span>
               ) : (
@@ -936,35 +1051,30 @@ export function HandTray({
                   src={towerThumb(def)}
                   alt=""
                   className="max-h-full w-auto"
-                  style={{ imageRendering: 'pixelated' }}
+                  style={{ imageRendering: 'pixelated', filter: 'drop-shadow(0 2px 3px rgba(0,0,0,0.45))' }}
                   draggable={false}
                 />
               )}
             </span>
-            <span className="mt-1 w-full truncate px-1 text-center text-[8.5px] font-semibold leading-[10px] text-[#dde6f0]" title={def.name}>
+            <span className="mt-1 w-full truncate px-1.5 text-center text-[9px] font-semibold leading-[11px] text-[#e6ecf6]" title={def.name}>
               {def.name}
             </span>
-            <span className="mt-0.5 w-full px-1 text-center font-mono text-[9px] font-bold leading-[11px]" style={{ color: econ ? '#7fd0a0' : '#f2c94c' }}>
+            <span className="mt-0.5 w-full px-1.5 text-center font-mono text-[9.5px] font-bold leading-[12px]" style={{ color: econ ? '#8fe0a8' : '#f2c94c' }}>
               {stat}
             </span>
             {rarity && (
               <span
                 title={`редкость: ${rarity.name}`}
-                className="absolute bottom-0 left-0 h-[3px] w-full rounded-b-[10px]"
-                style={{ background: rarity.color + 'cc' }}
+                className="absolute bottom-0 left-0 h-[3px] w-full"
+                style={{ background: `linear-gradient(90deg, ${rarity.color}, ${rarity.color}55)` }}
               />
             )}
-            <span className="absolute right-[3px] top-[3px] rounded-full bg-[#0b0e14aa] px-1 text-[8px] font-bold leading-[12px] text-[#7fd0a0]">
+            <span className="absolute right-1 top-1 flex h-[15px] w-[15px] items-center justify-center rounded-full border border-[#e8ecf4]/25 bg-[#0b0e14]/85 text-[8.5px] font-black leading-none text-[#e8ecf4]">
               {i + 1}
             </span>
-          </button>
+          </motion.button>
         )
       })}
-      {ui.hand.length > 0 && (
-        <span className="pr-1 text-[10px] font-bold uppercase tracking-wider text-[#7fd0a0]">
-          рука
-        </span>
-      )}
     </div>
   )
 }
@@ -986,9 +1096,9 @@ export function TowerDamageBoard({ ui }: { ui: UiState }) {
         onClick={() => setOpen(true)}
         aria-label={`Развернуть табличку урона за карту: всего ${fmtNum(total)}`}
         title={`Урон за карту: ${Math.round(total)} · нажми, чтобы разложить по башням`}
-        className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-[#3a4660] bg-[rgba(14,19,31,0.92)] px-3 py-1.5 active:scale-95"
+        className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-[#3a4660]/90 bg-[rgba(10,15,24,0.85)] px-3 py-1.5 backdrop-blur-md active:scale-95"
       >
-        <span className="text-[10px] font-bold uppercase tracking-wider text-[#5b6f8c]">Урон</span>
+        <span className="text-[10px] font-bold uppercase tracking-wider text-[#7088a8]">Урон</span>
         <span className="font-mono text-[11px] font-bold text-[#f2c94c]">{fmtNum(total)}</span>
       </button>
     )
@@ -997,10 +1107,10 @@ export function TowerDamageBoard({ ui }: { ui: UiState }) {
     <div
       role="group"
       aria-label={`Табличка урона за карту: всего ${fmtNum(total)} за ${rows.length} источника`}
-      className="pointer-events-auto w-[224px] rounded-xl border border-[#3a4660] bg-[rgba(14,19,31,0.92)] p-2 shadow-[0_4px_16px_rgba(0,0,0,0.55)]"
+      className="pointer-events-auto w-[224px] rounded-xl border border-[#3a4660]/90 bg-[rgba(10,15,24,0.85)] p-2 shadow-[0_8px_24px_rgba(0,0,0,0.5)] backdrop-blur-md"
     >
       <div className="mb-1.5 flex items-center justify-between gap-2">
-        <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-[#5b6f8c]">
+        <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-[#7088a8]">
           Урон за карту
         </span>
         <span className="font-mono text-[11px] font-bold text-[#f2c94c]">{fmtNum(total)}</span>
@@ -1009,7 +1119,7 @@ export function TowerDamageBoard({ ui }: { ui: UiState }) {
           onClick={() => setOpen(false)}
           aria-label="Свернуть табличку урона"
           title="Свернуть"
-          className="rounded p-0.5 text-[#5b6f8c] active:scale-90"
+          className="rounded p-0.5 text-[#7088a8] active:scale-90"
         >
           <ChevronUp className="h-3.5 w-3.5" strokeWidth={2.5} />
         </button>
@@ -1043,7 +1153,7 @@ export function TowerDamageBoard({ ui }: { ui: UiState }) {
               <span className="w-[84px] shrink-0 truncate text-[10px] font-semibold leading-tight text-[#dde6f0]">
                 {name}
               </span>
-              <span className="relative h-1.5 min-w-4 flex-1 overflow-hidden rounded-full bg-[#141b27]">
+              <span className="relative h-1.5 min-w-4 flex-1 overflow-hidden rounded-full bg-[rgba(255,255,255,0.08)]">
                 <span
                   className="absolute inset-y-0 left-0 rounded-full"
                   style={{ width: `${Math.max(5, (v / max) * 100)}%`, background: barColor }}
@@ -1115,18 +1225,28 @@ export function WaveBanner({ ui }: { ui: UiState }) {
           transition={{ type: 'spring', stiffness: 260, damping: 18 }}
           className="pointer-events-none text-center"
         >
-          <p className={`text-3xl font-bold tracking-[0.12em] sm:text-5xl sm:tracking-[0.2em] drop-shadow-[0_4px_0_rgba(0,0,0,0.8)] ${shown.boss ? 'text-[#ff7a7a]' : 'text-[#f2c94c]'}`}>
-            {shown.boss ? 'КОЛОСС РАЗЛОМА' : `ВОЛНА ${shown.wave}`}
-          </p>
-          <p className="mt-1 text-[11px] font-medium uppercase tracking-[0.25em] text-[#c3cbe0] sm:text-sm sm:tracking-[0.4em] drop-shadow-[0_2px_0_rgba(0,0,0,0.8)]">
-            {shown.boss ? 'босс идёт к лагерю' : 'заражённые выходят из Разлома'}
-          </p>
+          <div className="flex flex-col items-center">
+            <span
+              className="mb-2 h-px w-44 sm:w-60"
+              style={{ background: `linear-gradient(90deg, transparent, ${shown.boss ? '#ff7a7a88' : '#f2c94c88'}, transparent)` }}
+            />
+            <p className={`text-3xl font-black tracking-[0.12em] sm:text-5xl sm:tracking-[0.2em] [text-shadow:0_2px_0_rgba(0,0,0,0.85),0_10px_32px_rgba(0,0,0,0.6)] ${shown.boss ? 'text-[#ff7a7a]' : 'text-[#f2c94c]'}`}>
+              {shown.boss ? 'КОЛОСС РАЗЛОМА' : `ВОЛНА ${shown.wave}`}
+            </p>
+            <p className="mt-1 text-[11px] font-bold uppercase tracking-[0.3em] text-[#e6ecf6] sm:text-sm sm:tracking-[0.45em] [text-shadow:0_1px_0_rgba(0,0,0,0.85)]">
+              {shown.boss ? 'босс идёт к лагерю' : 'заражённые выходят из Разлома'}
+            </p>
+            <span
+              className="mt-2 h-px w-44 sm:w-60"
+              style={{ background: `linear-gradient(90deg, transparent, ${shown.boss ? '#ff7a7a88' : '#f2c94c88'}, transparent)` }}
+            />
+          </div>
           {AI_SIGNALS[shown.wave - 1] && (
             <motion.p
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.5 }}
-              className="mx-auto mt-3 max-w-md rounded-xl border border-[#59c27a66] bg-[rgba(14,19,31,0.9)] px-3 py-1.5 text-xs font-medium text-[#a6f095] shadow-lg"
+              className="mx-auto mt-3 max-w-md rounded-full border border-[#59c27a]/40 bg-[rgba(10,15,24,0.82)] px-4 py-2 text-xs font-medium text-[#a6f095] shadow-lg backdrop-blur-md"
             >
               <span className="text-[#59c27a]">▮ сигнал ИИ:</span> «{AI_SIGNALS[shown.wave - 1]}»
             </motion.p>

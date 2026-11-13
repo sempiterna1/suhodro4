@@ -68,7 +68,9 @@ const WARM: [number, number, number] = [255, 150, 60]
 /** Свет живого минерала — зелёный, как портал Разлома; люди — тёплые огни, мир — холодный */
 const MINERAL_RGB: [number, number, number] = [90, 230, 130]
 
-function collectLights(game: Game, t: number): Light[] {
+/** Все источники света кадра: огни карты, башни, снаряды, взрывы, заражённые, герой.
+ *  Координаты — экранные (пространство карты 1280×720), применяются и для сумрака, и для bloom. */
+export function collectLights(game: Game, t: number): Light[] {
   const lights: Light[] = []
   for (const m of mapLights) {
     const f = flicker(t, m.seed)
