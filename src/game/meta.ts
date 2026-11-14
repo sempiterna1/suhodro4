@@ -4,7 +4,19 @@
 // это базовая линия баланса.
 
 import { MAP_DEFS, type MapDef } from './data/maps'
-import { CHESTS, PART_BY_ID, PARTS, PART_STAT_BY_ID, rollChest, type PartStat } from './data/meta'
+import { CHESTS, PART_BY_ID, PARTS, PART_STAT_BY_ID, rollChest, type ChestDef, type PartStat } from './data/meta'
+import { mulberry32 } from './rng'
+
+export interface DailyTasksSave {
+  /** метка дня, к которому относятся счётчики (сутки по локальному времени) */
+  at: number | null
+  /** побед сегодня */
+  wins: number
+  /** карты, на которых сегодня была победа */
+  maps: Record<string, boolean>
+  /** id взятых наград за задачи дня */
+  claimed: string[]
+}
 
 export interface MetaSave {
   v: 1
@@ -16,12 +28,22 @@ export interface MetaSave {
   dailyAt: number | null
   wins: number
   winsByMap: Record<string, number>
+  /** задачи дня: прогресс и взятые награды (старые сейвы добираются пустыми в loadMeta) */
+  daily: DailyTasksSave
 }
 
 export const META_KEY = 'zr-meta'
 
 export function emptyMeta(): MetaSave {
-  return { v: 1, parts: {}, unlocked: [MAP_DEFS[0].id], dailyAt: null, wins: 0, winsByMap: {} }
+  return {
+    v: 1,
+    parts: {},
+    unlocked: [MAP_DEFS[0].id],
+    dailyAt: null,
+    wins: 0,
+    winsByMap: {},
+    daily: { at: null, wins: 0, maps: {}, claimed: [] },
+  }
 }
 
 // ─── Хранилище: localStorage в браузере, память в тестах и на сервере ────
@@ -184,4 +206,77 @@ export function collectionRows(m: MetaSave): Array<{
     },
     []
   )
+}
+
+// ─── Задачи дня (панель «События» хаб-меню) ──────────────────────────────
+// Награда за активность в сутки: победы и разнообразие карт. Прогресс живёт
+// в сейве (meta.daily) и обнуляется при смене дня; награда каждой задачи —
+// детерминированный ролл деталей, зависящий только от даты и задачи.
+
+export interface DailyTaskDef {
+  id: string
+  goal: number
+  text: string
+  /** диапазон единиц деталей в награде */
+  reward: [number, number]
+}
+
+export const DAILY_TASKS: DailyTaskDef[] = [
+  { id: 'daily-win-1', goal: 1, text: 'Победи в одной миссии', reward: [1, 2] },
+  { id: 'daily-win-2', goal: 2, text: 'Победи в двух миссиях за день', reward: [1, 2] },
+  { id: 'daily-maps-2', goal: 2, text: 'Победи на двух разных картах за день', reward: [2, 3] },
+]
+
+/** Сбросить счётчики задач, если наступил новый день (мутирует сейв) */
+export function ensureDailyTasks(m: MetaSave, now: number = Date.now()): void {
+  if (m.daily.at === null || dayKey(m.daily.at) !== dayKey(now)) {
+    m.daily = { at: now, wins: 0, maps: {}, claimed: [] }
+  }
+}
+
+/** Победа сегодня на карте: двигает счётчики задач (мутирует сейв) */
+export function registerWinTasks(m: MetaSave, mapId: string, now: number = Date.now()): void {
+  ensureDailyTasks(m, now)
+  m.daily.wins += 1
+  m.daily.maps[mapId] = true
+}
+
+/** Прогресс задачи дня: 0..goal (без мутирования сейва) */
+export function taskProgress(m: MetaSave, taskId: string, now: number = Date.now()): number {
+  const def = DAILY_TASKS.find((t) => t.id === taskId)
+  if (!def || m.daily.at === null || dayKey(m.daily.at) !== dayKey(now)) return 0
+  if (taskId === 'daily-maps-2') return Math.min(def.goal, Object.keys(m.daily.maps).length)
+  return Math.min(def.goal, m.daily.wins)
+}
+
+/** Награда задачи уже взята (в сегодняшних сутках)? */
+export function taskClaimed(m: MetaSave, taskId: string, now: number = Date.now()): boolean {
+  if (m.daily.at === null || dayKey(m.daily.at) !== dayKey(now)) return false
+  return m.daily.claimed.includes(taskId)
+}
+
+/** Можно ли взять награду задачи */
+export function taskClaimable(m: MetaSave, taskId: string, now: number = Date.now()): boolean {
+  const def = DAILY_TASKS.find((t) => t.id === taskId)
+  if (!def) return false
+  return taskProgress(m, taskId, now) >= def.goal && !taskClaimed(m, taskId, now)
+}
+
+/**
+ * Награда задачи: детерминированный ролл деталей — зерно зависит только от
+ * дня и номера задачи, поэтому дроп не «перекатывается» между проверками.
+ */
+export function taskReward(taskId: string, now: number = Date.now()): ChestDrop {
+  const idx = Math.max(0, DAILY_TASKS.findIndex((t) => t.id === taskId))
+  const def = DAILY_TASKS[idx]
+  const chest: ChestDef = { id: 'dailyTask', name: 'Награда задачи дня', units: def.reward, chance: 1 }
+  return { chest: chest.id, parts: rollChest(chest, mulberry32(dayKey(now) * 131 + idx)) }
+}
+
+/** Взять награду задачи: отмечает в сейве и возвращает дроп (null — нельзя взять) */
+export function claimTask(m: MetaSave, taskId: string, now: number = Date.now()): ChestDrop | null {
+  ensureDailyTasks(m, now)
+  if (!taskClaimable(m, taskId, now)) return null
+  m.daily.claimed.push(taskId)
+  return taskReward(taskId, now)
 }

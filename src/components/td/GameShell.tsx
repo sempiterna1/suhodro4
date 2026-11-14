@@ -30,9 +30,10 @@ import { Sfx } from '@/game/audio'
 import { towerThumb } from '@/game/pixel'
 import { TowerInfoCard } from './TowerInfo'
 import { MainMenu } from './MainMenu'
+import { MenuBackdrop } from './MenuBackdrop'
 import { MoveIcon, TrashIcon } from './icons'
 import { useToast } from '@/hooks/use-toast'
-import { applyDrop, chestForDaily, chestForWin, dailyReady, emptyMeta, loadMeta, saveMeta, towerMetaBonus, unlockNextMap, type MetaSave } from '@/game/meta'
+import { applyDrop, chestForDaily, chestForWin, claimTask, dailyReady, emptyMeta, loadMeta, registerWinTasks, resetMeta, saveMeta, towerMetaBonus, unlockNextMap, type MetaSave } from '@/game/meta'
 import { CHESTS, PART_BY_ID } from '@/game/data/meta'
 import { Button } from '@/components/ui/button'
 import { AnimatePresence, motion } from 'framer-motion'
@@ -187,6 +188,8 @@ export default function GameShell() {
   const [inviteUrl, setInviteUrl] = useState('')
   const roleRef = useRef<MpRole>('single')
   const codeRef = useRef<string | null>(null)
+  // фаза в рефе для игрового цикла: на интро рендер мира пропускаем — холст закрыт чертёжным фоном меню
+  const introRef = useRef(ui.phase === 'intro')
 
   // ─── Метапрогрессия «Верстак» (docs/meta.md): сейв, бонусы башен, награда за победу ───
   // Начальное значение — пустой сейв (совпадает с серверным), сейв читается после монтирования.
@@ -216,22 +219,20 @@ export default function GameShell() {
       parts: { ...metaRef.current.parts },
       unlocked: [...metaRef.current.unlocked],
       winsByMap: { ...metaRef.current.winsByMap },
+      daily: { ...metaRef.current.daily, maps: { ...metaRef.current.daily.maps }, claimed: [...metaRef.current.daily.claimed] },
     }
     const mapId = game.mapDef.id
     m.wins += 1
     m.winsByMap[mapId] = (m.winsByMap[mapId] ?? 0) + 1
+    // задачи дня (сектор СОБЫТИЯ хаба): победы и разнообразие карт
+    registerWinTasks(m, mapId)
     const drops: MetaRewardDrop[] = []
     const winDrop = chestForWin(m, mapId)
     if (winDrop) {
       applyDrop(m, winDrop)
       drops.push(winDrop)
     }
-    if (dailyReady(m)) {
-      const daily = chestForDaily(m)
-      applyDrop(m, daily)
-      m.dailyAt = Date.now()
-      drops.push(daily)
-    }
+    // дневной сундук теперь вручную — кнопка «Забрать» в секторе СОБЫТИЯ главного меню
     const unlockedId = unlockNextMap(m, mapId)
     saveMeta(m)
     setMeta(m)
@@ -241,12 +242,53 @@ export default function GameShell() {
       if (next) toast({ title: 'Открыта новая карта', description: `${next.name}: ${next.feature}` })
     }
   }, [ui.phase, mpRole, game, toast])
+  // дневной сундук: вручную в секторе СОБЫТИЯ (кнопка «Забрать»), сейв пишет оболочка
+  const doClaimDaily = useCallback(() => {
+    const m: MetaSave = { ...metaRef.current, parts: { ...metaRef.current.parts }, daily: { ...metaRef.current.daily } }
+    if (!dailyReady(m)) return
+    const daily = chestForDaily(m)
+    applyDrop(m, daily)
+    m.dailyAt = Date.now()
+    saveMeta(m)
+    setMeta(m)
+    toast({
+      title: '🧰 Дневной сундук',
+      description: daily.parts.map(({ partId, units }) => `${PART_BY_ID[partId]?.name ?? partId} ×${units}`).join(' · '),
+    })
+  }, [toast])
+  // награда задачи дня (задача уже проверена на выполнимость в claimTask)
+  const doClaimTask = useCallback((taskId: string) => {
+    const m: MetaSave = {
+      ...metaRef.current,
+      parts: { ...metaRef.current.parts },
+      daily: { ...metaRef.current.daily, maps: { ...metaRef.current.daily.maps }, claimed: [...metaRef.current.daily.claimed] },
+    }
+    const drop = claimTask(m, taskId)
+    if (!drop) return
+    applyDrop(m, drop)
+    saveMeta(m)
+    setMeta(m)
+    toast({
+      title: 'Задача дня выполнена',
+      description: drop.parts.map(({ partId, units }) => `${PART_BY_ID[partId]?.name ?? partId} ×${units}`).join(' · '),
+    })
+  }, [toast])
+  // опасная кнопка настроек: лесенка кампании и коллекция — в ноль
+  const doResetProgress = useCallback(() => {
+    resetMeta()
+    setMeta(loadMeta())
+    toast({ title: 'Прогресс сброшен', description: 'Лесенка кампании, победы и коллекция деталей очищены.' })
+  }, [toast])
   const mpHostLeftRef = useRef(false)
   const movedHintShown = useRef(false)
 
   useEffect(() => {
     roleRef.current = mpRole
   }, [mpRole])
+  // интро-фаза для цикла: меню закрывает холст чертёжным фоном
+  useEffect(() => {
+    introRef.current = ui.phase === 'intro'
+  }, [ui.phase])
   useEffect(() => {
     codeRef.current = mpCode
   }, [mpCode])
@@ -484,13 +526,16 @@ export default function GameShell() {
     const loop = (now: number) => {
       const dt = (now - last) / 1000
       last = now
-      viewRef.current.selectedTower = selRef.current
-      viewRef.current.mergeFrom = mergeRef.current
       if (roleRef.current === 'guest') game.guestTick(dt)
       else game.update(dt)
-      render(canvas.getContext('2d') ?? ctx, game, viewRef.current)
-      sfx.tick(game)
-      buildTickRef.current(dt)
+      // на интро холст закрыт чертёжным фоном меню — отрисовку мира не тратим
+      if (!introRef.current) {
+        viewRef.current.selectedTower = selRef.current
+        viewRef.current.mergeFrom = mergeRef.current
+        render(canvas.getContext('2d') ?? ctx, game, viewRef.current)
+        sfx.tick(game)
+        buildTickRef.current(dt)
+      }
       uiAcc += dt
       if (uiAcc >= 0.12) {
         uiAcc = 0
@@ -1453,7 +1498,10 @@ export default function GameShell() {
             style={{ background: 'radial-gradient(ellipse 75% 70% at 50% 50%, rgba(5,8,14,0) 52%, rgba(5,8,14,0.36) 100%)' }}
           />
 
-          {/* Интро (одиночка / хост без лобби) — пошаговое меню: главная → карта → герой */}
+          {/* Интро: фон — чертёж «командного пункта»; живой мир под ним не отрисовывается */}
+          {ui.phase === 'intro' && <MenuBackdrop />}
+
+          {/* Интро (одиночка / хост без лобби) — хаб-терминал: сектора КАМПАНИЯ / СОБЫТИЯ / ПРОФИЛЬ / НАСТРОЙКИ */}
           {mpRole !== 'guest' && ui.phase === 'intro' && !showInvite && (
             <MainMenu
               ui={ui}
@@ -1461,6 +1509,14 @@ export default function GameShell() {
               fullscreen={fullscreen}
               musicVolume={musicVolume}
               onMusicVolume={setMusicVolume}
+              sfxVolume={sfxVolume}
+              onSfxVolume={setSfxVolume}
+              ambientVolume={ambientVolume}
+              onAmbientVolume={setAmbientVolume}
+              muted={muted}
+              onMute={() => setMuted((m) => !m)}
+              lighting={lighting}
+              onLighting={() => setLighting((l) => !l)}
               meta={meta}
               onPickMap={(seed) => {
                 game.selectMap(seed)
@@ -1478,6 +1534,11 @@ export default function GameShell() {
               onStartCoop={doCreateLobby}
               onHelp={() => setHelpOpen(true)}
               onToggleFullscreen={toggleFullscreen}
+              onClaimDaily={doClaimDaily}
+              onClaimTask={doClaimTask}
+              onResetProgress={doResetProgress}
+              mpRole={mpRole}
+              mpStatus={mpStatus}
             />
           )}
 
@@ -1538,7 +1599,7 @@ export default function GameShell() {
                         </p>
                       </div>
                     ))}
-                    <p className="mt-1.5 font-mono text-[9px] text-[#5b6f8c]">детали ждут в верстаке (главное меню)</p>
+                    <p className="mt-1.5 font-mono text-[9px] text-[#5b6f8c]">детали ждут в секторе ПРОФИЛЬ (главное меню)</p>
                   </div>
                 )}
                 {mpRole !== 'guest' && (

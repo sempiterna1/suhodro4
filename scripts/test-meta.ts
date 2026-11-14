@@ -6,8 +6,9 @@ import { CLASSIC_MAP } from '../src/game/map'
 import { MAP_DEFS } from '../src/game/data/maps'
 import { CHESTS, PARTS, PART_BY_ID, PART_STATS, rollChest } from '../src/game/data/meta'
 import {
-  applyDrop, chestForDaily, chestForWin, collectionRows, dailyReady, emptyMeta,
-  isMapUnlocked, loadMeta, partUnits, rawStorage, resetMeta, saveMeta, towerMetaBonus, unlockNextMap,
+  DAILY_TASKS, META_KEY, applyDrop, chestForDaily, chestForWin, claimTask, collectionRows, dailyReady, emptyMeta,
+  ensureDailyTasks, isMapUnlocked, loadMeta, partUnits, rawStorage, registerWinTasks, resetMeta, saveMeta,
+  taskClaimable, taskClaimed, taskProgress, taskReward, towerMetaBonus, unlockNextMap,
 } from '../src/game/meta'
 import { TOWERS } from '../src/game/data/towers'
 
@@ -203,6 +204,51 @@ function mulberry32(seed: number): () => number {
   if (base <= 0) throw new Error('башня не выстрелила ни разу')
   const ratio = withMeta / base
   check('детали усиливают урон башни (×1.15)', Math.abs(ratio - 1.15) < 0.02, `×${ratio.toFixed(3)} (${Math.round(base)} → ${Math.round(withMeta)})`)
+}
+
+// ─── Задачи дня (сектор СОБЫТИЯ хаб-меню) ───
+{
+  const noon = new Date(2026, 0, 15, 12, 0).getTime()
+  const nextDay = new Date(2026, 0, 16, 12, 0).getTime()
+  const m = emptyMeta()
+  check('в пустом сейве задачи на нуле', DAILY_TASKS.every((t) => taskProgress(m, t.id, noon) === 0))
+
+  registerWinTasks(m, 'tract', noon)
+  check('одна победа: win-1 готова', taskProgress(m, 'daily-win-1', noon) === 1)
+  check('одна победа: win-2 в прогрессе', taskProgress(m, 'daily-win-2', noon) === 1)
+  check('одна карта: maps-2 в прогрессе', taskProgress(m, 'daily-maps-2', noon) === 1)
+
+  registerWinTasks(m, 'tract', noon)
+  registerWinTasks(m, 'mill', noon)
+  check('две победы: win-2 выполнена', taskProgress(m, 'daily-win-2', noon) === 2)
+  check('две разные карты: maps-2 выполнена', taskProgress(m, 'daily-maps-2', noon) === 2)
+
+  check('win-1 можно забрать', taskClaimable(m, 'daily-win-1', noon))
+  const drop = claimTask(m, 'daily-win-1', noon)
+  check('награда win-1 — детали', drop !== null && drop.parts.reduce((s, p) => s + p.units, 0) >= 1)
+  check('win-1 отмечена взятой', taskClaimed(m, 'daily-win-1', noon))
+  check('повторное взятие запрещено', claimTask(m, 'daily-win-1', noon) === null && !taskClaimable(m, 'daily-win-1', noon))
+
+  // детерминированная награда: два ролла одного дня совпадают, у задач — свои
+  const again = taskReward('daily-win-1', noon)
+  check('награда детерминирована на сутки', JSON.stringify(again) === JSON.stringify(taskReward('daily-win-1', noon)))
+  check('у разных задач награда своя', JSON.stringify(taskReward('daily-maps-2', noon)) !== JSON.stringify(again))
+
+  // новый день: счётчики и взятые награды сбрасываются
+  ensureDailyTasks(m, nextDay)
+  check('новый день: прогресс на нуле', DAILY_TASKS.every((t) => taskProgress(m, t.id, nextDay) === 0))
+  check('новый день: win-1 снова не взята', !taskClaimed(m, 'daily-win-1', nextDay))
+  check('новый день: win-1 нельзя взять сразу', !taskClaimable(m, 'daily-win-1', nextDay))
+
+  // миграция старого сейва без поля daily
+  const old = { v: 1, parts: {}, unlocked: ['tract'], dailyAt: null, wins: 3, winsByMap: { tract: 3 } }
+  rawStorage().setItem(META_KEY, JSON.stringify(old))
+  const migrated = loadMeta()
+  check(
+    'старый сейв добирается полем daily',
+    migrated.daily.at === null && migrated.daily.wins === 0 && migrated.daily.claimed.length === 0 && migrated.wins === 3,
+  )
+  rawStorage().setItem(META_KEY, JSON.stringify(emptyMeta()))
 }
 
 if (failed > 0) {

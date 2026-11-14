@@ -1,16 +1,24 @@
 'use client'
 
-// Пошаговое главное меню «Последнего горизонта» (в духе больших игр):
-//   Этап 1 — главная: арт, лор, «Играть»;
-//   Этап 2 — выбор карты: 6 карт с живым предпросмотром тропы (рисуется по зерну);
-//   Этап 3 — выбор сложности: Новобранец / Ветеран / Кошмар;
-//   Этап 4 — выбор героя: портреты, способности, «В бой» / «Вдвоём».
-// Состояние шага живёт внутри меню: после партии меню монтируется заново — с главной.
+// Хаб-терминал главного меню «Последнего горизонта» (docs/menu-survey/BRIEF.md).
+// Один экран «командного пункта лагеря» вместо степпера 1-2-3-4:
+//   ХАБ        — арт-логотип, сводка ИИ (лор минерала), сектора КАМПАНИЯ / СОБЫТИЯ /
+//                ПРОФИЛЬ / НАСТРОЙКИ, внизу мини-профиль и кнопка «+» (инвайт в кооп);
+//   КАМПАНИЯ   — карта кампании с узлами; клик по узлу открывает модалку миссии
+//                (превью карты + сложность + герой + «В бой» / «Вдвоём»);
+//   СОБЫТИЯ    — сундук за вход и задачи дня (meta.daily);
+//   ПРОФИЛЬ    — статистика кампании и коллекция деталей башен;
+//   НАСТРОЙКИ  — громкости, звук/свет, полный экран, сброс прогресса.
+// Фон — чертёж «командного пункта» (MenuBackdrop, монтируется в GameShell на интро);
+// живой игровой мир в меню больше не виден. После партии меню монтируется заново — с хаба.
 
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Music } from 'lucide-react'
+import {
+  Gift, Lock, Map as MapIcon, Maximize, Minimize, Plus, Settings, User, Users, Volume2, X,
+} from 'lucide-react'
 import { Slider } from '@/components/ui/slider'
+import { Switch } from '@/components/ui/switch'
 import {
   ALL_DEFS,
   AVATARS,
@@ -24,241 +32,1135 @@ import {
   type AvatarId,
   type DifficultyId,
 } from '@/game/config'
-import { collectionRows, isMapUnlocked, type MetaSave } from '@/game/meta'
-import { PART_BY_ID, PART_STAT_BY_ID } from '@/game/data/meta'
+import {
+  DAILY_TASKS,
+  collectionRows,
+  dailyReady,
+  isMapUnlocked,
+  mapProgress,
+  taskClaimable,
+  taskClaimed,
+  taskProgress,
+  type MetaSave,
+} from '@/game/meta'
+import { CHESTS, PART_BY_ID, PART_STAT_BY_ID, type PartStat } from '@/game/data/meta'
 import { generateMap } from '@/game/map'
 import { toScreen } from '@/game/iso'
 import { buildBackground, mapLights, props, roadEnds } from '@/game/world'
 import { BIOMES } from '@/game/biomes'
-import { avatarPortrait } from '@/game/pixel'
+import { avatarPortrait, towerThumb } from '@/game/pixel'
 import type { UiState, Vec } from '@/game/types'
 
-type Step = 0 | 1 | 2 | 3
-const STEP_TITLES = ['ГЛАВНАЯ', 'ВЫБОР КАРТЫ', 'СЛОЖНОСТЬ', 'ВЫБОР ГЕРОЯ']
+type View = 'hub' | 'campaign' | 'events' | 'profile' | 'settings'
 
 interface MainMenuProps {
   ui: UiState
   uiScale: number
   fullscreen: boolean
-  /** громкость музыки 0..1 — регулятор в углу главного меню */
+  /** громкость музыки 0..1 — регулятор в углу хаба */
   musicVolume: number
   onMusicVolume: (v: number) => void
+  sfxVolume: number
+  onSfxVolume: (v: number) => void
+  ambientVolume: number
+  onAmbientVolume: (v: number) => void
+  muted: boolean
+  onMute: () => void
+  lighting: boolean
+  onLighting: () => void
   onPickMap: (seed: number) => void
   onPickDifficulty: (id: DifficultyId) => void
   onPickAvatar: (id: AvatarId) => void
   onStart: () => void
+  /** создать кооп-лобби: окно с ссылкой-приглашением открывает оболочка */
   onStartCoop: () => void
   onHelp: () => void
   onToggleFullscreen: () => void
-  /** сейв метапрогрессии «Верстак»: замки карт и коллекция деталей (docs/meta.md) */
+  /** забрать дневной сундук (сейв пишет оболочка) */
+  onClaimDaily: () => void
+  /** забрать награду задачи дня */
+  onClaimTask: (taskId: string) => void
+  /** сбросить лесенку кампании и коллекцию деталей */
+  onResetProgress: () => void
+  /** хаб открывается только для одиночки и хоста (гость ждёт на своём экране) */
+  mpRole: 'single' | 'host'
+  mpStatus: string
+  /** сейв метапрогрессии: замки карт, статистика, задачи дня (docs/meta.md) */
   meta: MetaSave
 }
 
 export function MainMenu(props: MainMenuProps) {
-  const { ui, uiScale, fullscreen } = props
-  const [step, setStep] = useState<Step>(0)
+  const [view, setView] = useState<View>('hub')
   const [dir, setDir] = useState(1)
-  const [workbench, setWorkbench] = useState(false)
-  const go = (s: Step) => {
-    setDir(s >= step ? 1 : -1)
-    setStep(s)
+  const [missionId, setMissionId] = useState<string | null>(null)
+  // выбор сложности и героя живёт на уровне меню: открытая модалка не сбрасывает его
+  const [pickedDiff, setPickedDiff] = useState<DifficultyId>(props.ui.difficulty)
+  const [pickedHero, setPickedHero] = useState<AvatarId>(props.ui.avatar.id)
+  const go = (v: View) => {
+    setDir(v === 'hub' ? -1 : 1)
+    setView(v)
+  }
+
+  const missionDef = missionId ? MAP_DEFS.find((m) => m.id === missionId) ?? null : null
+  const launch = (coop: boolean) => {
+    const map = missionDef ?? MAP_DEFS[0]
+    props.onPickMap(map.seed)
+    props.onPickDifficulty(pickedDiff)
+    props.onPickAvatar(pickedHero)
+    if (coop) props.onStartCoop()
+    else props.onStart()
   }
 
   return (
-    // на весь экран: живой изометрический мир игры виден фоном за лёгким затемнением
-    <div className="absolute inset-0 overflow-y-auto bg-[#070a10]/60 backdrop-blur-[2px]">
-      {/* громкость музыки — под рукой сразу, тема меня играет только здесь */}
-      <div
-        className="absolute right-3 top-3 z-20 flex items-center gap-2 rounded-full border border-[#3a4660] bg-[rgba(14,19,31,0.9)] px-3 py-1.5"
-        style={{ zoom: uiScale }}
-      >
-        <Music className="h-4 w-4 shrink-0 text-[#f2c94c]" strokeWidth={2.2} />
-        <Slider
-          value={[Math.round(props.musicVolume * 100)]}
-          min={0}
-          max={100}
-          step={5}
-          onValueChange={(v) => props.onMusicVolume((v[0] ?? 0) / 100)}
-          aria-label="Громкость музыки"
-          className="w-24 sm:w-32 [&_[data-slot=slider-track]]:bg-[#3a4660] [&_[data-slot=slider-range]]:bg-[#f2c94c]"
-        />
-        <span className="w-9 text-right font-mono text-[10px] font-bold text-[#c3cbe0]">
-          {Math.round(props.musicVolume * 100)}%
-        </span>
-      </div>
-      <div className="flex min-h-full flex-col items-center px-4 py-6 sm:py-8" style={{ zoom: uiScale }}>
-        {/* индикатор шагов */}
-        <div className="mb-6 flex items-center justify-center gap-2 font-mono text-[10px] uppercase tracking-[0.25em] text-[#5b6f8c]">
-          {STEP_TITLES.map((t, i) => (
-            <span key={t} className="flex items-center gap-2">
-              {i > 0 && <span className="text-[#2e3c52]">──</span>}
-              <span className={i === step ? 'text-[#ffc46b]' : ''}>
-                {i + 1}. {t}
-              </span>
-            </span>
-          ))}
+    // на весь экран: фон — чертёж «командного пункта» (MenuBackdrop в GameShell).
+    // Хаб сидит на чистом чертеже; секторам (кампания/события/профиль/настройки)
+    // нужна тёмная подложка — их плотный текст иначе накладывается на штамп и выноски.
+    <div
+      className={
+        view === 'hub'
+          ? 'absolute inset-0 overflow-y-auto'
+          : 'absolute inset-0 overflow-y-auto bg-[rgba(7,11,17,0.86)] backdrop-blur-[2px]'
+      }
+    >
+      {/* громкость музыки и полный экран — под рукой на любом экране хаба */}
+      <div className="absolute right-3 top-3 z-20 flex items-center gap-1.5" style={{ zoom: props.uiScale }}>
+        <button
+          type="button"
+          onClick={props.onToggleFullscreen}
+          title={props.fullscreen ? 'Выйти из полного экрана' : 'На весь экран'}
+          aria-label={props.fullscreen ? 'Выйти из полного экрана' : 'На весь экран'}
+          className="hover-glow flex h-8 w-8 items-center justify-center rounded-full border border-[#3a4660] bg-[rgba(14,19,31,0.9)] text-[#93a9c6] hover:text-[#e8ecf4]"
+          style={{ '--glow': '#93a9c6' } as CSSProperties}
+        >
+          {props.fullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
+        </button>
+        <div className="flex items-center gap-2 rounded-full border border-[#3a4660] bg-[rgba(14,19,31,0.9)] px-3 py-1.5">
+          <Volume2 className="h-4 w-4 shrink-0 text-[#f2c94c]" strokeWidth={2.2} />
+          <Slider
+            value={[Math.round(props.musicVolume * 100)]}
+            min={0}
+            max={100}
+            step={5}
+            onValueChange={(v) => props.onMusicVolume((v[0] ?? 0) / 100)}
+            aria-label="Громкость музыки"
+            className="w-24 sm:w-32 [&_[data-slot=slider-track]]:bg-[#3a4660] [&_[data-slot=slider-range]]:bg-[#f2c94c]"
+          />
+          <span className="w-9 text-right font-mono text-[10px] font-bold text-[#c3cbe0]">
+            {Math.round(props.musicVolume * 100)}%
+          </span>
         </div>
+      </div>
 
+      <div className="flex min-h-full flex-col items-center px-4 py-5 sm:py-7" style={{ zoom: props.uiScale }}>
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
-            key={step}
+            key={view}
             initial={{ x: 44 * dir, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: -44 * dir, opacity: 0 }}
             transition={{ duration: 0.22, ease: 'easeOut' }}
             className="flex w-full flex-1 flex-col justify-center"
           >
-            {step === 0 && <StepMain {...props} onPlay={() => go(1)} onWorkbench={() => setWorkbench(true)} />}
-            {step === 1 && (
-              <StepMap
-                ui={ui}
+            {view === 'hub' && <HubView {...props} onOpen={go} />}
+            {view === 'campaign' && (
+              <CampaignView
                 meta={props.meta}
-                onPickMap={props.onPickMap}
-                onBack={() => go(0)}
-                onNext={() => go(2)}
+                ui={props.ui}
+                onBack={() => go('hub')}
+                onOpenMission={setMissionId}
               />
             )}
-            {step === 2 && (
-              <StepDifficulty
-                ui={ui}
-                onPickDifficulty={props.onPickDifficulty}
-                onBack={() => go(1)}
-                onNext={() => go(3)}
+            {view === 'events' && (
+              <EventsView
+                meta={props.meta}
+                onBack={() => go('hub')}
+                onClaimDaily={props.onClaimDaily}
+                onClaimTask={props.onClaimTask}
               />
             )}
-            {step === 3 && (
-              <StepHero
-                ui={ui}
-                onPickAvatar={props.onPickAvatar}
-                onBack={() => go(2)}
-                onStart={props.onStart}
-                onStartCoop={props.onStartCoop}
-              />
-            )}
+            {view === 'profile' && <ProfileView meta={props.meta} ui={props.ui} onBack={() => go('hub')} />}
+            {view === 'settings' && <SettingsView {...props} onBack={() => go('hub')} />}
           </motion.div>
         </AnimatePresence>
       </div>
-      {/* Верстак: коллекция деталей башен (метапрогрессия, docs/meta.md) */}
-      {workbench && <Workbench meta={props.meta} onClose={() => setWorkbench(false)} />}
+
+      {/* модалка миссии: поверх любого экрана хаба */}
+      <AnimatePresence>
+        {missionDef && (
+          <MissionModal
+            def={missionDef}
+            ui={props.ui}
+            pickedDiff={pickedDiff}
+            setPickedDiff={setPickedDiff}
+            pickedHero={pickedHero}
+            setPickedHero={setPickedHero}
+            onClose={() => setMissionId(null)}
+            onLaunch={() => launch(false)}
+            onLaunchCoop={() => launch(true)}
+            uiScale={props.uiScale}
+          />
+        )}
+      </AnimatePresence>
     </div>
   )
 }
 
-// ─── Этап 1: главная ─────────────────────────────────────────────────────
+// ─── ХАБ: командный пункт лагеря ─────────────────────────────────────────
 
-function StepMain({ onPlay, onHelp, onWorkbench, onToggleFullscreen, fullscreen }: MainMenuProps & { onPlay: () => void; onWorkbench: () => void }) {
+function HubView(props: MainMenuProps & { onOpen: (v: View) => void }) {
+  const { meta, ui, mpRole, mpStatus } = props
+  const daily = dailyReady(meta)
+  const tasksDone = DAILY_TASKS.filter((t) => taskClaimed(meta, t.id)).length
+  const nextMap = MAP_DEFS[Math.min(mapProgress(meta), MAP_DEFS.length - 1)]
+  const hero = AVATARS[ui.avatar.id]
+
   return (
-    <div className="flex flex-col items-center">
-      <p className="mb-3 font-mono text-[10px] uppercase tracking-[0.3em] text-[#5b6f8c]">
-        паропанк · tower defense · прототип
+    <div className="flex w-full flex-col items-center">
+      <p className="mb-3 font-mono text-[9px] uppercase tracking-[0.35em] text-[#5b6f8c]">
+        ◆ командный пункт лагеря «железный разлом» ◆
       </p>
-      <h1 className="mb-8 select-none">
+      <h1 className="mb-4 select-none">
         <img
           src="/logo-the-last-horizon.png"
           alt="Последний горизонт"
-          className="mx-auto w-full max-w-[560px] drop-shadow-[0_10px_32px_rgba(0,0,0,0.9)]"
+          className="mx-auto w-full max-w-[460px] drop-shadow-[0_10px_32px_rgba(0,0,0,0.9)]"
           draggable={false}
         />
       </h1>
-      <div className="mb-9 flex flex-wrap justify-center gap-2 text-[10px] text-[#94a3b8]">
-        {['15 башен', 'слияние', '6 карт · 30 волн', 'кооп по ссылке'].map((t) => (
-          <span key={t} className="rounded border border-[#5b6f8c55] px-2 py-1">{t}</span>
-        ))}
+
+      {/* плашка прогресса */}
+      <div className="mb-2.5 flex flex-wrap justify-center gap-1.5 font-mono text-[10px]">
+        <span className="rounded border border-[#3a4660] bg-[rgba(14,19,31,0.8)] px-2 py-1 text-[#9db4d0]">
+          тракты <b className="text-[#e0a832]">{mapProgress(meta)}/{MAP_DEFS.length}</b>
+        </span>
+        <span className="rounded border border-[#3a4660] bg-[rgba(14,19,31,0.8)] px-2 py-1 text-[#9db4d0]">
+          победы <b className="text-[#e0a832]">{meta.wins}</b>
+        </span>
+        <span className={`rounded border px-2 py-1 ${daily ? 'animate-pulse border-[#59c27a55] text-[#7fd0a0]' : 'border-[#3a4660] text-[#5b6f8c]'} bg-[rgba(14,19,31,0.8)]`}>
+          сундук дня {daily ? 'готов' : 'завтра'}
+        </span>
       </div>
-      <motion.button
-        type="button"
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.97 }}
-        onClick={onPlay}
-        className="hover-glow h-16 w-full max-w-sm rounded-md border-2 border-[#93a9c6] bg-gradient-to-b from-[#2e3c52] to-[#1f2a3b] px-10 font-serif text-xl font-black tracking-wide text-[#ffd700] shadow-[0_8px_32px_rgba(60,90,140,0.4)] hover:from-[#34475f]"
-        style={{ '--glow': '#ffd700' } as CSSProperties}
-      >
-        ⚙ ИГРАТЬ
-      </motion.button>
-      <div className="mt-5 flex flex-wrap justify-center gap-2">
-        <MenuBtn onClick={onWorkbench}>🔧 Верстак</MenuBtn>
-        <MenuBtn onClick={onHelp}>Как играть</MenuBtn>
-        <MenuBtn onClick={onToggleFullscreen}>{fullscreen ? 'Окно' : 'На весь экран'}</MenuBtn>
+
+      {/* сводка ИИ: лор живого минерала — одна строка над секторами */}
+      <p className="mb-5 text-center font-mono text-[10px] leading-relaxed text-[#5f8a94]">
+        <span className="font-bold text-[#7fd0c0]">ИИ ▸</span> минерал по-прежнему жив. он изменил зверей, лес и машины — восемь из десяти не пережили первый день.
+      </p>
+
+      {/* сектора: кампания — главный выбор, остальные три — служба хаба */}
+      <div className="grid w-full max-w-4xl grid-cols-2 gap-2.5 lg:grid-cols-3">
+        <Sector
+          featured
+          wide
+          icon={<MapIcon className="h-5 w-5" strokeWidth={2.2} />}
+          title="КАМПАНИЯ"
+          sub={`следующий тракт: ${nextMap.name} — ${nextMap.feature}`}
+          chips={
+            <>
+              <Chip tone="gold">карта {mapProgress(meta)}/{MAP_DEFS.length}</Chip>
+              <Chip tone="dim">лесенка ×HP</Chip>
+            </>
+          }
+          onClick={() => props.onOpen('campaign')}
+        />
+        <Sector
+          icon={<Gift className="h-5 w-5" strokeWidth={2.2} />}
+          title="СОБЫТИЯ"
+          sub={daily ? 'сундук за вход уже ждёт' : 'сундук за вход — завтра'}
+          chips={
+            <>
+              {daily && <Chip tone="green">готово</Chip>}
+              <Chip tone="dim">задачи {tasksDone}/{DAILY_TASKS.length}</Chip>
+            </>
+          }
+          onClick={() => props.onOpen('events')}
+        />
+        <Sector
+          icon={<User className="h-5 w-5" strokeWidth={2.2} />}
+          title="ПРОФИЛЬ"
+          sub="статистика кампании и детали башен — собранные единицы усиливают башни в следующих миссиях"
+          chips={
+            <>
+              <Chip tone="dim">побед: {meta.wins}</Chip>
+              <Chip tone="gold">коллекция {collectionDonePct(meta)}%</Chip>
+            </>
+          }
+          wideLg
+          onClick={() => props.onOpen('profile')}
+        />
+        <Sector
+          icon={<Settings className="h-5 w-5" strokeWidth={2.2} />}
+          title="НАСТРОЙКИ"
+          sub="звук, свет, полный экран, сброс"
+          chips={
+            <>
+              <Chip tone="dim">звук {props.muted ? 'выкл' : 'вкл'}</Chip>
+              <Chip tone="dim">свет {props.lighting ? 'вкл' : 'выкл'}</Chip>
+            </>
+          }
+          onClick={() => props.onOpen('settings')}
+        />
+      </div>
+
+      {/* низ: мини-профиль + кнопка «+» для приглашения друга (кооп по ссылке) */}
+      <div className="mt-6 flex w-full max-w-4xl flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2 rounded-md border-2 border-[#3a4660] bg-[rgba(14,19,31,0.92)] px-2 py-1.5">
+          <img
+            src={avatarPortrait(ui.avatar.id, 2)}
+            alt=""
+            className="h-10 w-10 rounded-sm border border-[#5b6f8c] object-cover object-top"
+            draggable={false}
+          />
+          <div className="text-left leading-tight">
+            <p className="font-serif text-[13px] font-black" style={{ color: hero.color }}>{hero.name}</p>
+            <p className="font-mono text-[9px] text-[#7088a8]">побед: {meta.wins} · тракты {mapProgress(meta)}/{MAP_DEFS.length}</p>
+          </div>
+        </div>
+        <motion.button
+          type="button"
+          whileHover={{ scale: 1.08 }}
+          whileTap={{ scale: 0.94 }}
+          onClick={props.onStartCoop}
+          title="Позвать друга — кооп по ссылке (создаст лобби и окно приглашения)"
+          aria-label="Позвать друга в кооп"
+          className="hover-glow flex h-11 w-11 shrink-0 items-center justify-center rounded-full border-2 border-[#7fd0a0] bg-[rgba(18,30,24,0.92)] text-[#7fd0a0]"
+          style={{ '--glow': '#7fd0a0' } as CSSProperties}
+        >
+          <Plus className="h-5 w-5" strokeWidth={2.5} />
+        </motion.button>
+        {mpRole === 'host' && (
+          <span className="rounded border border-[#59c27a55] px-2 py-1 font-mono text-[9px] text-[#7fd0a0]">
+            лобби: {mpStatus === 'waiting' ? 'ждём друга' : 'друг в игре'}
+          </span>
+        )}
+        <span className="ml-auto hidden font-mono text-[9px] text-[#5b6f8c] sm:block">
+          прототип · паропанк tower defense · кооп по ссылке
+        </span>
       </div>
     </div>
   )
 }
 
-// ─── Этап 2: выбор карты с предпросмотром ────────────────────────────────
+// ─── КАМПАНИЯ: карта с узлами ────────────────────────────────────────────
 
-function StepMap({
-  ui,
+function CampaignView({
   meta,
-  onPickMap,
+  ui,
   onBack,
-  onNext,
+  onOpenMission,
 }: {
-  ui: UiState
   meta: MetaSave
-  onPickMap: (seed: number) => void
+  ui: UiState
   onBack: () => void
-  onNext: () => void
+  onOpenMission: (id: string) => void
 }) {
   return (
-    <div className="mx-auto w-full max-w-4xl">
-      <p className="mb-1 text-center font-serif text-2xl font-black tracking-wide text-[#ffc46b]">ВЫБОР КАРТЫ</p>
-      <p className="mb-5 text-center text-[11px] text-[#7088a8]">лесенка кампании: следующая карта откроется после победы · 30 волн · боссы на 10-й, 20-й и 30-й</p>
-      <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {MAP_DEFS.map((m) => {
-          const picked = ui.mapName === m.name
-          const locked = !isMapUnlocked(meta, m.id)
-          return (
-            <motion.button
+    <div className="mx-auto w-full max-w-5xl">
+      <ViewHeader
+        title="КАРТА КАМПАНИИ"
+        sub="шесть трактов — шесть биомов · следующая карта откроется после победы · боссы на 10-й, 20-й и 30-й волне"
+        onBack={onBack}
+      />
+      <div className="relative">
+        {/* пунктирная тропа кампании за узлами */}
+        <div className="pointer-events-none absolute left-[6%] right-[6%] top-[96px] hidden border-t-2 border-dashed border-[#5b6f8c40] lg:block" />
+        <div className="relative flex flex-wrap items-start justify-center gap-3">
+          {MAP_DEFS.map((m, i) => (
+            <CampaignNode
               key={m.id}
+              def={m}
+              index={i}
+              wins={meta.winsByMap[m.id] ?? 0}
+              locked={!isMapUnlocked(meta, m.id)}
+              picked={ui.mapName === m.name}
+              onOpen={() => onOpenMission(m.id)}
+            />
+          ))}
+        </div>
+      </div>
+      <p className="mt-4 text-center font-mono text-[10px] text-[#5b6f8c]">
+        лесенка сложности: каждый тракт сильнее предыдущего (×HP) · детали сундуков усиливают башни (сектор ПРОФИЛЬ)
+      </p>
+    </div>
+  )
+}
+
+function CampaignNode({
+  def,
+  index,
+  wins,
+  locked,
+  picked,
+  onOpen,
+}: {
+  def: (typeof MAP_DEFS)[number]
+  index: number
+  wins: number
+  locked: boolean
+  picked: boolean
+  onOpen: () => void
+}) {
+  return (
+    <motion.button
+      type="button"
+      whileHover={locked ? undefined : { y: -3 }}
+      whileTap={locked ? undefined : { scale: 0.97 }}
+      onClick={onOpen}
+      className={`hover-glow relative w-[196px] overflow-hidden rounded-md border-2 bg-gradient-to-b from-[#172030] to-[#0a0f17] text-left transition-colors ${
+        locked
+          ? 'cursor-not-allowed border-[#25304a] opacity-60'
+          : picked
+            ? 'border-[#ffc46b] shadow-[0_0_16px_#ffd70055]'
+            : 'border-[#2e3c52] hover:border-[#4a5f80]'
+      } ${index % 2 === 1 ? 'lg:mt-10' : ''}`}
+      style={{ '--glow': locked ? '#5b6f8c' : '#ffd700' } as CSSProperties}
+      title={locked ? 'Победите на предыдущей карте кампании' : def.feature}
+    >
+      <div className="relative">
+        <div className={locked ? 'pointer-events-none opacity-40 grayscale' : ''}>
+          <MapPreview seed={def.seed} w={196} />
+        </div>
+        {/* номер узла кампании */}
+        <span className="absolute left-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-[#5b6f8c88] bg-[rgba(10,15,23,0.9)] font-mono text-[10px] font-bold text-[#9db4d0]">
+          {index + 1}
+        </span>
+        {locked && (
+          <span className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-[#5b6f8c88] bg-[rgba(10,15,23,0.9)] text-[#9db4d0]" title="Заперта: откроется после победы на предыдущей карте">
+            <Lock className="h-3 w-3" />
+          </span>
+        )}
+        {/* бейдж биома и множитель HP (biomes.ts, docs/meta.md) */}
+        <span className="absolute bottom-1.5 right-1.5 rounded-sm border border-[#3a4660] bg-[rgba(10,15,23,0.85)] px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-[#9db4d0]">
+          {BIOMES[def.biome].name}
+        </span>
+        <span className="absolute bottom-1.5 left-1.5 rounded-sm border border-[#3a4660] bg-[rgba(10,15,23,0.85)] px-1.5 py-0.5 font-mono text-[8px] font-bold text-[#e0a832]">
+          ×{def.hpMult.toFixed(2)} HP
+        </span>
+      </div>
+      <div className="px-2 py-1.5">
+        <p className="flex items-center justify-between gap-1 font-serif text-[12px] font-black leading-tight text-[#ccd8e6]">
+          <span className="truncate">{picked && <span className="text-[#ffc46b]">▸ </span>}{def.name}</span>
+          {wins > 0 && <span className="shrink-0 font-mono text-[9px] text-[#e0a832]">★{wins}</span>}
+        </p>
+        <p className="min-h-[2.4em] text-[9px] leading-tight text-[#7088a8]">{def.feature}</p>
+      </div>
+    </motion.button>
+  )
+}
+
+// ─── МОДАЛКА МИССИИ: карта + сложность + герой + старт ───────────────────
+
+function MissionModal({
+  def,
+  ui,
+  pickedDiff,
+  setPickedDiff,
+  pickedHero,
+  setPickedHero,
+  onClose,
+  onLaunch,
+  onLaunchCoop,
+  uiScale,
+}: {
+  def: (typeof MAP_DEFS)[number]
+  ui: UiState
+  pickedDiff: DifficultyId
+  setPickedDiff: (id: DifficultyId) => void
+  pickedHero: AvatarId
+  setPickedHero: (id: AvatarId) => void
+  onClose: () => void
+  onLaunch: () => void
+  onLaunchCoop: () => void
+  uiScale: number
+}) {
+  const a = AVATARS[pickedHero]
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.16 }}
+      onMouseDown={onClose}
+      className="absolute inset-0 z-40 flex items-center justify-center overflow-y-auto bg-[rgba(4,7,12,0.75)] p-4 backdrop-blur-[3px]"
+    >
+      <motion.div
+        initial={{ scale: 0.94, y: 14, opacity: 0 }}
+        animate={{ scale: 1, y: 0, opacity: 1 }}
+        exit={{ scale: 0.96, y: 8, opacity: 0 }}
+        transition={{ duration: 0.18, ease: 'easeOut' }}
+        onMouseDown={(e) => e.stopPropagation()}
+        style={{ zoom: uiScale }}
+        className="relative my-auto w-full max-w-3xl rounded-lg border-2 border-[#3a4660] bg-gradient-to-b from-[#131b28]/97 to-[#0a0f17]/97 p-4 shadow-[0_24px_80px_rgba(0,0,0,0.7)]"
+      >
+        <Rivets />
+        {/* шапка миссии */}
+        <div className="mb-3 flex flex-wrap items-start justify-between gap-2 pr-6">
+          <div>
+            <p className="font-mono text-[9px] uppercase tracking-[0.25em] text-[#5b6f8c]">миссия · {BIOMES[def.biome].name}</p>
+            <p className="font-serif text-xl font-black tracking-wide text-[#ffc46b]">{def.name}</p>
+            <p className="mt-0.5 text-[11px] text-[#7088a8]">{def.feature}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Закрыть"
+            className="hover-glow flex h-8 w-8 items-center justify-center rounded-full border border-[#3a4660] text-[#93a9c6] hover:text-[#e8ecf4]"
+            style={{ '--glow': '#93a9c6' } as CSSProperties}
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+          {/* превью карты: запечённый мир + маршрут */}
+          <div className="self-start overflow-hidden rounded-md border border-[#3a4660]">
+            <MapPreview seed={def.seed} w={340} />
+          </div>
+          <div className="flex flex-col gap-2.5">
+            {/* сложность */}
+            <div>
+              <p className="mb-1 font-mono text-[9px] uppercase tracking-[0.25em] text-[#5b6f8c]">сложность</p>
+              <div className="flex flex-col gap-1.5">
+                {DIFFICULTY_IDS.map((id) => {
+                  const d = DIFFICULTIES[id]
+                  const picked = pickedDiff === id
+                  const buildingHp = Math.round(BUILDING_BASE_HP * d.buildingHpMult)
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setPickedDiff(id)}
+                      title={d.desc}
+                      className={`rounded-md border px-2.5 py-1.5 text-left transition-colors ${
+                        picked ? 'bg-[rgba(46,60,82,0.5)]' : 'border-[#2e3c52] opacity-85 hover:border-[#4a5f80] hover:opacity-100'
+                      }`}
+                      style={{ borderColor: picked ? d.color : undefined }}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-serif text-[13px] font-black" style={{ color: d.color }}>
+                          {picked ? '▸ ' : ''}{d.name}
+                        </span>
+                        <span className="font-mono text-[9px] text-[#8fa2bd]">
+                          HP ×{d.creepHpMult.toFixed(2).replace(/0$/, '')} · золото {d.startGold}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 text-[10px] leading-snug text-[#aebdd2]">
+                        {d.desc} · здание {buildingHp} HP
+                      </p>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+            {/* герой */}
+            <div>
+              <p className="mb-1 font-mono text-[9px] uppercase tracking-[0.25em] text-[#5b6f8c]">герой</p>
+              <div className="grid grid-cols-4 gap-1.5">
+                {AVATAR_IDS.map((id) => {
+                  const av = AVATARS[id]
+                  const picked = pickedHero === id
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setPickedHero(id)}
+                      title={`${av.abilityName}: ${av.abilityDesc}`}
+                      className={`hover-glow rounded-md border-2 p-1 transition-colors ${
+                        picked ? '' : 'border-[#2e3c52] opacity-80 hover:opacity-100'
+                      }`}
+                      style={{ borderColor: picked ? av.color : undefined, '--glow': av.color } as CSSProperties}
+                    >
+                      <div
+                        className="overflow-hidden rounded-sm border"
+                        style={{ borderColor: picked ? av.color : '#2e3c52', aspectRatio: '1 / 1' }}
+                      >
+                        <img src={avatarPortrait(id, 3)} alt="" className="h-full w-full object-cover object-top" draggable={false} />
+                      </div>
+                      <p className="mt-1 truncate text-center font-serif text-[10px] font-black leading-none" style={{ color: av.color }}>
+                        {av.name}
+                      </p>
+                    </button>
+                  )
+                })}
+              </div>
+              <p className="mt-1.5 text-[10px] leading-snug text-[#b9c6d8]">
+                <b style={{ color: a.color }}>{a.abilityName}:</b> {a.abilityDesc}.{' '}
+                <span className="text-[#7088a8]">Пассивно: {a.passive.toLowerCase()}.</span>
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* подвал: старт */}
+        <div className="mt-3.5 flex flex-wrap items-center justify-center gap-2.5 border-t border-[#2e3c52] pt-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="h-10 rounded-md border border-[#5b6f8c] px-4 text-[12px] text-[#ccd8e6] transition-colors hover:bg-[#1f2a3b]"
+          >
+            Отмена
+          </button>
+          <motion.button
+            type="button"
+            whileHover={{ scale: 1.04 }}
+            whileTap={{ scale: 0.97 }}
+            onClick={onLaunch}
+            className="hover-glow h-11 rounded-md border-2 border-[#93a9c6] bg-gradient-to-b from-[#2e3c52] to-[#1f2a3b] px-8 font-serif text-[15px] font-black tracking-wide text-[#ffd700] shadow-[0_6px_20px_rgba(60,90,140,0.35)] hover:from-[#34475f]"
+            style={{ '--glow': '#ffd700' } as CSSProperties}
+          >
+            ⚔ В БОЙ
+          </motion.button>
+          <motion.button
+            type="button"
+            whileHover={{ scale: 1.04 }}
+            whileTap={{ scale: 0.97 }}
+            onClick={onLaunchCoop}
+            title="Создать лобби и получить ссылку-приглашение для друга"
+            className="hover-glow h-11 rounded-md border-2 border-[#7fd0a0] bg-[#1f2d24] px-5 font-serif text-[13px] font-bold text-[#7fd0a0] hover:bg-[#243a2c]"
+            style={{ '--glow': '#7fd0a0' } as CSSProperties}
+          >
+            <span className="inline-flex items-center gap-1.5"><Users className="h-4 w-4" /> ВДВОЁМ</span>
+          </motion.button>
+          <p className="w-full text-center font-mono text-[9px] text-[#5b6f8c]">
+            «вдвоём» создаст лобби со ссылкой — друг подключится гостем · сложность сохранится при повторе
+          </p>
+        </div>
+        <span className="sr-only">{ui.mapName}</span>
+      </motion.div>
+    </motion.div>
+  )
+}
+
+// ─── СОБЫТИЯ: сундук за вход + задачи дня ────────────────────────────────
+
+function EventsView({
+  meta,
+  onBack,
+  onClaimDaily,
+  onClaimTask,
+}: {
+  meta: MetaSave
+  onBack: () => void
+  onClaimDaily: () => void
+  onClaimTask: (taskId: string) => void
+}) {
+  const ready = dailyReady(meta)
+  return (
+    <div className="mx-auto w-full max-w-3xl">
+      <ViewHeader
+        title="СОБЫТИЯ"
+        sub="награда за вход и задачи дня · счётчики и награды обновляются каждый день"
+        onBack={onBack}
+      />
+      {/* сундук за вход */}
+      <div className="relative mb-3 rounded-md border-2 border-[#e0a83266] bg-gradient-to-b from-[#1b1a14]/95 to-[#0d0c08]/95 p-3.5">
+        <Rivets />
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="font-serif text-[15px] font-black text-[#e0a832]">🧰 {CHESTS.daily.name}</p>
+            <p className="mt-0.5 max-w-md text-[11px] leading-snug text-[#aebdd2]">
+              2–4 единицы деталей башен за вход в лагерь. Детали усилят башни в следующих миссиях —
+              разбор коллекции в секторе ПРОФИЛЬ.
+            </p>
+          </div>
+          {ready ? (
+            <motion.button
               type="button"
-              whileHover={locked ? undefined : { y: -3 }}
-              whileTap={locked ? undefined : { scale: 0.97 }}
-              onClick={() => {
-                if (!locked) onPickMap(m.seed)
-              }}
-              className={`hover-glow relative overflow-hidden rounded-md border-2 bg-gradient-to-b from-[#172030] to-[#0a0f17] text-left transition-colors ${
-                locked ? 'cursor-not-allowed border-[#25304a] opacity-60' : picked ? 'border-[#ffc46b] shadow-[0_0_16px_#ffd70055]' : 'border-[#2e3c52] hover:border-[#4a5f80]'
-              }`}
-              title={locked ? 'Победите на предыдущей карте кампании' : m.feature}
+              whileHover={{ scale: 1.04 }}
+              whileTap={{ scale: 0.96 }}
+              onClick={onClaimDaily}
+              className="hover-glow h-10 shrink-0 rounded-md border-2 border-[#e0a832] bg-gradient-to-b from-[#3a2f14] to-[#241d0c] px-5 font-serif text-[13px] font-black tracking-wide text-[#ffd76b]"
+              style={{ '--glow': '#ffd700' } as CSSProperties}
             >
-              <div className="relative">
-                <div className={locked ? 'pointer-events-none opacity-40 grayscale' : ''}>
-                  <MapPreview seed={m.seed} />
-                </div>
-                {/* бейдж биома: у каждой карты свой облик (biomes.ts) */}
-                <span className="absolute right-1.5 top-1.5 rounded-sm border border-[#3a4660] bg-[rgba(10,15,23,0.85)] px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-[#9db4d0]">
-                  {BIOMES[m.biome].name}
-                </span>
-                {locked && (
-                  <span className="absolute left-1.5 top-1.5 rounded-sm border border-[#5b6f8c88] bg-[rgba(10,15,23,0.9)] px-1.5 py-0.5 text-[10px] font-bold text-[#9db4d0]" title="Откроется после победы на предыдущей карте">
-                    🔒 заперта
-                  </span>
-                )}
-                {/* лесенка сложности кампании: множитель HP заражённых (docs/meta.md) */}
-                <span className="absolute bottom-1.5 left-1.5 rounded-sm border border-[#3a4660] bg-[rgba(10,15,23,0.85)] px-1.5 py-0.5 font-mono text-[8px] font-bold text-[#e0a832]">
-                  ×{m.hpMult.toFixed(2)} HP
-                </span>
-              </div>
-              <div className="px-2.5 py-2">
-                <p className="font-serif text-sm font-black leading-tight text-[#ccd8e6]">
-                  {picked && <span className="text-[#ffc46b]">▸ </span>}
-                  {m.name}
-                </p>
-                <p className="min-h-[2em] text-[9px] leading-tight text-[#7088a8]">{m.feature}</p>
-              </div>
+              ЗАБРАТЬ
             </motion.button>
+          ) : (
+            <span className="shrink-0 rounded border border-[#3a4660] px-3 py-1.5 font-mono text-[10px] text-[#5b6f8c]">
+              забрано · вернётся завтра
+            </span>
+          )}
+        </div>
+      </div>
+      {/* задачи дня */}
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        {DAILY_TASKS.map((t) => {
+          const prog = taskProgress(meta, t.id)
+          const claimed = taskClaimed(meta, t.id)
+          const claimable = taskClaimable(meta, t.id)
+          const pct = Math.min(100, Math.round((prog / t.goal) * 100))
+          return (
+            <div key={t.id} className={`rounded-md border bg-[#141b27] p-3 ${claimed ? 'border-[#59c27a55]' : 'border-[#2e3c52]'}`}>
+              <p className="min-h-[2.6em] text-[11px] leading-snug text-[#ccd8e6]">{t.text}</p>
+              <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-[#0d1420]">
+                <div className="h-full rounded-full bg-[#e0a832] transition-all" style={{ width: `${pct}%` }} />
+              </div>
+              <p className="mt-1 font-mono text-[9px] text-[#8fa2bd]">
+                {Math.min(prog, t.goal)}/{t.goal} · награда: детали ×{t.reward[0]}–{t.reward[1]}
+              </p>
+              {claimed ? (
+                <p className="mt-2 font-mono text-[10px] font-bold text-[#7fd0a0]">получено ✓</p>
+              ) : claimable ? (
+                <button
+                  type="button"
+                  onClick={() => onClaimTask(t.id)}
+                  className="hover-glow mt-2 h-8 w-full rounded border-2 border-[#e0a832] bg-[rgba(58,47,20,0.6)] font-mono text-[10px] font-black tracking-wide text-[#ffd76b]"
+                  style={{ '--glow': '#ffd700' } as CSSProperties}
+                >
+                  ЗАБРАТЬ
+                </button>
+              ) : (
+                <p className="mt-2 font-mono text-[10px] text-[#5b6f8c]">выполните задачу</p>
+              )}
+            </div>
           )
         })}
       </div>
-      <MenuFooter onBack={onBack} nextLabel="ДАЛЕЕ: СЛОЖНОСТЬ →" onNext={onNext} />
+      <p className="mt-3 text-center font-mono text-[10px] text-[#5b6f8c]">
+        награда за задачу фиксирована на сутки: до утра она не «перекатывается»
+      </p>
     </div>
   )
 }
 
-/** Живой предпросмотр карты: запечённый грунт настоящего мира (снег, настил тракта,
- *  заражение минералом, озеро) + яркая линия маршрута со стрелками хода, вход РАЗЛОМ,
- *  выход ЛАГЕРЬ и пунктирная вторая тропа. Грунт печётся по одному карте за кадр
- *  (очередь), кэшируется по зерну; глобальные props мира сохраняются и восстанавливаются. */
+// ─── ПРОФИЛЬ: статистика кампании + коллекция деталей ────────────────────
+
+// Строка статистики на карточке командира: мелкая метка сверху, крупное значение
+function ProfileStat({ label, value, color }: { label: string; value: string; color?: string }) {
+  return (
+    <div>
+      <p className="font-mono text-[8px] uppercase tracking-[0.2em] text-[#5b6f8c]">{label}</p>
+      <p className="mt-0.5 truncate font-serif text-[15px] font-black" style={{ color: color ?? '#ccd8e6' }}>
+        {value}
+      </p>
+    </div>
+  )
+}
+
+/** Цвет мини-бара по типу стата детали: урон/скорострельность/дальность */
+const STAT_COLORS: Record<PartStat, string> = { damage: '#e0685a', cadence: '#7fd0c0', range: '#7fa8e0' }
+
+type CollectionRowData = ReturnType<typeof collectionRows>[number]
+
+/** Карточка башни в коллекции: слот с pixel-артом, имя, три стата с мини-барами (PvZ-альманах / BTD6) */
+function CollectionCard({ towerId, stats }: { towerId: string; stats: CollectionRowData['stats'] }) {
+  const def = ALL_DEFS[towerId]
+  if (!def) return null
+  const total = stats.reduce((a, s) => a + Math.min(s.units, s.max), 0)
+  const max = stats.reduce((a, s) => a + s.max, 0)
+  const done = total >= max
+  const hasAny = total > 0
+  return (
+    <div
+      className={`relative overflow-hidden rounded-md border bg-[#141b27] p-2 ${
+        done ? 'border-[#e0a83288] shadow-[0_0_14px_rgba(224,168,50,0.12)]' : hasAny ? 'border-[#2e3c52]' : 'border-[#25304a]'
+      }`}
+    >
+      {done && (
+        <span className="absolute right-1.5 top-1.5 z-10 rounded border border-[#e0a83288] bg-[rgba(224,168,50,0.14)] px-1 font-mono text-[7px] font-bold tracking-wider text-[#e0a832]">
+          СОБРАНО
+        </span>
+      )}
+      <div className="flex gap-2">
+        {/* слот арта: живой pixel-спрайт той же башни, что на поле; пустая — приглушена */}
+        <div
+          className={`relative h-14 w-14 shrink-0 overflow-hidden rounded border bg-[#0a0f17] ${
+            done ? 'border-[#e0a83299]' : 'border-[#2e3c52]'
+          } ${hasAny ? '' : 'opacity-40 grayscale'}`}
+        >
+          <img src={towerThumb(def)} alt="" className="h-full w-full object-contain" draggable={false} />
+          {/* бейдж суммы единиц (как счётчик Insta-Monkeys) */}
+          <span
+            className={`absolute bottom-0.5 right-0.5 rounded px-1 font-mono text-[8px] font-black leading-4 ${
+              hasAny ? 'bg-[rgba(10,14,22,0.85)] text-[#ffd76b]' : 'bg-[rgba(10,14,22,0.85)] text-[#4a5a72]'
+            }`}
+          >
+            {total}
+          </span>
+        </div>
+        {/* имя и статы */}
+        <div className="min-w-0 flex-1">
+          <p className={`truncate font-serif text-[12px] font-black leading-tight ${hasAny ? 'text-[#ccd8e6]' : 'text-[#4a5a72]'}`}>
+            {def.name}
+          </p>
+          <div className="mt-1 space-y-1">
+            {stats.map((s) => {
+              const label = PART_STAT_BY_ID[s.stat].label
+              const fill = Math.round((Math.min(s.units, s.max) / s.max) * 100)
+              const sign = s.stat === 'cadence' ? '−' : '+'
+              const bonus = Math.round(s.units * s.step * 100)
+              return (
+                <div key={s.stat} title={PART_BY_ID[`${towerId}-${s.stat}`]?.name}>
+                  <div className="flex items-baseline justify-between gap-1 font-mono text-[8px] leading-none">
+                    <span className={hasAny ? 'text-[#8fa9c8]' : 'text-[#4a5a72]'}>
+                      {label} {sign}{bonus}%
+                    </span>
+                    <span className="text-[#4a5a72]">{s.units}/{s.max}</span>
+                  </div>
+                  <div className="mt-0.5 h-1 overflow-hidden rounded-full bg-[#0a0f17]">
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{ width: `${fill}%`, background: STAT_COLORS[s.stat], opacity: hasAny ? 1 : 0 }}
+                    />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ProfileView({ meta, ui, onBack }: { meta: MetaSave; ui: UiState; onBack: () => void }) {
+  const rows = collectionRows(meta)
+  const hero = AVATARS[ui.avatar.id]
+  // итоги коллекции: единицы и потолок — для бейджа «единицы» и общего бара
+  let units = 0
+  let max = 0
+  for (const r of rows) {
+    for (const s of r.stats) {
+      units += Math.min(s.units, s.max)
+      max += s.max
+    }
+  }
+  return (
+    <div className="mx-auto w-full max-w-5xl">
+      <ViewHeader title="ПРОФИЛЬ" sub="личное дело командира · трофеи кампании · арсенал деталей" onBack={onBack} />
+
+      {/* личное дело: портрет героя в латунной рамке + статы (как карточка героя в Hero Room) */}
+      <section className="relative mb-3 overflow-hidden rounded-md border-2 border-[#3a4660] bg-gradient-to-b from-[#172030]/95 to-[#0a0f17]/95 p-4">
+        <Rivets />
+        <div className="flex items-center gap-4">
+          <div className="shrink-0">
+            <div className="h-24 w-24 overflow-hidden rounded border-2 border-[#8a6a2f]/70 bg-[#0a0f17] shadow-[0_6px_22px_rgba(0,0,0,0.55)]">
+              <img src={avatarPortrait(ui.avatar.id, 3)} alt="" className="h-full w-full object-cover object-top" draggable={false} />
+            </div>
+            <p className="mt-1.5 text-center font-mono text-[8px] uppercase tracking-[0.3em] text-[#5b6f8c]">командир</p>
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="font-serif text-xl font-black tracking-wide" style={{ color: hero.color }}>
+              {hero.name}
+            </p>
+            <p className="mb-3 text-[11px] leading-snug text-[#7088a8]">{hero.role}</p>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-4">
+              <ProfileStat label="победы" value={String(meta.wins)} />
+              <ProfileStat label="тракты открыто" value={`${mapProgress(meta)}/${MAP_DEFS.length}`} />
+              <ProfileStat label="единицы деталей" value={`${units}/${max}`} />
+              <ProfileStat label="коллекция" value={`${collectionDonePct(meta)}%`} color="#e0a832" />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* лесенка кампании: живые мини-превью карт, заблокированные — затемнены с замком */}
+      <section className="mb-3 rounded-md border border-[#2e3c52] bg-[#101724] p-3">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <p className="font-mono text-[9px] uppercase tracking-[0.25em] text-[#5b6f8c]">лесенка кампании</p>
+          <Chip tone="dim">тракты {mapProgress(meta)}/{MAP_DEFS.length}</Chip>
+        </div>
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {MAP_DEFS.map((m, i) => {
+            const unlocked = isMapUnlocked(meta, m.id)
+            const wins = meta.winsByMap[m.id] ?? 0
+            return (
+              <div
+                key={m.id}
+                title={m.feature}
+                className={`relative w-[108px] shrink-0 overflow-hidden rounded border ${
+                  unlocked ? 'border-[#3a4660]' : 'border-[#25304a]'
+                }`}
+              >
+                <div className={unlocked ? '' : 'opacity-40 grayscale'}>
+                  <MapPreview seed={m.seed} w={106} />
+                </div>
+                <span className="absolute left-1 top-1 rounded bg-[rgba(8,11,17,0.85)] px-1 font-mono text-[8px] font-bold leading-4 text-[#c3cbe0]">
+                  {i + 1}
+                </span>
+                {!unlocked && (
+                  <span className="absolute inset-0 flex items-center justify-center bg-[rgba(5,8,13,0.35)]">
+                    <Lock size={16} className="text-[#93a9c6]" />
+                  </span>
+                )}
+                <div className="flex items-center justify-between gap-1 bg-[#0d131d] px-1.5 py-1">
+                  <span className={`truncate font-mono text-[9px] font-bold ${unlocked ? 'text-[#ccd8e6]' : 'text-[#4a5a72]'}`}>
+                    {m.name}
+                  </span>
+                  {wins > 0 && <span className="font-mono text-[9px] font-bold text-[#e0a832]">★{wins}</span>}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </section>
+
+      {/* коллекция деталей: сетка карточек башен с прогрессом сбора */}
+      <section className="rounded-md border border-[#2e3c52] bg-[#101724] p-3">
+        <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+          <p className="font-mono text-[9px] uppercase tracking-[0.25em] text-[#5b6f8c]">коллекция деталей</p>
+          {/* общий прогресс сбора */}
+          <div className="flex items-center gap-2">
+            <div className="h-2 w-36 overflow-hidden rounded-full border border-[#2e3c52] bg-[#0a0f17]">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-[#8a6a2f] to-[#e0c05a] transition-all"
+                style={{ width: `${collectionDonePct(meta)}%` }}
+              />
+            </div>
+            <Chip tone="gold">собрано {collectionDonePct(meta)}%</Chip>
+          </div>
+        </div>
+        <p className="mb-3 text-[11px] text-[#7088a8]">
+          детали из сундуков усиливают башни в следующих миссиях (в коопе — fair play, без бонусов)
+        </p>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+          {rows.map((row) => (
+            <CollectionCard key={row.towerId} towerId={row.towerId} stats={row.stats} />
+          ))}
+        </div>
+      </section>
+    </div>
+  )
+}
+
+// ─── НАСТРОЙКИ ───────────────────────────────────────────────────────────
+
+function SettingsView(props: MainMenuProps & { onBack: () => void }) {
+  const [confirmReset, setConfirmReset] = useState(false)
+  return (
+    <div className="mx-auto w-full max-w-2xl">
+      <ViewHeader title="НАСТРОЙКИ" sub="звук, свет и опасная кнопка" onBack={props.onBack} />
+      {/* громкости */}
+      <div className="mb-3 rounded-md border border-[#2e3c52] bg-[#101724] p-3.5">
+        <p className="mb-3 font-mono text-[9px] uppercase tracking-[0.25em] text-[#5b6f8c]">громкость</p>
+        <VolumeRow
+          label="Музыка"
+          value={props.musicVolume}
+          onChange={props.onMusicVolume}
+          sliderClass="[&_[data-slot=slider-track]]:bg-[#3a4660] [&_[data-slot=slider-range]]:bg-[#f2c94c]"
+        />
+        <VolumeRow
+          label="Эффекты"
+          value={props.sfxVolume}
+          onChange={props.onSfxVolume}
+          sliderClass="[&_[data-slot=slider-track]]:bg-[#3a4660] [&_[data-slot=slider-range]]:bg-[#7fd0a0]"
+        />
+        <VolumeRow
+          label="Лагерь (фон)"
+          value={props.ambientVolume}
+          onChange={props.onAmbientVolume}
+          sliderClass="[&_[data-slot=slider-track]]:bg-[#3a4660] [&_[data-slot=slider-range]]:bg-[#93a9c6]"
+        />
+      </div>
+      {/* переключатели */}
+      <div className="mb-3 rounded-md border border-[#2e3c52] bg-[#101724] p-3.5">
+        <div className="flex items-center justify-between gap-3 py-1">
+          <div>
+            <p className="text-[12px] text-[#ccd8e6]">Без звука</p>
+            <p className="text-[10px] text-[#7088a8]">выключает и музыку, и эффекты, и лагерь</p>
+          </div>
+          <Switch checked={props.muted} onCheckedChange={props.onMute} aria-label="Без звука" />
+        </div>
+        <div className="mt-2 flex items-center justify-between gap-3 border-t border-[#2e3c52] pt-2.5">
+          <div>
+            <p className="text-[12px] text-[#ccd8e6]">Динамический свет</p>
+            <p className="text-[10px] text-[#7088a8]">можно выключить на слабых устройствах</p>
+          </div>
+          <Switch checked={props.lighting} onCheckedChange={props.onLighting} aria-label="Динамический свет" />
+        </div>
+      </div>
+      {/* прочее */}
+      <div className="mb-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={props.onToggleFullscreen}
+          className="hover-glow h-10 rounded-md border border-[#5b6f8c] bg-transparent px-4 text-[12px] text-[#ccd8e6] transition-colors hover:bg-[#1f2a3b]"
+        >
+          {props.fullscreen ? '⤢ Выйти из полного экрана' : '⛶ На весь экран'}
+        </button>
+        <button
+          type="button"
+          onClick={props.onHelp}
+          className="hover-glow h-10 rounded-md border border-[#5b6f8c] bg-transparent px-4 text-[12px] text-[#ccd8e6] transition-colors hover:bg-[#1f2a3b]"
+        >
+          Как играть
+        </button>
+      </div>
+      {/* опасная зона */}
+      <div className="rounded-md border border-[#e0525255] bg-[rgba(30,12,14,0.5)] p-3.5">
+        <p className="font-mono text-[9px] uppercase tracking-[0.25em] text-[#e05252]">опасная зона</p>
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+          <p className="max-w-sm text-[11px] leading-snug text-[#aebdd2]">
+            Сбросить лесенку кампании, победы и коллекцию деталей — необратимо.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              if (confirmReset) {
+                props.onResetProgress()
+                setConfirmReset(false)
+              } else {
+                setConfirmReset(true)
+              }
+            }}
+            className={`h-9 shrink-0 rounded-md border-2 px-4 font-mono text-[11px] font-black tracking-wide transition-colors ${
+              confirmReset
+                ? 'border-[#ff7a7a] bg-[rgba(224,82,82,0.25)] text-[#ffb3b3]'
+                : 'border-[#e0525255] text-[#e05252] hover:bg-[rgba(224,82,82,0.12)]'
+            }`}
+          >
+            {confirmReset ? 'точно сбросить?' : 'сбросить прогресс'}
+          </button>
+        </div>
+      </div>
+      <p className="mt-3 text-center font-mono text-[9px] text-[#5b6f8c]">прототип · последняя версия всегда по ссылке у автора</p>
+    </div>
+  )
+}
+
+// ─── общие элементы ──────────────────────────────────────────────────────
+
+function ViewHeader({ title, sub, onBack }: { title: string; sub: string; onBack: () => void }) {
+  return (
+    <div className="mb-4 flex items-end justify-between gap-3">
+      <div>
+        <p className="font-mono text-[9px] uppercase tracking-[0.3em] text-[#5b6f8c]">командный пункт · сектор</p>
+        <p className="font-serif text-2xl font-black tracking-wide text-[#ffc46b]">{title}</p>
+        {sub && <p className="mt-0.5 max-w-xl text-[11px] text-[#7088a8]">{sub}</p>}
+      </div>
+      <button
+        type="button"
+        onClick={onBack}
+        className="hover-glow h-9 shrink-0 rounded-md border border-[#5b6f8c] bg-transparent px-3 text-[12px] text-[#ccd8e6] transition-colors hover:bg-[#1f2a3b]"
+      >
+        ← В штаб
+      </button>
+    </div>
+  )
+}
+
+/** Латунная панель сектора: заклёпки по углам, золотая рамка у главного сектора */
+function Sector({
+  icon,
+  title,
+  sub,
+  chips,
+  onClick,
+  featured,
+  wide,
+  wideLg,
+}: {
+  icon: ReactNode
+  title: string
+  sub: string
+  chips: ReactNode
+  onClick: () => void
+  featured?: boolean
+  wide?: boolean
+  wideLg?: boolean
+}) {
+  return (
+    <motion.button
+      type="button"
+      whileHover={{ y: -3 }}
+      whileTap={{ scale: 0.97 }}
+      onClick={onClick}
+      className={`hover-glow group relative overflow-hidden rounded-md border-2 bg-gradient-to-b from-[#172030]/95 to-[#0a0f17]/95 p-3 text-left transition-colors ${
+        featured
+          ? 'border-[#e0a83266] hover:border-[#e0a832]'
+          : 'border-[#2e3c52] hover:border-[#4a5f80]'
+      } ${wide ? 'col-span-2' : ''} ${wideLg ? 'lg:col-span-2' : ''}`}
+      style={{ '--glow': featured ? '#ffd700' : '#93a9c6' } as CSSProperties}
+    >
+      <Rivets />
+      <div className="flex items-center gap-2">
+        <span
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-sm border ${
+            featured ? 'border-[#e0a83266] text-[#e0a832]' : 'border-[#3a4660] text-[#93a9c6]'
+          }`}
+        >
+          {icon}
+        </span>
+        <span className="font-serif text-[15px] font-black tracking-wide text-[#ccd8e6]">{title}</span>
+      </div>
+      <p className={`mt-2 text-[11px] leading-snug text-[#7088a8] ${wide ? 'sm:pr-24' : 'min-h-[2.4em]'} ${wideLg ? 'lg:pr-24' : ''}`}>{sub}</p>
+      <div className="mt-1.5 flex flex-wrap gap-1">{chips}</div>
+      <span className="absolute bottom-2 right-2 font-mono text-[12px] font-bold text-[#e0a832] opacity-70 transition-opacity group-hover:opacity-100">
+        ▸
+      </span>
+    </motion.button>
+  )
+}
+
+/** Четыре заклёпки по углам панели — фирменный «приборный» вид */
+function Rivets() {
+  const dot = 'pointer-events-none absolute h-1 w-1 rounded-full bg-[#5b6f8c] opacity-70'
+  return (
+    <>
+      <span className={`${dot} left-1.5 top-1.5`} />
+      <span className={`${dot} right-1.5 top-1.5`} />
+      <span className={`${dot} bottom-1.5 left-1.5`} />
+      <span className={`${dot} bottom-1.5 right-1.5`} />
+    </>
+  )
+}
+
+function Chip({ children, tone }: { children: ReactNode; tone: 'dim' | 'gold' | 'green' }) {
+  const cls =
+    tone === 'gold'
+      ? 'border-[#e0a83266] text-[#e0a832]'
+      : tone === 'green'
+        ? 'border-[#59c27a55] text-[#7fd0a0]'
+        : 'border-[#3a4660] text-[#9db4d0]'
+  return <span className={`rounded border px-1.5 py-0.5 font-mono text-[9px] font-bold ${cls}`}>{children}</span>
+}
+
+function VolumeRow({
+  label,
+  value,
+  onChange,
+  sliderClass,
+}: {
+  label: string
+  value: number
+  onChange: (v: number) => void
+  sliderClass: string
+}) {
+  return (
+    <div className="mb-2.5 flex items-center gap-3 last:mb-0">
+      <span className="w-28 shrink-0 text-[12px] text-[#ccd8e6]">{label}</span>
+      <Slider
+        value={[Math.round(value * 100)]}
+        min={0}
+        max={100}
+        step={5}
+        onValueChange={(v) => onChange((v[0] ?? 0) / 100)}
+        aria-label={label}
+        className={`flex-1 ${sliderClass}`}
+      />
+      <span className="w-10 text-right font-mono text-[10px] font-bold text-[#c3cbe0]">{Math.round(value * 100)}%</span>
+    </div>
+  )
+}
+
+/** Процент собранной коллекции деталей (для плашек профиля и хаба) */
+function collectionDonePct(meta: MetaSave): number {
+  const rows = collectionRows(meta)
+  let units = 0
+  let max = 0
+  for (const r of rows) {
+    for (const s of r.stats) {
+      units += Math.min(s.units, s.max)
+      max += s.max
+    }
+  }
+  return max > 0 ? Math.round((units / max) * 100) : 0
+}
+
+// ─── Живой предпросмотр карты (перенесён из степпера без изменений) ──────
+// Запечённый грунт настоящего мира (снег, настил тракта, заражение минералом,
+// озеро) + яркая линия маршрута со стрелками хода, вход РАЗЛОМ, выход ЛАГЕРЬ
+// и пунктирная вторая тропа. Грунт печётся по одной карте за кадр (очередь),
+// кэшируется по зерну; глобальные props мира сохраняются и восстанавливаются.
+
 const groundCache = new Map<number, HTMLCanvasElement>()
 let bakeQueue: Promise<void> = Promise.resolve()
 
@@ -410,245 +1312,4 @@ function MapPreview({ seed, w = 320 }: { seed: number; w?: number }) {
     }
   }, [seed, w, h])
   return <canvas ref={ref} className="block h-auto w-full" aria-hidden />
-}
-
-// ─── Этап 3: выбор сложности ──────────────────────────────────────────────
-
-function StepDifficulty({
-  ui,
-  onPickDifficulty,
-  onBack,
-  onNext,
-}: {
-  ui: UiState
-  onPickDifficulty: (id: DifficultyId) => void
-  onBack: () => void
-  onNext: () => void
-}) {
-  return (
-    <div className="mx-auto w-full max-w-4xl">
-      <p className="mb-1 text-center font-serif text-2xl font-black tracking-wide text-[#ffc46b]">СЛОЖНОСТЬ</p>
-      <p className="mb-5 text-center text-[11px] text-[#7088a8]">от неё зависят HP заражённых, стартовое золото и прочность главного здания</p>
-      <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        {DIFFICULTY_IDS.map((id) => {
-          const d = DIFFICULTIES[id]
-          const picked = ui.difficulty === id
-          const buildingHp = Math.round(BUILDING_BASE_HP * d.buildingHpMult)
-          return (
-            <motion.button
-              key={id}
-              type="button"
-              whileHover={{ y: -3 }}
-              whileTap={{ scale: 0.97 }}
-              onClick={() => onPickDifficulty(id)}
-              className={`hover-glow flex flex-col rounded-md border-2 bg-gradient-to-b from-[#172030] to-[#0a0f17] px-4 py-4 text-left transition-colors ${
-                picked ? 'shadow-[0_0_18px_#ffd70044]' : 'border-[#2e3c52] opacity-85 hover:opacity-100'
-              }`}
-              style={{ borderColor: picked ? d.color : undefined }}
-              title={d.desc}
-            >
-              <span className="font-serif text-xl font-black" style={{ color: d.color }}>
-                {picked ? '▸ ' : ''}{d.name}
-              </span>
-              <span className="mt-1 min-h-[3.5em] text-[11px] leading-snug text-[#aebdd2]">{d.desc}</span>
-              <span className="mt-3 grid grid-cols-2 gap-1 font-mono text-[10px] text-[#8fa2bd]">
-                <span>HP врагов <b className="text-[#e8ecf4]">×{d.creepHpMult.toFixed(2).replace(/0$/, '')}</b></span>
-                <span>золото <b className="text-[#f2c94c]">{d.startGold}</b></span>
-                <span>здание <b className="text-[#ff9a7a]">{buildingHp} HP</b></span>
-                <span>победа ~<b className="text-[#e8ecf4]">{d.targetWinRate}%</b></span>
-              </span>
-              <span className="mt-2 flex flex-wrap gap-1 text-[9px] uppercase tracking-[0.05em] text-[#7088a8]">
-                {d.armorForecastWaves > 1 && <span className="rounded border border-[#59c27a55] px-1.5 py-0.5 text-[#7fd0a0]">броня на 2 волны</span>}
-                {d.mixedWavesFrom !== null && <span className="rounded border border-[#e0525255] px-1.5 py-0.5 text-[#e05252]">смешанная броня с {d.mixedWavesFrom}-й</span>}
-                {d.bossExtraAbility && <span className="rounded border border-[#e0525255] px-1.5 py-0.5 text-[#e05252]">боссы: 2-я способность</span>}
-              </span>
-            </motion.button>
-          )
-        })}
-      </div>
-      <MenuFooter onBack={onBack} nextLabel="ДАЛЕЕ: ГЕРОЙ →" onNext={onNext} />
-    </div>
-  )
-}
-
-// ─── Этап 4: выбор героя ─────────────────────────────────────────────────
-
-function StepHero({
-  ui,
-  onPickAvatar,
-  onBack,
-  onStart,
-  onStartCoop,
-}: {
-  ui: UiState
-  onPickAvatar: (id: AvatarId) => void
-  onBack: () => void
-  onStart: () => void
-  onStartCoop: () => void
-}) {
-  const a = AVATARS[ui.avatar.id]
-  return (
-    <div className="mx-auto w-full max-w-3xl">
-      <p className="mb-1 text-center font-serif text-2xl font-black tracking-wide text-[#ffc46b]">ВЫБОР ГЕРОЯ</p>
-      <p className="mb-5 text-center text-[11px] text-[#7088a8]">герой ходит по карте, растёт в уровнях и ведёт свою игру</p>
-      <div className="mb-3 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-        {AVATAR_IDS.map((id) => {
-          const av = AVATARS[id]
-          const picked = ui.avatar.id === id
-          return (
-            <motion.button
-              key={id}
-              type="button"
-              whileHover={{ y: -3 }}
-              whileTap={{ scale: 0.97 }}
-              onClick={() => onPickAvatar(id)}
-              className={`hover-glow flex flex-col items-center gap-1.5 rounded-md border-2 bg-gradient-to-b from-[#172030] to-[#0a0f17] px-2 py-3 text-center transition-colors ${
-                picked ? 'shadow-[0_0_16px_#ffd70055]' : 'border-[#2e3c52] opacity-80 hover:opacity-100'
-              }`}
-              style={{ borderColor: picked ? av.color : undefined, '--glow': av.color } as CSSProperties}
-              title={`${av.abilityName}: ${av.abilityDesc}`}
-            >
-              {/* портрет во всю ширину карточки: квадрат из верха кадра (табличка SVG с именем обрезается — имя подписано ниже) */}
-              <div className="w-full overflow-hidden rounded-sm border" style={{ aspectRatio: '1 / 1', borderColor: picked ? av.color : '#2e3c52' }}>
-                <img
-                  src={avatarPortrait(id, 3)}
-                  alt=""
-                  className="h-full w-full object-cover object-top"
-                  draggable={false}
-                />
-              </div>
-              <span className="font-serif text-sm font-black leading-none" style={{ color: av.color }}>{av.name}</span>
-              <span className="text-[10px] leading-tight text-[#b9c6d8]">{av.role}</span>
-              <span className="font-mono text-[9px] leading-tight text-[#7088a8]">{av.abilityName} · {av.abilityCd} с</span>
-            </motion.button>
-          )
-        })}
-      </div>
-      {/* карточка выбранного героя */}
-      <div className="mb-5 rounded-md border border-[#5b6f8c55] bg-[#141b27] px-4 py-2.5 text-left">
-        <p className="text-[12px] leading-snug text-[#ccd8e6]">
-          <b style={{ color: a.color }}>{a.abilityName}:</b> {a.abilityDesc}.{' '}
-          <span className="text-[#7088a8]">Пассивно: {a.passive.toLowerCase()}.</span>
-        </p>
-        <p className="mt-1 font-mono text-[10px] text-[#5b6f8c]">
-          карта: {ui.mapName} · сложность: {ui.difficultyName} · {ui.mapFeature}
-        </p>
-      </div>
-      <div className="flex flex-wrap items-center justify-center gap-2.5">
-        <MenuBtn onClick={onBack}>← Назад</MenuBtn>
-        <motion.button
-          type="button"
-          whileHover={{ scale: 1.04 }}
-          whileTap={{ scale: 0.97 }}
-          onClick={onStart}
-          className="hover-glow h-12 rounded-md border-2 border-[#93a9c6] bg-gradient-to-b from-[#2e3c52] to-[#1f2a3b] px-8 font-serif text-base font-black tracking-wide text-[#ffd700] shadow-[0_6px_20px_rgba(60,90,140,0.35)] hover:from-[#34475f]"
-          style={{ '--glow': '#ffd700' } as CSSProperties}
-        >
-          ⚔ В БОЙ
-        </motion.button>
-        <motion.button
-          type="button"
-          whileHover={{ scale: 1.04 }}
-          whileTap={{ scale: 0.97 }}
-          onClick={onStartCoop}
-          className="hover-glow h-12 rounded-md border-2 border-[#7fd0a0] bg-[#1f2d24] px-6 font-serif text-sm font-bold text-[#7fd0a0] hover:bg-[#243a2c]"
-          style={{ '--glow': '#7fd0a0' } as CSSProperties}
-        >
-          👥 ВДВОЁМ
-        </motion.button>
-      </div>
-    </div>
-  )
-}
-
-// ─── общие элементы ──────────────────────────────────────────────────────
-
-function MenuBtn({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="hover-glow h-11 rounded-md border border-[#5b6f8c] bg-transparent px-4 text-sm text-[#ccd8e6] transition-colors hover:bg-[#1f2a3b]"
-    >
-      {children}
-    </button>
-  )
-}
-
-function MenuFooter({ onBack, onNext, nextLabel }: { onBack: () => void; onNext: () => void; nextLabel: string }) {
-  return (
-    <div className="flex items-center justify-between gap-2">
-      <MenuBtn onClick={onBack}>← Назад</MenuBtn>
-      <motion.button
-        type="button"
-        whileHover={{ scale: 1.03 }}
-        whileTap={{ scale: 0.97 }}
-        onClick={onNext}
-        className="hover-glow h-11 rounded-md border-2 border-[#93a9c6] bg-gradient-to-b from-[#2e3c52] to-[#1f2a3b] px-6 font-serif text-sm font-bold tracking-wide text-[#ffd700] hover:from-[#34475f]"
-        style={{ '--glow': '#ffd700' } as CSSProperties}
-      >
-        {nextLabel}
-      </motion.button>
-    </div>
-  )
-}
-
-// ─── Верстак: коллекция деталей башен (метапрогрессия, docs/meta.md) ─────
-
-function Workbench({ meta, onClose }: { meta: MetaSave; onClose: () => void }) {
-  const rows = collectionRows(meta)
-  return (
-    <div className="absolute inset-0 z-30 overflow-y-auto bg-[rgba(5,8,13,0.88)] p-4 backdrop-blur-[3px]" style={{ zoom: 1 }}>
-      <div className="mx-auto w-full max-w-3xl">
-        <div className="mb-4 flex items-start justify-between gap-3">
-          <div>
-            <p className="font-serif text-2xl font-black tracking-wide text-[#ffc46b]">🔧 ВЕРСТАК</p>
-            <p className="mt-1 text-[11px] text-[#7088a8]">
-              детали из сундуков усиливают башни в следующих миссиях · сундуки: за победу на карте, повторные победы (шанс) и ежедневная катка
-            </p>
-          </div>
-          <MenuBtn onClick={onClose}>✕ Закрыть</MenuBtn>
-        </div>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {rows.map((row) => {
-            const def = ALL_DEFS[row.towerId]
-            const done = row.stats.every((s) => s.units >= s.max)
-            return (
-              <div
-                key={row.towerId}
-                className={`rounded-md border bg-[#141b27] px-3 py-2.5 ${done ? 'border-[#e0a83288]' : 'border-[#2e3c52]'}`}
-              >
-                <p className="mb-1.5 flex items-center gap-1.5 font-serif text-[13px] font-black text-[#ccd8e6]">
-                  <span>{def?.glyph}</span>
-                  <span>{def?.name}</span>
-                  {done && <span className="ml-auto font-mono text-[9px] font-bold text-[#e0a832]">СОБРАНО</span>}
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {row.stats.map((s) => {
-                    const pct = Math.round(s.units * s.step * 100)
-                    const sign = s.stat === 'cadence' ? '−' : '+'
-                    const label = PART_STAT_BY_ID[s.stat].label
-                    return (
-                      <span
-                        key={s.stat}
-                        title={PART_BY_ID[`${row.towerId}-${s.stat}`]?.name}
-                        className={`rounded border px-1.5 py-0.5 font-mono text-[9px] font-bold ${
-                          s.units > 0 ? 'border-[#7fd0a055] bg-[rgba(127,208,160,0.08)] text-[#a6f095]' : 'border-[#2e3c52] text-[#5b6f8c]'
-                        }`}
-                      >
-                        {label}: {sign}{pct}% ({s.units}/{s.max})
-                      </span>
-                    )
-                  })}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-        <p className="mt-4 text-center font-mono text-[10px] text-[#5b6f8c]">
-          коллекция усилит и новые карты: лесенка кампании делает следующую карту сильнее (×HP)
-        </p>
-      </div>
-    </div>
-  )
 }
