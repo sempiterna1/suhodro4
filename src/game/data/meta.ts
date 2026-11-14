@@ -3,6 +3,10 @@
 // Экономические постройки и слитые уникальные башни вне коллекции (см. док).
 
 import { TOWERS } from './towers'
+import { MAP_DEFS } from './maps'
+
+/** id карт кампании в порядке лесенки — для ачивки «Все тракты» */
+const MAP_IDS = MAP_DEFS.map((d) => d.id)
 
 // ─── Слоты деталей ───────────────────────────────────────────────────────
 // Каждая единица детали — фиксированная прибавка. Капы подобраны так, чтобы
@@ -83,13 +87,96 @@ export interface ChestDef {
   units: [number, number]
   /** шанс выпадения (первое прохождение — всегда) */
   chance: number
+  /** иконка сундука (эмодзи) для наград и СОБЫТИЙ */
+  icon: string
+  /** акцентный цвет рамки/заголовка (hex) */
+  accent: string
 }
 
-export const CHESTS: Record<'firstClear' | 'repeatWin' | 'daily', ChestDef> = {
-  firstClear: { id: 'firstClear', name: 'Сундук первопроходца', units: [3, 5], chance: 1 },
-  repeatWin: { id: 'repeatWin', name: 'Походный сундук', units: [1, 3], chance: 0.25 },
-  daily: { id: 'daily', name: 'Дневной сундук', units: [2, 4], chance: 1 },
+export const CHESTS: Record<'firstClear' | 'repeatWin' | 'daily' | 'dailyTask' | 'achievement', ChestDef> = {
+  firstClear: { id: 'firstClear', name: 'Сундук первопроходца', units: [3, 5], chance: 1, icon: '🗝️', accent: '#e0a832' },
+  repeatWin: { id: 'repeatWin', name: 'Походный сундук', units: [1, 3], chance: 0.25, icon: '🧰', accent: '#9db4d0' },
+  daily: { id: 'daily', name: 'Дневной сундук', units: [2, 4], chance: 1, icon: '🎁', accent: '#7fd0a0' },
+  dailyTask: { id: 'dailyTask', name: 'Награда задачи дня', units: [1, 3], chance: 1, icon: '📋', accent: '#c49ad0' },
+  achievement: { id: 'achievement', name: 'Сундук за ачивку', units: [1, 3], chance: 1, icon: '🏆', accent: '#ffd700' },
 }
+
+// ─── Ачивки (этап 2, docs/meta.md): одноразовые сундуки за подвиги ───────
+// Каждая ачивка берётся один раз (список achieved в сейве); сундук за неё
+// единожды. Контекст проверки — итоги миссии + сейв (победы, коллекция).
+
+export interface AchievementCtx {
+  /** итоги миссии: утечки, слияния, сложность */
+  leaked: number
+  merges: number
+  difficulty: string
+  /** сейв на момент проверки (победы уже посчитаны в нём) */
+  wins: number
+  winsByMap: Record<string, number>
+  parts: Record<string, number>
+  unlocked: string[]
+}
+
+export interface AchievementDef {
+  id: string
+  name: string
+  desc: string
+  icon: string
+  /** диапазон единиц деталей в сундуке за ачивку */
+  reward: [number, number]
+  check: (ctx: AchievementCtx) => boolean
+}
+
+export const ACHIEVEMENTS: AchievementDef[] = [
+  {
+    id: 'clean-defense',
+    name: 'Идеальная оборона',
+    desc: 'Победите в миссии, не пропустив ни одного заражённого',
+    icon: '🛡️',
+    reward: [2, 4],
+    check: (c) => c.leaked === 0,
+  },
+  {
+    id: 'merger-5',
+    name: 'Мастер слияний',
+    desc: 'Совершите 5 слияний башен за одну миссию',
+    icon: '🔗',
+    reward: [1, 3],
+    check: (c) => c.merges >= 5,
+  },
+  {
+    id: 'nightmare-victory',
+    name: 'Кошмар удержан',
+    desc: 'Победите на сложности «Кошмар»',
+    icon: '💀',
+    reward: [3, 5],
+    check: (c) => c.difficulty === 'nightmare',
+  },
+  {
+    id: 'all-tracts',
+    name: 'Все тракты',
+    desc: 'Победите хотя бы раз на каждой карте кампании',
+    icon: '🗺️',
+    reward: [4, 6],
+    check: (c) => MAP_IDS.every((id) => c.winsByMap[id]),
+  },
+  {
+    id: 'veteran-10',
+    name: 'Ветеран горизонта',
+    desc: 'Одержите 10 побед суммарно',
+    icon: '🎖️',
+    reward: [2, 3],
+    check: (c) => c.wins >= 10,
+  },
+  {
+    id: 'full-set',
+    name: 'Полный комплект',
+    desc: 'Доведите любую деталь до потолка коллекции',
+    icon: '⚙️',
+    reward: [1, 2],
+    check: (c) => PARTS.some((p) => Math.min(p.max, c.parts[p.id] ?? 0) >= p.max),
+  },
+]
 
 /** Бонусный вес башни в дропе: стартовые башни чуть чаще — прогресс первых карт ощутим */
 const DROP_WEIGHT: Partial<Record<string, number>> = {

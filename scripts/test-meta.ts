@@ -4,10 +4,11 @@
 import { Game } from '../src/game/engine'
 import { CLASSIC_MAP } from '../src/game/map'
 import { MAP_DEFS } from '../src/game/data/maps'
-import { CHESTS, PARTS, PART_BY_ID, PART_STATS, rollChest } from '../src/game/data/meta'
+import { CHESTS, PARTS, PART_BY_ID, PART_STATS, rollChest, type AchievementCtx } from '../src/game/data/meta'
 import {
-  DAILY_TASKS, META_KEY, applyDrop, chestForDaily, chestForWin, claimTask, collectionRows, dailyReady, emptyMeta,
-  ensureDailyTasks, isMapUnlocked, loadMeta, partUnits, rawStorage, registerWinTasks, resetMeta, saveMeta,
+  ACHIEVEMENTS, DAILY_TASKS, META_KEY, applyDrop, buildName, chestForAchievement, chestForDaily, chestForWin,
+  claimTask, collectionRows, dailyReady, emptyMeta, ensureDailyTasks, evaluateAchievements, isAchieved,
+  isMapUnlocked, loadMeta, partUnits, rawStorage, registerWinTasks, resetMeta, saveMeta, setBuildName,
   taskClaimable, taskClaimed, taskProgress, taskReward, towerMetaBonus, unlockNextMap,
 } from '../src/game/meta'
 import { TOWERS } from '../src/game/data/towers'
@@ -248,7 +249,55 @@ function mulberry32(seed: number): () => number {
     'старый сейв добирается полем daily',
     migrated.daily.at === null && migrated.daily.wins === 0 && migrated.daily.claimed.length === 0 && migrated.wins === 3,
   )
+  check('старый сейв добирается полем achieved/builds', Array.isArray(migrated.achieved) && migrated.achieved.length === 0 && typeof migrated.builds === 'object')
   rawStorage().setItem(META_KEY, JSON.stringify(emptyMeta()))
+}
+
+// ─── Ачивки (этап 2): одноразовые сундуки за подвиги ───
+{
+  const m = emptyMeta()
+  check('в пустом сейве ачивок нет', ACHIEVEMENTS.every((a) => !isAchieved(m, a.id)))
+  const ctx: AchievementCtx = {
+    leaked: 0,
+    merges: 6,
+    difficulty: 'nightmare',
+    wins: 10,
+    winsByMap: { tract: 3, mill: 2, bridge: 1, mines: 1, pass: 1, valley: 2 },
+    parts: { 'archer-damage': 10 },
+    unlocked: ['tract', 'mill', 'bridge', 'mines', 'pass', 'valley'],
+  }
+  const fresh = evaluateAchievements(m, ctx)
+  check('выполнены все 6 ачивок сразу', fresh.length === ACHIEVEMENTS.length, `${fresh.length}/${ACHIEVEMENTS.length}`)
+  check('ахивки вписаны в сейв', ACHIEVEMENTS.every((a) => isAchieved(m, a.id)))
+  const again = evaluateAchievements(m, ctx)
+  check('повторная проверка ничего не выдаёт (одноразово)', again.length === 0)
+
+  // частичные итоги: только подходящие ачивки
+  const m2 = emptyMeta()
+  const partial = evaluateAchievements(m2, { ...ctx, leaked: 2, merges: 1, difficulty: 'recruit', wins: 1, winsByMap: { tract: 1 }, parts: {}, unlocked: ['tract'] })
+  check('без подвигов ачивок нет', partial.length === 0, partial.map((a) => a.id).join(','))
+  const noLeaks = evaluateAchievements(m2, { ...ctx, leaked: 0, merges: 1, difficulty: 'recruit', wins: 1, winsByMap: { tract: 1 }, parts: {}, unlocked: ['tract'] })
+  check('идеальная оборона берётся одна', noLeaks.length === 1 && noLeaks[0].id === 'clean-defense')
+
+  // сундук за ачивку: в диапазоне награды, детали существующие
+  const def = ACHIEVEMENTS.find((a) => a.id === 'nightmare-victory')!
+  const drop = chestForAchievement(def, mulberry32(5))
+  const n = drop.parts.reduce((s, p) => s + p.units, 0)
+  check('сундук за ачивку в диапазоне награды', n >= def.reward[0] && n <= def.reward[1], `${n} (${def.reward[0]}–${def.reward[1]})`)
+  check('сундук за ачивку — существующие детали', drop.parts.every((p) => !!PART_BY_ID[p.partId]))
+  check('у всех ачивок иконка и описание', ACHIEVEMENTS.every((a) => a.icon.length > 0 && a.desc.length > 0 && a.reward[0] > 0))
+}
+
+// ─── Имена билдов (этап 2) ───
+{
+  const m = emptyMeta()
+  check('без имени билд не назван', buildName(m, 'archer') === null)
+  setBuildName(m, 'archer', '  Дальний бой  ')
+  check('имя билда обрезано по краям', buildName(m, 'archer') === 'Дальний бой')
+  setBuildName(m, 'archer', 'х'.repeat(40))
+  check('имя билда ограничено 24 символами', buildName(m, 'archer')!.length === 24)
+  setBuildName(m, 'archer', '')
+  check('пустое имя сбрасывает билд', buildName(m, 'archer') === null)
 }
 
 if (failed > 0) {

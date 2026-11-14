@@ -33,15 +33,16 @@ import { MainMenu } from './MainMenu'
 import { MenuBackdrop } from './MenuBackdrop'
 import { MoveIcon, TrashIcon } from './icons'
 import { useToast } from '@/hooks/use-toast'
-import { applyDrop, chestForDaily, chestForWin, claimTask, dailyReady, emptyMeta, loadMeta, registerWinTasks, resetMeta, saveMeta, towerMetaBonus, unlockNextMap, type MetaSave } from '@/game/meta'
-import { CHESTS, PART_BY_ID } from '@/game/data/meta'
+import { applyDrop, chestForAchievement, chestForDaily, chestForWin, claimTask, dailyReady, emptyMeta, evaluateAchievements, loadMeta, registerWinTasks, resetMeta, saveMeta, setBuildName, towerMetaBonus, unlockNextMap, type MetaSave } from '@/game/meta'
+import { ACHIEVEMENTS, CHESTS, PART_BY_ID } from '@/game/data/meta'
 import { Button } from '@/components/ui/button'
 import { AnimatePresence, motion } from 'framer-motion'
 
-/** Награда победы: сундук из метапрогрессии и его детали (docs/meta.md) */
+/** Награда победы: сундук из метапрогрессии и его детали (docs/meta.md); achievementId — сундук за ачивку */
 interface MetaRewardDrop {
   chest: string
   parts: Array<{ partId: string; units: number }>
+  achievementId?: string
 }
 
 /**
@@ -232,6 +233,21 @@ export default function GameShell() {
       applyDrop(m, winDrop)
       drops.push(winDrop)
     }
+    // ачивки (этап 2): одноразовые сундуки за подвиги миссии — по итогам этой победы
+    for (const ach of evaluateAchievements(m, {
+      leaked: game.stats.leaked,
+      merges: game.stats.merges,
+      difficulty: game.difficultyDef.id,
+      wins: m.wins,
+      winsByMap: m.winsByMap,
+      parts: m.parts,
+      unlocked: m.unlocked,
+    })) {
+      const drop = chestForAchievement(ach)
+      applyDrop(m, drop)
+      drops.push({ ...drop, achievementId: ach.id })
+      toast({ title: `${ach.icon} Ачивка: ${ach.name}`, description: `${ach.desc} — сундук с деталями.` })
+    }
     // дневной сундук теперь вручную — кнопка «Забрать» в секторе СОБЫТИЯ главного меню
     const unlockedId = unlockNextMap(m, mapId)
     saveMeta(m)
@@ -278,6 +294,18 @@ export default function GameShell() {
     resetMeta()
     setMeta(loadMeta())
     toast({ title: 'Прогресс сброшен', description: 'Лесенка кампании, победы и коллекция деталей очищены.' })
+  }, [toast])
+  // имя билда башни (ПРОФИЛЬ → коллекция): сейв пишет оболочка
+  const doRenameBuild = useCallback((towerId: string, name: string) => {
+    const m: MetaSave = { ...metaRef.current, builds: { ...metaRef.current.builds } }
+    setBuildName(m, towerId, name)
+    saveMeta(m)
+    setMeta(m)
+    const defName = ALL_DEFS[towerId]?.name ?? towerId
+    toast({
+      title: name.trim() ? 'Билд назван' : 'Имя билда сброшено',
+      description: name.trim() ? `${defName}: «${name.trim().slice(0, 24)}»` : `${defName} вернулась к заводскому имени.`,
+    })
   }, [toast])
   const mpHostLeftRef = useRef(false)
   const movedHintShown = useRef(false)
@@ -1537,6 +1565,7 @@ export default function GameShell() {
               onClaimDaily={doClaimDaily}
               onClaimTask={doClaimTask}
               onResetProgress={doResetProgress}
+              onRenameBuild={doRenameBuild}
               mpRole={mpRole}
               mpStatus={mpStatus}
             />
@@ -1583,22 +1612,34 @@ export default function GameShell() {
                     : `Заражённые прорвались к главному зданию на ${Math.min(ui.wave, ui.totalWaves)}-й волне. Минерал забирает тракт...`}
                 </p>
                 <Stats ui={ui} />
-                {/* награда метапрогрессии: сундуки с деталями за победу (docs/meta.md) */}
+                {/* награда метапрогрессии: карточки сундуков с деталями за победу (docs/meta.md) */}
                 {ui.phase === 'won' && metaReward && metaReward.length > 0 && (
                   <div className="td-ornate mt-3 rounded-xl border border-[#e0a83266] bg-[rgba(20,26,38,0.75)] px-4 py-3 text-left">
-                    {metaReward.map((drop, i) => (
-                      <div key={i} className={i > 0 ? 'mt-2 border-t border-[#2e3c52] pt-2' : ''}>
-                        <p className="mb-1 font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-[#e0a832]">
-                          🧰 {CHESTS[drop.chest as keyof typeof CHESTS]?.name ?? drop.chest}
-                        </p>
-                        <p className="text-[12px] leading-snug text-[#c3cbe0]">
-                          {drop.parts.map(({ partId, units }) => {
-                            const p = PART_BY_ID[partId]
-                            return p ? `${p.name} ×${units}` : null
-                          }).filter(Boolean).join(' · ')}
-                        </p>
-                      </div>
-                    ))}
+                    <p className="mb-2 font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-[#7088a8]">трофеи миссии</p>
+                    {metaReward.map((drop, i) => {
+                      const chest = CHESTS[drop.chest as keyof typeof CHESTS]
+                      const ach = drop.achievementId ? ACHIEVEMENTS.find((a) => a.id === drop.achievementId) : null
+                      return (
+                        <motion.div
+                          key={i}
+                          initial={{ scale: 0.85, opacity: 0 }}
+                          animate={{ scale: 1, opacity: 1 }}
+                          transition={{ delay: i * 0.15, duration: 0.25, ease: 'easeOut' }}
+                          className="mt-2 rounded-lg border bg-[rgba(10,15,23,0.65)] px-3 py-2 first:mt-0"
+                          style={{ borderColor: chest.accent + '55', boxShadow: `0 0 14px ${chest.accent}22` }}
+                        >
+                          <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: chest.accent }}>
+                            {ach?.icon ?? chest.icon} {ach ? `${ach.name} — ${chest.name}` : chest.name}
+                          </p>
+                          <p className="mt-1 text-[12px] leading-snug text-[#c3cbe0]">
+                            {drop.parts.map(({ partId, units }) => {
+                              const p = PART_BY_ID[partId]
+                              return p ? `${p.name} ×${units}` : null
+                            }).filter(Boolean).join(' · ')}
+                          </p>
+                        </motion.div>
+                      )
+                    })}
                     <p className="mt-1.5 font-mono text-[9px] text-[#5b6f8c]">детали ждут в секторе ПРОФИЛЬ (главное меню)</p>
                   </div>
                 )}

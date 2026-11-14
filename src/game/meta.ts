@@ -4,7 +4,10 @@
 // это базовая линия баланса.
 
 import { MAP_DEFS, type MapDef } from './data/maps'
-import { CHESTS, PART_BY_ID, PARTS, PART_STAT_BY_ID, rollChest, type ChestDef, type PartStat } from './data/meta'
+import { ACHIEVEMENTS, CHESTS, PART_BY_ID, PARTS, PART_STAT_BY_ID, rollChest, type AchievementCtx, type AchievementDef, type ChestDef, type PartStat } from './data/meta'
+
+/** Ачивки читает UI из рантайм-модуля (проверка — evaluateAchievements) */
+export { ACHIEVEMENTS }
 import { mulberry32 } from './rng'
 
 export interface DailyTasksSave {
@@ -30,6 +33,10 @@ export interface MetaSave {
   winsByMap: Record<string, number>
   /** задачи дня: прогресс и взятые награды (старые сейвы добираются пустыми в loadMeta) */
   daily: DailyTasksSave
+  /** взятые ачивки (этап 2): сундук за каждую выдаётся один раз */
+  achieved: string[]
+  /** имена билдов (этап 2): towerId → название, придуманное игроком */
+  builds: Record<string, string>
 }
 
 export const META_KEY = 'zr-meta'
@@ -43,6 +50,8 @@ export function emptyMeta(): MetaSave {
     wins: 0,
     winsByMap: {},
     daily: { at: null, wins: 0, maps: {}, claimed: [] },
+    achieved: [],
+    builds: {},
   }
 }
 
@@ -269,7 +278,7 @@ export function taskClaimable(m: MetaSave, taskId: string, now: number = Date.no
 export function taskReward(taskId: string, now: number = Date.now()): ChestDrop {
   const idx = Math.max(0, DAILY_TASKS.findIndex((t) => t.id === taskId))
   const def = DAILY_TASKS[idx]
-  const chest: ChestDef = { id: 'dailyTask', name: 'Награда задачи дня', units: def.reward, chance: 1 }
+  const chest: ChestDef = { ...CHESTS.dailyTask, units: def.reward }
   return { chest: chest.id, parts: rollChest(chest, mulberry32(dayKey(now) * 131 + idx)) }
 }
 
@@ -279,4 +288,42 @@ export function claimTask(m: MetaSave, taskId: string, now: number = Date.now())
   if (!taskClaimable(m, taskId, now)) return null
   m.daily.claimed.push(taskId)
   return taskReward(taskId, now)
+}
+
+// ─── Ачивки (этап 2): одноразовые сундуки за подвиги ─────────────────────
+// Каждая ачивка берётся один раз; сундук за неё выдаётся единожды при
+// первом выполнении. Проверка — по итогам миссии и сейву (см. AchievementCtx).
+
+export function isAchieved(m: MetaSave, achId: string): boolean {
+  return m.achieved.includes(achId)
+}
+
+/**
+ * Проверить ачивки по итогам миссии: новые вписывает в сейв (одноразово)
+ * и возвращает их определения — за каждую роллится сундук.
+ */
+export function evaluateAchievements(m: MetaSave, ctx: AchievementCtx): AchievementDef[] {
+  const fresh = ACHIEVEMENTS.filter((a) => !m.achieved.includes(a.id) && a.check(ctx))
+  m.achieved.push(...fresh.map((a) => a.id))
+  return fresh
+}
+
+/** Сундук за ачивку: ролл по диапазону награды этой ачивки */
+export function chestForAchievement(a: AchievementDef, rng: () => number = Math.random): ChestDrop {
+  const chest: ChestDef = { ...CHESTS.achievement, units: a.reward }
+  return { chest: chest.id, parts: rollChest(chest, rng) }
+}
+
+// ─── Имена билдов (этап 2): игрок называет свою сборку башни ─────────────
+
+/** Имя билда башни, придуманное игроком (null — не названа) */
+export function buildName(m: MetaSave, towerId: string): string | null {
+  return m.builds[towerId] ?? null
+}
+
+/** Задать имя билда (пустая строка/null — сбросить); хранится до 24 символов */
+export function setBuildName(m: MetaSave, towerId: string, name: string | null): void {
+  const clean = (name ?? '').trim()
+  if (clean) m.builds[towerId] = clean.slice(0, 24)
+  else delete m.builds[towerId]
 }

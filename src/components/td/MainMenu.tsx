@@ -33,9 +33,11 @@ import {
   type DifficultyId,
 } from '@/game/config'
 import {
+  ACHIEVEMENTS,
   DAILY_TASKS,
   collectionRows,
   dailyReady,
+  isAchieved,
   isMapUnlocked,
   mapProgress,
   taskClaimable,
@@ -82,6 +84,8 @@ interface MainMenuProps {
   onClaimTask: (taskId: string) => void
   /** сбросить лесенку кампании и коллекцию деталей */
   onResetProgress: () => void
+  /** переименовать билд башни в коллекции (этап 2, docs/meta.md) */
+  onRenameBuild: (towerId: string, name: string) => void
   /** хаб открывается только для одиночки и хоста (гость ждёт на своём экране) */
   mpRole: 'single' | 'host'
   mpStatus: string
@@ -178,7 +182,7 @@ export function MainMenu(props: MainMenuProps) {
                 onClaimTask={props.onClaimTask}
               />
             )}
-            {view === 'profile' && <ProfileView meta={props.meta} ui={props.ui} onBack={() => go('hub')} />}
+            {view === 'profile' && <ProfileView meta={props.meta} ui={props.ui} onRenameBuild={props.onRenameBuild} onBack={() => go('hub')} />}
             {view === 'settings' && <SettingsView {...props} onBack={() => go('hub')} />}
           </motion.div>
         </AnimatePresence>
@@ -656,7 +660,9 @@ function EventsView({
         <Rivets />
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="font-serif text-[15px] font-black text-[#e0a832]">🧰 {CHESTS.daily.name}</p>
+            <p className="font-serif text-[15px] font-black" style={{ color: CHESTS.daily.accent }}>
+              {CHESTS.daily.icon} {CHESTS.daily.name}
+            </p>
             <p className="mt-0.5 max-w-md text-[11px] leading-snug text-[#aebdd2]">
               2–4 единицы деталей башен за вход в лагерь. Детали усилят башни в следующих миссиях —
               разбор коллекции в секторе ПРОФИЛЬ.
@@ -740,14 +746,32 @@ const STAT_COLORS: Record<PartStat, string> = { damage: '#e0685a', cadence: '#7f
 
 type CollectionRowData = ReturnType<typeof collectionRows>[number]
 
-/** Карточка башни в коллекции: слот с pixel-артом, имя, три стата с мини-барами (PvZ-альманах / BTD6) */
-function CollectionCard({ towerId, stats }: { towerId: string; stats: CollectionRowData['stats'] }) {
+/** Карточка башни в коллекции: слот с pixel-артом, имя (или имя билда), три стата с мини-барами */
+function CollectionCard({
+  towerId,
+  stats,
+  build,
+  onRename,
+}: {
+  towerId: string
+  stats: CollectionRowData['stats']
+  /** имя билда, придуманное игроком (null — не названа) */
+  build: string | null
+  /** сохранить имя билда (пустая строка — сбросить) */
+  onRename: (towerId: string, name: string) => void
+}) {
   const def = ALL_DEFS[towerId]
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
   if (!def) return null
   const total = stats.reduce((a, s) => a + Math.min(s.units, s.max), 0)
   const max = stats.reduce((a, s) => a + s.max, 0)
   const done = total >= max
   const hasAny = total > 0
+  const save = () => {
+    onRename(towerId, draft)
+    setEditing(false)
+  }
   return (
     <div
       className={`relative overflow-hidden rounded-md border bg-[#141b27] p-2 ${
@@ -778,9 +802,52 @@ function CollectionCard({ towerId, stats }: { towerId: string; stats: Collection
         </div>
         {/* имя и статы */}
         <div className="min-w-0 flex-1">
-          <p className={`truncate font-serif text-[12px] font-black leading-tight ${hasAny ? 'text-[#ccd8e6]' : 'text-[#4a5a72]'}`}>
-            {def.name}
-          </p>
+          {editing ? (
+            <div className="flex items-center gap-1">
+              <input
+                autoFocus
+                value={draft}
+                maxLength={24}
+                placeholder="имя билда"
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') save()
+                  if (e.key === 'Escape') setEditing(false)
+                }}
+                className="min-w-0 flex-1 rounded border border-[#e0a83255] bg-[#0a0f17] px-1.5 py-0.5 font-serif text-[11px] font-bold text-[#ffd76b] outline-none placeholder:text-[#4a5a72]"
+              />
+              <button
+                type="button"
+                onClick={save}
+                className="shrink-0 rounded border border-[#7fd0a055] px-1 font-mono text-[9px] font-bold text-[#a6f095]"
+                title="Сохранить имя билда"
+              >
+                ✓
+              </button>
+            </div>
+          ) : (
+            <div className="group flex min-w-0 items-baseline gap-1">
+              <p className={`truncate font-serif text-[12px] font-black leading-tight ${hasAny ? 'text-[#ccd8e6]' : 'text-[#4a5a72]'}`}>
+                {def.name}
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setDraft(build ?? '')
+                  setEditing(true)
+                }}
+                title={build ? `Билд «${build}» — переименовать` : 'Назвать свой билд'}
+                className="shrink-0 font-mono text-[9px] text-[#4a5a72] opacity-0 transition-opacity group-hover:opacity-100"
+              >
+                ✎
+              </button>
+            </div>
+          )}
+          {build && !editing && (
+            <p className="truncate font-mono text-[9px] font-bold leading-tight text-[#ffd76b]" title={`Билд: ${build}`}>
+              «{build}»
+            </p>
+          )}
           <div className="mt-1 space-y-1">
             {stats.map((s) => {
               const label = PART_STAT_BY_ID[s.stat].label
@@ -811,7 +878,7 @@ function CollectionCard({ towerId, stats }: { towerId: string; stats: Collection
   )
 }
 
-function ProfileView({ meta, ui, onBack }: { meta: MetaSave; ui: UiState; onBack: () => void }) {
+function ProfileView({ meta, ui, onRenameBuild, onBack }: { meta: MetaSave; ui: UiState; onRenameBuild: (towerId: string, name: string) => void; onBack: () => void }) {
   const rows = collectionRows(meta)
   const hero = AVATARS[ui.avatar.id]
   // итоги коллекции: единицы и потолок — для бейджа «единицы» и общего бара
@@ -913,8 +980,48 @@ function ProfileView({ meta, ui, onBack }: { meta: MetaSave; ui: UiState; onBack
         </p>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
           {rows.map((row) => (
-            <CollectionCard key={row.towerId} towerId={row.towerId} stats={row.stats} />
+            <CollectionCard
+              key={row.towerId}
+              towerId={row.towerId}
+              stats={row.stats}
+              build={meta.builds[row.towerId] ?? null}
+              onRename={onRenameBuild}
+            />
           ))}
+        </div>
+      </section>
+
+      {/* ачивки (этап 2): одноразовые сундуки за подвиги — выполненные золотом, прочие серые */}
+      <section className="mt-3 rounded-md border border-[#2e3c52] bg-[#101724] p-3">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <p className="font-mono text-[9px] uppercase tracking-[0.25em] text-[#5b6f8c]">ачивки</p>
+          <Chip tone="gold">взято {ACHIEVEMENTS.filter((a) => isAchieved(meta, a.id)).length}/{ACHIEVEMENTS.length}</Chip>
+        </div>
+        <p className="mb-3 text-[11px] text-[#7088a8]">
+          за каждую новую ачивку — сундук с деталями; берутся один раз
+        </p>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {ACHIEVEMENTS.map((a) => {
+            const done = isAchieved(meta, a.id)
+            return (
+              <div
+                key={a.id}
+                title={a.desc}
+                className={`flex items-start gap-2 rounded-md border px-2.5 py-2 ${
+                  done ? 'border-[#e0a83288] bg-[rgba(224,168,50,0.08)]' : 'border-[#25304a] bg-[#0d131d]'
+                }`}
+              >
+                <span className={`text-[18px] leading-none ${done ? '' : 'opacity-35 grayscale'}`}>{a.icon}</span>
+                <div className="min-w-0">
+                  <p className={`truncate font-serif text-[12px] font-black leading-tight ${done ? 'text-[#ffd76b]' : 'text-[#4a5a72]'}`}>
+                    {a.name}
+                  </p>
+                  <p className={`text-[10px] leading-snug ${done ? 'text-[#a09470]' : 'text-[#3d4a60]'}`}>{a.desc}</p>
+                </div>
+                {done && <span className="ml-auto shrink-0 font-mono text-[10px] font-bold text-[#e0a832]">✓</span>}
+              </div>
+            )
+          })}
         </div>
       </section>
     </div>
