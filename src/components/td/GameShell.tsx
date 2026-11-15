@@ -24,7 +24,7 @@ import {
   type MpStatus,
 } from './Panels'
 import {
-  BuildConfirmButton, CenterNotices, DMG_COLORS, HandTray, HeroButtons, LavkaButton, LavkaModal, PricePlaque, ShopButton, ShopModal, StartButton, TopBar, TowerDamageBoard, WaveBanner, type MenuActions,
+  BuildConfirmButton, CenterNotices, DMG_COLORS, HandTray, HeroButtons, LavkaButton, LavkaModal, PricePlaque, RepairButton, ShopButton, ShopModal, StartButton, TopBar, TowerDamageBoard, WaveBanner, type MenuActions,
 } from './Hud'
 import { Sfx } from '@/game/audio'
 import { towerThumb } from '@/game/pixel'
@@ -997,6 +997,17 @@ export default function GameShell() {
     game.startWave()
   }
 
+  // Ремонт здания в превью: хост чинит сам, гость шлёт команду (снапшот синхронизирует)
+  const doRepair = () => {
+    if (asGuest && codeRef.current) {
+      sendCmd(codeRef.current, { t: 'repair' })
+      return
+    }
+    const res = game.repairBuilding()
+    if (!res.ok && res.error) errToast('Ремонт невозможен', res.error)
+    setUi(game.getUiState())
+  }
+
   const doSpeed = () => {
     const next = ui.speed >= 3 ? 1 : ui.speed + 1
     if (asGuest && codeRef.current) {
@@ -1493,6 +1504,7 @@ export default function GameShell() {
   )
   const heroButtons = <HeroButtons ui={ui} role={mpRole} onAbility={doAbility} />
   const startButton = !armed ? <StartButton ui={ui} onStart={doStartWave} /> : null
+  const repairButton = !armed ? <RepairButton ui={ui} onRepair={doRepair} /> : null
 
   return (
     // Десктоп: экран целиком без прокрутки — карта накрывает окно (cover), HUD плавает поверх.
@@ -1752,7 +1764,7 @@ export default function GameShell() {
                 <div className="pointer-events-none absolute inset-x-2 bottom-2 z-10 flex flex-col gap-2">
                   <div className="flex items-end justify-between">
                     {!contextPanel ? heroButtons : <span />}
-                    {startButton}
+                    <div className="flex items-center gap-2">{repairButton}{startButton}</div>
                   </div>
                   <HandTray ui={ui} armedHand={armedHand} onArm={armHand} />
                   <div className="pointer-events-auto flex gap-2">
@@ -1772,6 +1784,7 @@ export default function GameShell() {
                     className="pointer-events-none absolute bottom-3 z-10 flex flex-col items-end gap-3"
                     style={{ right: 'max(52px, env(safe-area-inset-right))' }}
                   >
+                    {repairButton}
                     {startButton}
                     <HandTray ui={ui} armedHand={armedHand} onArm={armHand} />
                     <div className="pointer-events-auto flex gap-2">
@@ -1867,7 +1880,7 @@ export default function GameShell() {
                 <ShopButton onClick={() => setShopOpen(true)} disabled={!canBuild} />
                 <LavkaButton onClick={() => setLavkaOpen(true)} />
               </div>
-              <div className="flex w-[170px] justify-start">{startButton}</div>
+              <div className="flex items-center justify-start gap-2">{repairButton}{startButton}</div>
             </div>
           </motion.div>
         )}

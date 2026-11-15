@@ -22,6 +22,8 @@ export interface Snap {
   itemShop?: Array<{ id: string; rare: boolean }>
   buildingHp: number
   buildingMaxHp: number
+  /** осталось покупок ремонта в текущем превью (гость видит квоту хоста) */
+  repairBuysLeft?: number
   difficulty: DifficultyId
   speed: number
   paused: boolean
@@ -66,6 +68,7 @@ export type GuestCmd =
   | { t: 'move'; id: number; x: number; y: number }
   | { t: 'merge'; a: number; b: number }
   | { t: 'startWave' }
+  | { t: 'repair' }
   | { t: 'setSpeed'; speed: number }
   | { t: 'setPaused'; paused: boolean }
   | { t: 'setInfiniteGold'; on: boolean }

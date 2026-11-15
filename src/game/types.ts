@@ -280,6 +280,8 @@ export interface UiState {
   /** HP главного здания (поражение при 0) */
   buildingHp: number
   buildingMaxHp: number
+  /** осталось покупок ремонта в текущем превью (0 — квота исчерпана) */
+  repairBuysLeft: number
   difficulty: import('./data/difficulties').DifficultyId
   difficultyName: string
   wave: number // номер текущей/следующей волны (1-базный)

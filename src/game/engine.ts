@@ -24,6 +24,9 @@ import {
   levelIntervalMult,
   levelRangeMult,
   PREVIEW_TIME,
+  REPAIR_CHUNK_HP,
+  REPAIR_GOLD_PER_HP,
+  REPAIR_MAX_BUYS_PER_WAVE,
   ROLL_COST,
   SELL_RATIO,
   SHOP_SIZE,
@@ -225,6 +228,8 @@ export class Game {
   private goldBeforeCheat = 0
   time = 0
   previewRemaining = 0
+  /** Осталось покупок ремонта в текущем превью (сбрасывается при входе в превью) */
+  repairBuysLeft = 0
 
   creeps: Creep[] = []
   towers: Tower[] = []
@@ -306,6 +311,7 @@ export class Game {
     this.itemShop = []
     this.time = 0
     this.previewRemaining = 0
+    this.repairBuysLeft = 0
     this.creeps = []
     this.towers = []
     this.projectiles = []
@@ -404,6 +410,28 @@ export class Game {
     if (this.phase === 'intro' && this.itemShop.length === 0) this.rollItemOffers() // первая витрина лавки бесплатна
     this.phase = 'preview'
     this.previewRemaining = this.wave === 1 ? FIRST_PREVIEW_TIME : PREVIEW_TIME
+    this.repairBuysLeft = REPAIR_MAX_BUYS_PER_WAVE // квота ремонта обновляется в каждом превью
+  }
+
+  /**
+   * Ремонт здания в превью между волнами: «+25 HP за 25 золота» (1 HP = 1 зол),
+   * не более 2 покупок за волну. Доплата за частичный чанк не берётся:
+   * если не хватает до 25 HP — чиним только недостающее и платим за него.
+   */
+  repairBuilding(): ActionResult {
+    if (this.phase !== 'preview') return { ok: false, error: 'Ремонт возможен только между волнами' }
+    if (this.repairBuysLeft <= 0) return { ok: false, error: 'На эту волну ремонт исчерпан (2 покупки)' }
+    const missing = this.buildingMaxHp - this.buildingHp
+    if (missing <= 0) return { ok: false, error: 'Здание цело — ремонт не нужен' }
+    const chunk = Math.min(REPAIR_CHUNK_HP, missing)
+    const cost = chunk * REPAIR_GOLD_PER_HP
+    if (!this.infiniteGold && this.gold < cost) return { ok: false, error: `Нужно ${cost} золота` }
+    this.gold -= cost
+    this.buildingHp = Math.min(this.buildingMaxHp, this.buildingHp + chunk)
+    this.repairBuysLeft--
+    this.addFloat(pointAtLength(pathLength(0) - 30, 0).x, pointAtLength(pathLength(0) - 30, 0).y - 40, `+${chunk} HP`, '#a6f095')
+    this.refillGold()
+    return { ok: true }
   }
 
   startWave() {
@@ -1675,6 +1703,7 @@ export class Game {
     } else {
       this.phase = 'preview'
       this.previewRemaining = PREVIEW_TIME
+      this.repairBuysLeft = REPAIR_MAX_BUYS_PER_WAVE // квота ремонта обновляется в каждом превью
     }
   }
 
@@ -1699,6 +1728,7 @@ export class Game {
       itemShop: this.itemShop.map((o) => ({ ...o })),
       buildingHp: Math.max(0, this.buildingHp),
       buildingMaxHp: this.buildingMaxHp,
+      repairBuysLeft: this.repairBuysLeft,
       difficulty: this.difficulty,
       difficultyName: diff.name,
       wave: this.wave,
@@ -1767,6 +1797,7 @@ export class Game {
       itemShop: this.itemShop.map((o) => ({ ...o })),
       buildingHp: Math.max(0, this.buildingHp),
       buildingMaxHp: this.buildingMaxHp,
+      repairBuysLeft: this.repairBuysLeft,
       difficulty: this.difficulty,
       speed: this.speed,
       paused: this.paused,
@@ -1827,6 +1858,7 @@ export class Game {
     this.itemShop = (s.itemShop ?? []).map((o) => ({ ...o }))
     this.buildingHp = s.buildingHp
     this.buildingMaxHp = s.buildingMaxHp
+    this.repairBuysLeft = s.repairBuysLeft ?? 0
     this.difficulty = s.difficulty ?? DEFAULT_DIFFICULTY
     this.speed = s.speed
     this.paused = s.paused
@@ -1933,6 +1965,9 @@ export class Game {
       case 'startWave':
         if (this.phase === 'preview') this.startWave()
         return null
+      case 'repair':
+        res = this.repairBuilding()
+        break
       case 'setSpeed':
         this.speed = cmd.speed
         return null

@@ -7,12 +7,12 @@
 
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { AnimatePresence, motion, useAnimationControls } from 'framer-motion'
-import { AI_SIGNALS, ALL_DEFS, ALL_ITEMS, ARMOR_COLORS, ARMOR_NAMES, AVATARS, ITEM_REROLL_COST, ITEM_SLOTS, ITEM_SLOTS_TOTAL, RARITY_BY_ID, TOWERS, defFootprint, econIncomeAt, econIncomeAt5, econIncomeBase } from '@/game/config'
+import { AI_SIGNALS, ALL_DEFS, ALL_ITEMS, ARMOR_COLORS, ARMOR_NAMES, AVATARS, ITEM_REROLL_COST, ITEM_SLOTS, ITEM_SLOTS_TOTAL, RARITY_BY_ID, REPAIR_CHUNK_HP, REPAIR_GOLD_PER_HP, TOWERS, defFootprint, econIncomeAt, econIncomeAt5, econIncomeBase } from '@/game/config'
 import { avatarPortrait, towerThumb } from '@/game/pixel'
 import type { AttackType, TowerDefinition, UiState } from '@/game/types'
 import type { MpRole, MpStatus } from './Panels'
 import { DAMAGE_TYPE, DamageBadge, effectLines, isEcon } from './TowerInfo'
-import { Store, Music, Volume2, Wind, Gem, RefreshCw, ChevronUp } from 'lucide-react'
+import { Store, Music, Volume2, Wind, Gem, RefreshCw, ChevronUp, Wrench } from 'lucide-react'
 import { Slider } from '@/components/ui/slider'
 import {
   BoltIcon, BuildingIcon, CheckIcon, CloseIcon, CoinIcon, DiceIcon, ExitFullscreenIcon, FullscreenIcon, HelpIcon, InfinityIcon,
@@ -498,9 +498,46 @@ export function StartButton({ ui, onStart }: { ui: UiState; onStart: () => void 
   )
 }
 
+/**
+ * Ремонт главного здания (превью между волнами): «+25 HP за 25 золота»,
+ * не более 2 покупок за волну (см. economy.ts). Кнопка живёт рядом с «Начать»:
+ * чинить или копить на башни — решение игрока. Видна, только если есть что
+ * чинить и осталась квота; при нехватке золота — приглушена.
+ */
+export function RepairButton({ ui, onRepair }: { ui: UiState; onRepair: () => void }) {
+  if (ui.phase !== 'preview') return null
+  const missing = ui.buildingMaxHp - ui.buildingHp
+  if (missing <= 0 || ui.repairBuysLeft <= 0) return null
+  const heal = Math.min(REPAIR_CHUNK_HP, missing)
+  const cost = heal * REPAIR_GOLD_PER_HP
+  const poor = ui.gold < cost
+  return (
+    <motion.button
+      type="button"
+      onClick={onRepair}
+      disabled={poor}
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+      title={
+        poor
+          ? `Ремонт: +${heal} HP за ${cost} золота — не хватает золота`
+          : `Починить здание: +${heal} HP за ${cost} золота (осталось покупок: ${ui.repairBuysLeft})`
+      }
+      aria-label={`Починить здание на ${heal} HP за ${cost} золота`}
+      className="pointer-events-auto flex h-10 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-[#59c27a66] bg-[rgba(16,32,24,0.9)] px-3.5 text-[12px] font-black uppercase tracking-wide text-[#a6f095] transition-colors hover:border-[#59c27a] hover:bg-[rgba(22,44,32,0.95)] active:scale-95 disabled:cursor-not-allowed disabled:opacity-45"
+    >
+      <Wrench className="h-4 w-4" strokeWidth={2.4} />
+      <span>+{heal} HP</span>
+      <span className={`rounded-full px-1.5 py-0.5 font-mono text-[10px] font-bold normal-case ${poor ? 'bg-[#2b1a0d] text-[#d0a06a]' : 'bg-[rgba(0,0,0,0.35)] text-[#ffd76b]'}`}>
+        {cost}з
+      </span>
+    </motion.button>
+  )
+}
+
 // ─── Магазин: кнопка в нижней панели + окно по центру экрана ───────────────
-/** Кнопка открытия магазина — вместо постоянного ряда арсенала внизу экрана */
-export function ShopButton({ onClick, disabled = false }: { onClick: () => void; disabled?: boolean }) {
+/** Кнопка открытия магазина — вместо постоянного ряда арсенала внизу экрана */export function ShopButton({ onClick, disabled = false }: { onClick: () => void; disabled?: boolean }) {
   return (
     <button
       type="button"

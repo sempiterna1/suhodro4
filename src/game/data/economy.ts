@@ -21,6 +21,13 @@ export const BUILDING_BASE_HP = 200
 export const LEAK_BUILDING_DAMAGE = 10
 export const BOSS_BUILDING_DAMAGE = 100
 
+// ─── Ремонт здания (превью между волнами): кнопка за золото ────────────────
+// «+25 HP за 25 золота» (1 HP = 1 зол), максимум 2 покупки за волну —
+// кап 50 HP: точечные спасения возможны, «откупиться» от тонущей обороны нет.
+export const REPAIR_CHUNK_HP = 25
+export const REPAIR_GOLD_PER_HP = 1
+export const REPAIR_MAX_BUYS_PER_WAVE = 2
+
 export const BOSS_GOLD_MULT = 20
 
 // ─── Уровни башен (GDD: «Башни и уровни») ───────────────────────────────
