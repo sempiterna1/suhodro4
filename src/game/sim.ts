@@ -18,6 +18,7 @@ import { FIRST_PREVIEW_TIME, MAX_LEVEL, MERGE_MIN_LEVEL, PREVIEW_TIME, ROLL_COST
 import { TOTAL_WAVES, WAVES, armorsForWave } from './data/waves'
 import { DEFAULT_DIFFICULTY, DIFFICULTIES, type DifficultyId } from './data/difficulties'
 import { mulberry32, randInt } from './rng'
+import { emptyMeta, towerMetaBonus } from './meta'
 import { pathLength, pointAtLength } from './map'
 import type { AvatarId } from './data/avatars'
 import type { ArmorType, GameEvent, GameStats, Tower, Vec } from './types'
@@ -41,6 +42,12 @@ export interface SimOptions {
   maxSeconds?: number
   /** Остановиться после N волн (для тестов); по умолчанию вся миссия */
   maxWaves?: number
+  /**
+   * Детали коллекции «Верстака» (id → единицы), которые игрок заработал к этой
+   * миссии: лаборатория баланса проверяет, компенсирует ли мета лесенку карт.
+   * По умолчанию мета выключена — базовая линия баланса.
+   */
+  parts?: Record<string, number>
 }
 
 export interface SimWaveRow {
@@ -89,6 +96,8 @@ export interface SimReport {
   shop: 'all' | 'pool'
   coop: boolean
   avatarId: AvatarId
+  /** Сумма единиц деталей, с которыми сыграна миссия (0 — мета выключена) */
+  metaUnits: number
   dt: number
   outcome: SimOutcome
   wavesCompleted: number
@@ -688,6 +697,13 @@ export function runSimulation(opts: SimOptions = {}): SimReport {
   g.setCoop(coop)
   g.setAvatar(avatarId)
   if (shop === 'all') g.unlockAllTowers()
+  // мета-детали «Верстака»: лаборатория баланса лесенки карт (по умолчанию мета выключена)
+  const parts = opts.parts ?? {}
+  const metaUnits = Object.values(parts).reduce((s, n) => s + Math.max(0, n), 0)
+  if (metaUnits > 0) {
+    const metaSave = { ...emptyMeta(), parts: { ...parts } }
+    g.setMetaBonus((towerId) => towerMetaBonus(metaSave, towerId))
+  }
   g.beginPreview()
 
   const waves: SimWaveRow[] = []
@@ -767,6 +783,7 @@ export function runSimulation(opts: SimOptions = {}): SimReport {
     shop,
     coop,
     avatarId,
+    metaUnits,
     dt,
     outcome,
     wavesCompleted: waves.filter((w) => w.completed).length,

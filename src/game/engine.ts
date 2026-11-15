@@ -255,6 +255,33 @@ export class Game {
     const t = Math.min(1, Math.max(0, (n - 1) / d.hpRampWaves))
     return 1 + (d.creepHpMult - 1) * t
   }
+
+  /**
+   * Множитель HP карты на волне (лесенка кампании). У карт с hpRampWaves
+   * он растёт с 1.0 до полного значения — так финал с короткой тропой
+   * не превращается в стену на первых волнах (Task 30).
+   */
+  mapHpMultForWave(n: number): number {
+    const def = this.mapDef
+    const ramp = def.hpRampWaves ?? 0
+    if (def.hpMult <= 1 || ramp <= 0) return def.hpMult
+    const t = Math.min(1, Math.max(0, (n - 1) / ramp))
+    return 1 + (def.hpMult - 1) * t
+  }
+
+  /**
+   * Сколько дополнительных универсальных врагов добавить в обычную волну.
+   * С universalExtraRamp — ещё один универсальный добавляется каждые `ramp` волн
+   * (с 1-й); полный размер пакета (1 → 2 → … → universalExtra) достигается на
+   * первой волне + ramp × (universalExtra − 1) (Task 30).
+   */
+  universalExtraForWave(n: number): number {
+    const def = this.mapDef
+    if (def.universalExtra <= 0) return 0
+    const ramp = def.universalExtraRamp ?? 0
+    if (ramp <= 0) return def.universalExtra
+    return Math.min(def.universalExtra, 1 + Math.floor((n - 1) / ramp))
+  }
   avatar = {
     x: 90,
     y: 260,
@@ -462,7 +489,7 @@ export class Game {
       }
       // Особенность карты («Пепельная долина»): дополнительные универсальные враги,
       // равномерно распределённые по волне
-      const extra = this.mapDef.universalExtra
+      const extra = this.universalExtraForWave(def.n)
       if (extra > 0) {
         const span = def.count * def.spawnInterval
         for (let i = 0; i < extra; i++) {
@@ -1024,7 +1051,7 @@ export class Game {
       let size: number
       let gold: number
       let buildingDamage: number
-      const hpDifficultyMult = this.creepHpMultForWave(def.n) * this.mapDef.hpMult // лесенка карт (docs/meta.md)
+      const hpDifficultyMult = this.creepHpMultForWave(def.n) * this.mapHpMultForWave(def.n) // лесенка карт (docs/meta.md)
       if (o.isBoss) {
         hp = hpForWave(def.n) * BOSS_HP_MULT * def.hpMult * HP_PLAYTEST_MULT * this.coopMult() * hpDifficultyMult
         speed = BOSS_SPEED * this.mapDef.creepSpeedMult

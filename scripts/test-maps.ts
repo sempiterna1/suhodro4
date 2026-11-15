@@ -32,6 +32,24 @@ for (const m of MAP_DEFS) {
 check('mapDefBySeed находит по зерну', mapDefBySeed(3).id === 'pass' && mapDefBySeed(47).id === 'mill' && mapDefBySeed(8).id === 'valley')
 check('mapDefBySeed: чужое зерно → «Пограничный тракт»', mapDefBySeed(999999).id === 'tract')
 
+// ── Лесенка карт: ramp HP и универсальных врагов у финала (Task 30) ──
+{
+  const g = new Game()
+  g.selectMap(8) // «Пепельная долина»
+  const near = (a: number, b: number) => Math.abs(a - b) < 1e-9
+  check('valley: ×HP на 1-й волне — 1.0', near(g.mapHpMultForWave(1), 1), `${g.mapHpMultForWave(1)}`)
+  check('valley: ×HP растёт линейно (13-я — 1.20)', near(g.mapHpMultForWave(13), 1.2), `${g.mapHpMultForWave(13)}`)
+  check('valley: ×HP на 25-й — 1.40', near(g.mapHpMultForWave(25), 1.4), `${g.mapHpMultForWave(25)}`)
+  check('valley: ×HP не превышает 1.40', near(g.mapHpMultForWave(30), 1.4))
+  check('valley: +1 универсал на 1-й волне', g.universalExtraForWave(1) === 1)
+  check('valley: +2 универсала с 17-й', g.universalExtraForWave(17) === 2)
+  check('valley: полный пакет (+3) приходит на 33-й волне', g.universalExtraForWave(33) === 3)
+  check('valley: больше universalExtra не бывает', g.universalExtraForWave(40) === 3)
+  g.selectMap(47) // «Старая мельница»: ramp не задан — сразу полный множитель
+  check('mill: ×HP сразу полный (1.08)', near(g.mapHpMultForWave(1), 1.08), `${g.mapHpMultForWave(1)}`)
+  check('mill: универсальных врагов нет', g.universalExtraForWave(15) === 0)
+}
+
 // ── Волны ──
 check('всего волн 30', WAVES.length === 30 && TOTAL_WAVES === 30)
 check('денежные волны 9, 19 и 29', WAVES[8].kind === 'money' && WAVES[18].kind === 'money' && WAVES[28].kind === 'money')
@@ -60,14 +78,14 @@ check('selectMap применяет карту', g.mapDef.id === 'mill')
 g.reset()
 check('после reset() карта та же (выбор живёт)', g.mapDef.id === 'mill' && g.getUiState().mapName === 'Старая мельница')
 
-// ── Пепельная долина: +6 универсальных в обычной волне ──
+// ── Пепельная долина: +1 универсальный в обычной волне на 1-й (с ростом пакета) ──
 const valley = new Game()
 valley.selectMap(MAP_DEFS.find((m) => m.id === 'valley')!.seed)
 valley.beginPreview()
 valley.startWave()
 const q = valley['spawnQueue'] as Array<{ armor: string }>
-check('Пепельная долина: 20 обычных + 3 универсальных', q.length === 23, `${q.length} в очереди`)
-check('Пепельная долина: универсалы в очереди', q.filter((o) => o.armor === 'universal').length === 3)
+check('Пепельная долина: 20 обычных + 1 универсальный на 1-й волне', q.length === 21, `${q.length} в очереди`)
+check('Пепельная долина: универсал в очереди', q.filter((o) => o.armor === 'universal').length === 1)
 
 // ── Ледяной перевал: крипы +10% скорости ──
 const pass = new Game()

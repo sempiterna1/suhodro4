@@ -27,10 +27,22 @@ export interface MapDef {
   biome: BiomeId // визуальный облик карты
   creepSpeedMult: number // «Ледяной перевал: крипы быстрее на 10%»
   universalExtra: number // «Пепельная долина»: +N универсальных врагов в обычной волне
+  /**
+   * За сколько волн добавляется ещё один универсальный враг (0/undefined — все
+   * с первой волны). Ранние волны финала не должны получать сразу весь пакет:
+   * иначе +3 универсала с 1-й волны роняют экономику (см. worklog Task 30).
+   */
+  universalExtraRamp?: number
   /** GDD «Второй выход»: с этой волны открывается второй портал, крипы делятся поровну */
   secondExitWave?: number
   /** Метапрогрессия (docs/meta.md): множитель HP заражённых — лесенка «каждая карта сложнее предыдущей» */
   hpMult: number
+  /**
+   * За сколько волн множитель HP карты выходит на полную силу (0/undefined — сразу).
+   * Как hpRampWaves у сложности: финальные карты с короткой тропой не должны
+   * быть стеной на старте, когда у игрока всего две башни (см. worklog Task 30).
+   */
+  hpRampWaves?: number
 }
 
 export const MAP_DEFS: MapDef[] = [
@@ -39,7 +51,7 @@ export const MAP_DEFS: MapDef[] = [
   { id: 'bridge', name: 'Каменный мост', feature: 'тропа извилиста, мест мало — сливайте башни', seed: 1, biome: 'canyon', creepSpeedMult: 1, universalExtra: 0, hpMult: 1.16 },
   { id: 'mines', name: 'Заброшенные шахты', feature: 'короткая тропа — максимум мест под стройку', seed: 150, biome: 'wasteland', creepSpeedMult: 1, universalExtra: 0, hpMult: 1.24 },
   { id: 'pass', name: 'Ледяной перевал', feature: 'заражённые быстрее на 10%', seed: 3, biome: 'highland', creepSpeedMult: 1.1, universalExtra: 0, hpMult: 1.32 },
-  { id: 'valley', name: 'Пепельная долина', feature: 'универсальные враги в каждой волне; с 16-й волны — второй выход', seed: 8, biome: 'ashvalley', creepSpeedMult: 1, universalExtra: 3, secondExitWave: 16, hpMult: 1.4 },
+  { id: 'valley', name: 'Пепельная долина', feature: 'универсальные враги прибывают всё плотнее; крепость растёт к 25-й волне; с 16-й — второй выход', seed: 8, biome: 'ashvalley', creepSpeedMult: 1, universalExtra: 3, universalExtraRamp: 16, secondExitWave: 16, hpMult: 1.4, hpRampWaves: 24 },
 ]
 
 /** Определение карты по зерну (зерно уникально в рамках MAP_DEFS) */

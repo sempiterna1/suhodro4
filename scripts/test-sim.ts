@@ -106,6 +106,15 @@ const random = runSimulation({ seed: 5, policy: 'random', maxWaves: 5 })
 check('random: отчёт непустой', random.waves.length > 0 && Number.isFinite(random.stats.damageDealt))
 check('random: есть события действий', random.events.some((e) => e.type === 'build' || e.type === 'upgrade'))
 
+// ─── Мета-детали «Верстака» (лаборатория лесенки карт) ───────────────────
+const noMeta = runSimulation({ seed: 11, maxWaves: 2 })
+check('мета выключена по умолчанию: metaUnits 0', noMeta.metaUnits === 0, `${noMeta.metaUnits}`)
+const meta = runSimulation({ seed: 11, maxWaves: 2, parts: { 'archer-damage': 10, 'archer-cadence': 5 } })
+check('мета: metaUnits = сумма единиц', meta.metaUnits === 15, `${meta.metaUnits}`)
+const metaAgain = runSimulation({ seed: 11, maxWaves: 2, parts: { 'archer-damage': 10, 'archer-cadence': 5 } })
+check('мета: детерминизм при тех же деталях', JSON.stringify(meta) === JSON.stringify(metaAgain))
+check('мета: чужие id деталей не ломают отчёт', runSimulation({ seed: 11, maxWaves: 2, parts: { 'no-such-part': 3 } }).metaUnits === 3)
+
 // ─── Общие инварианты ────────────────────────────────────────────────────
 check('totalWaves совпадает с конфигом', scripted.totalWaves === TOTAL_WAVES && TOTAL_WAVES === WAVES.length)
 check('estimatedMissionSeconds ≥ combatSeconds', scripted.estimatedMissionSeconds >= scripted.combatSeconds)
