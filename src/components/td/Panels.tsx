@@ -1,6 +1,6 @@
 'use client'
 
-// UI-панели прототипа «Железный Разлом»
+// UI-панели игры «Последний горизонт»
 
 import { useState } from 'react'
 import { ARMOR_COLORS, ARMOR_NAMES, ATTACK_NAMES, MERGED_TOWERS, TOWERS, DAMAGE_MATRIX, LEVEL_MULT, SELL_RATIO, ALL_DEFS, econIncomeAt, econIncomeBase } from '@/game/config'

@@ -1,5 +1,5 @@
-// Типы игрового прототипа «Железный Разлом»
-// Кроссплейный кооперативный Tower Defense — прототип ядра
+// Типы игровой системы «Последний горизонт»
+// Кроссплейный кооперативный Tower Defense — игровое ядро
 
 export type ArmorType = 'light' | 'medium' | 'heavy' | 'universal'
 export type AttackType = 'pierce' | 'crush' | 'magic' | 'universal'

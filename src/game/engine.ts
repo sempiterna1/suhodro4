@@ -1,4 +1,4 @@
-// Игровой движок прототипа «Железный Разлом»
+// Игровой движок кооперативной игры «Последний горизонт»
 // Чистый TypeScript без зависимости от React — в будущем переносится на Unity C#
 
 import { ALL_DEFS, CHAIN_FALLOFF, CHAIN_RANGE, ECONOMY_TOWERS, LINE_WIDTH, MERGED_TOWERS, MIN_INTERVAL, RARITY_BY_ID, RARITY_DPS, RARITY_ECON_WEIGHT, SLAM_STUN, TOWERS, defFootprint } from './data/towers'

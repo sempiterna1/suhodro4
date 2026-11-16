@@ -221,7 +221,7 @@ function HubView(props: MainMenuProps & { onOpen: (v: View) => void }) {
   return (
     <div className="flex w-full flex-col items-center">
       <p className="mb-3 font-mono text-[9px] uppercase tracking-[0.35em] text-[#5b6f8c]">
-        ◆ командный пункт лагеря «железный разлом» ◆
+        ◆ командный пункт лагеря «последний горизонт» ◆
       </p>
       <h1 className="mb-4 select-none">
         <img
@@ -337,7 +337,7 @@ function HubView(props: MainMenuProps & { onOpen: (v: View) => void }) {
           </span>
         )}
         <span className="ml-auto hidden font-mono text-[9px] text-[#5b6f8c] sm:block">
-          прототип · паропанк tower defense · кооп по ссылке
+          кооперативная игра · паропанк tower defense · кооп по ссылке
         </span>
       </div>
     </div>
@@ -1118,7 +1118,7 @@ function SettingsView(props: MainMenuProps & { onBack: () => void }) {
           </button>
         </div>
       </div>
-      <p className="mt-3 text-center font-mono text-[9px] text-[#5b6f8c]">прототип · последняя версия всегда по ссылке у автора</p>
+      <p className="mt-3 text-center font-mono text-[9px] text-[#5b6f8c]">кооперативная игра · последняя версия всегда по ссылке у автора</p>
     </div>
   )
 }

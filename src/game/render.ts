@@ -1,4 +1,4 @@
-// Canvas-рендерер «Железного Разлома» — изометрия в духе Frostpunk.
+// Canvas-рендерер «Последнего горизонта» — изометрия в духе Frostpunk.
 // Движок живёт в координатах поля 960×600; здесь каждая точка проецируется камерой (iso.ts).
 // Земля запечена в холст (world.ts); башни, враги, деревья и дома — спрайты из листов референса,
 // отсортированные по глубине. Всё, что лежит на земле (радиусы, кольца, взрывы), рисуется через
@@ -7,7 +7,7 @@
 import { ALL_DEFS, ARMOR_COLORS, CELL, MAP_H, MAP_W, RARITY_BY_ID, bossForWave, defFootprint } from './config'
 import type { Game } from './engine'
 import { pointAtLength } from './engine'
-import { getMap } from './map'
+import { getMap, isSecondPathActive } from './map'
 import { ASSETS, assetFrames, drawAsset, drawAssetFrame, towerArt, type AssetName } from './assets'
 import { towerSprite } from './towers'
 import { drawLongShadow } from './shadows'
@@ -222,6 +222,7 @@ export function render(ctx: CanvasRenderingContext2D, game: Game, view: ViewStat
   drawDrift(L, now, B.drift.color, B.drift.k) // позёмка биома — по земле, под всем остальным
 
   // всё, что лежит на земле: связи слияния, кольца и радиусы башен, путь Охотницы, кольца взрывов
+  drawEnemyRoute(L, game) // живой маршрут к лагерю: по нему идут крипы
   drawSecondExitGlow(L, game, now)
   drawMergeLinks(L, game, view)
   drawTowerRings(L, game, view)
@@ -1000,6 +1001,30 @@ function drawFloats(ctx: CanvasRenderingContext2D, game: Game) {
     ctx.fillText(f.text, s.x, y)
     ctx.globalAlpha = 1
   }
+}
+
+/**
+ * Живой маршрут врагов: пунктирной линией по ломаной тропы к главному зданию (лагерю).
+ * Основной тропой идёт тёплый оранжевый (огни людей и башен), активный второй выход — зелёный
+ * (см. drawSecondExitGlow). Линия рисуется на земле через groundPath, под крипов и башни —
+ * чтобы игрок видел направление движения до того, как враг приблизится.
+ */
+function drawEnemyRoute(ctx: CanvasRenderingContext2D, game: Game) {
+  if (game.wave <= 0) return // в меню / на экране результата маршрут не нужен (превью рисует своё)
+  const map = getMap()
+  const draw = (pts: Vec[], color: string, dash: number[]) => {
+    groundPath(ctx, () => {
+      ctx.moveTo(pts[0].x, pts[0].y)
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y)
+    })
+    ctx.strokeStyle = color
+    ctx.lineWidth = 5
+    ctx.setLineDash(dash)
+    ctx.stroke()
+    ctx.setLineDash([])
+  }
+  draw(map.points, '#ffb347', [12, 9])
+  if (map.points2 && isSecondPathActive()) draw(map.points2, '#7fe0a8', [14, 10])
 }
 
 /**

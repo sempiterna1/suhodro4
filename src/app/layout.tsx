@@ -3,10 +3,10 @@ import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 
 export const metadata: Metadata = {
-  title: "Последний горизонт — прототип кооперативного Tower Defense",
+  title: "Последний горизонт — кооперативный Tower Defense",
   description:
-    "Прототип кооперативного Tower Defense в мире, который убил живой минерал: защитите лагерь беженцев от заражённых — 6 карт по 30 волн, слияние башен, Сорока и загадочный ИИ на связи.",
-  keywords: ["Tower Defense", "прототип", "стимпанк", "кооператив", "GDD"],
+    "Cooperative Tower Defense в мире, который убил живой минерал: защитите лагерь беженцев от заражённых — 6 карт по 30 волн, слияние башен, Сорока и загадочный ИИ на связи.",
+  keywords: ["Tower Defense", "игра", "стимпанк", "кооператив", "GDD"],
   icons: {
     icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
   },
