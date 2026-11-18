@@ -487,7 +487,7 @@ function makeScriptedPolicy(shopAll = false): Policy {
   const ECON_PLAN = [
     { id: 'mine', gateWave: 11, cap: 2, buffer: 150 }, // шахта — излишек в эссенцию для лавки (после boss-10)
     { id: 'sluice', gateWave: 11, cap: 1, buffer: 150 }, // стан — золотой дифференциал
-    { id: 'deep_drill', gateWave: 13, cap: 1, buffer: 300 }, // 4 клетки и 160 — большая ставка на экономику
+    { id: 'deep_drill', gateWave: 13, cap: 1, buffer: 150 }, // 4 клетки и 160 — большая ставка на экономику; буфер 150 (было 300) — deep-drill affordability P0 Task 32
   ]
   const econStep = (g: Game, h: PlacementHelper): boolean => {
     // Оборона первична: экономику не строим, пока не выстроен каркас башен
