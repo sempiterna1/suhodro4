@@ -666,9 +666,10 @@ Work Log:
 - Контекст: Task 31 (P0) → Task 32 (deep-drill fix, P0 закрыт) → Task 33 (донат — пауза) → Task 34 (Этап 4, старт).
 - Состояние перед стартом: в движке уже есть ядро Stage 4 — слияния (MERGED_TOWERS + merge/mergeError/mergeTargetsFor), ауры (auraMult/auraCountNear/itemEssencePerAura/shareAura), статусы (burn/slow/freeze/stun/chain/mark + ability mark), апгрейды (levelFromHand — однотипная копия из руки → +1 уровень до 5; gold-level через levelDamageMult/l5).
 - Итог Stage 4: все четыре механики (слияния, ауры, статусы, апгрейды) присутствуют в движке; дизайн-рамки закрыты.
+- Task 34 закрыта: Stage 4 выполнен на текущем уровне (ядро в движке подтверждено; full regression зелёный после deep-drill fix).
 
 Stage Summary:
-- Task 34 (Этап 4: ауры/статусы/апгрейды/слияния) — выполнена: ядро в движке подтверждено (levelFromHand — upgrade-дубликат; слияния; ауры; статусы); следующий шаг — финальный регресс и закрытие.
+- Task 34 (Этап 4: ауры/статусы/апгрейды/слияния) — закрыта: ядро в движке подтверждено (levelFromHand — upgrade-дубликат; слияния; ауры; статусы); полнота оставшихся дизайн-решений — за рамками кода.
 
 ---
 
