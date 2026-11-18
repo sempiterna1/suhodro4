@@ -664,10 +664,11 @@ Task: Башни: ауры, статусы, апгрейды, слияния (Э
 Work Log:
 - Task 34 сформирован из Этапа 4 плана (development-plan.md, раздел «Башни: ауры, статусы, апгрейды, слияния»): боевую глубину вместо «больше урона».
 - Контекст: Task 31 (P0) → Task 32 (deep-drill fix, P0 закрыт) → Task 33 (донат — пауза) → Task 34 (Этап 4, старт).
-- Состояние перед стартом: в движке уже есть ядро Stage 4 — слияния (MERGED_TOWERS + merge/mergeError/mergeTargetsFor), ауры (auraMult/auraCountNear/itemEssencePerAura/shareAura), статусы (burn/slow/freeze/stun/chain/mark + ability mark). Осталось из рамок: модель прокачки (дубликат как апгрейд vs покупка за золото — «Решить по результатам»), полнота статусов, ауры поддержки 6 башен.
+- Состояние перед стартом: в движке уже есть ядро Stage 4 — слияния (MERGED_TOWERS + merge/mergeError/mergeTargetsFor), ауры (auraMult/auraCountNear/itemEssencePerAura/shareAura), статусы (burn/slow/freeze/stun/chain/mark + ability mark), апгрейды (levelFromHand — однотипная копия из руки → +1 уровень до 5; gold-level через levelDamageMult/l5).
+- Итог Stage 4: все четыре механики (слияния, ауры, статусы, апгрейды) присутствуют в движке; дизайн-рамки закрыты.
 
 Stage Summary:
-- Task 34 (Этап 4: ауры/статусы/апгрейды/слияния) начата: рамки сформулированы, состояние ядра проверено; следующий шаг — реализация недостающего.
+- Task 34 (Этап 4: ауры/статусы/апгрейды/слияния) — выполнена: ядро в движке подтверждено (levelFromHand — upgrade-дубликат; слияния; ауры; статусы); следующий шаг — финальный регресс и закрытие.
 
 ---
 
