@@ -634,7 +634,7 @@ Work Log:
 - Task 32 — конкретная правка: фарм-политика deep_drill buffer 300 → 150 (gates: 13, cap 1) — после замера affordability на карте шахт (threshold 460 > наблюдаемый gold 348 на wave 13).
 
 Stage Summary:
-- Task 32 в работе: план P0 сформирован в Task 31; аудит констант и baseline-прогоны выполнены; deep-drill buffer снижен 300→150; tsc/eslint/test-sim зелёные — правка внесена, следующий шаг: финальная проверка и коммит.
+- Task 32 — текущий шаг завершён: deep-drill buffer снижен 300→150 (фикс affordability); tsc/eslint/test-sim зелёные; коммит `3bbf7df` в `main`. Task 32 продолжается проверками стратегий и правками gold-for-kill/wave-bonus/цен, если замеры покажут дефект.
 
 ---
 
