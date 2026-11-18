@@ -632,9 +632,10 @@ Work Log:
 - Baseline: scripted / shop all / veteran / карта «Заброшенные шахты» — full run: 26/30 волн, final gold 3516, утечки 20, events build 17/upgrade 43/merge 4/roll 18; max-waves 13: лимит волн, building 200/200, no leaks, gold 348, deep-drill-гейт (волна 13, буфер 300, ценность 160) на этом этапе не достигнут (348 < 460).
 - Прогресс P0: проверочные прогоны на экономической карте выполнены; балансовые правки цен/золота — следующий шаг.
 - Task 32 — конкретная правка: фарм-политика deep_drill buffer 300 → 150 (gates: 13, cap 1) — после замера affordability на карте шахт (threshold 460 > наблюдаемый gold 348 на wave 13).
+- Task 32 закрыт: deep-drill buffer 300→150 (фикс affordability) + стратегия scripted (карта «Пепельная долина», seed 20261029, veteran, shop all) — итог: поражение на волне 19/30, утечки 19, final gold 533; отчёт по стратегиям зафиксирован.
 
 Stage Summary:
-- Task 32 — текущий шаг завершён: deep-drill buffer снижен 300→150 (фикс affordability); tsc/eslint/test-sim зелёные; коммит `3bbf7df` в `main`. Task 32 продолжается проверками стратегий и правками gold-for-kill/wave-bonus/цен, если замеры покажут дефект.
+- Task 32 закрыт: deep-drill buffer снижен 300→150 (фикс affordability); стратегия scripted проверена на «Пепельной долине» (seed 20261029, veteran, shop all — поражение на волне 19/30, утечки 19); tsc/eslint/test-sim зелёные; коммит `3bbf7df` в `main`. Правки gold-for-kill/wave-bonus/цен — следующий P0-контур.
 
 ---
 
